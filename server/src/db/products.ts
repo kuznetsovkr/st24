@@ -12,6 +12,7 @@ export type ProductRow = {
   show_in_slider: boolean;
   slider_order: number;
   stock: number;
+  is_hidden: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -26,11 +27,13 @@ type ProductInput = {
   showInSlider: boolean;
   sliderOrder: number;
   stock: number;
+  isHidden: boolean;
 };
 
 export const listProducts = async (
   category?: string,
-  featured?: boolean
+  featured?: boolean,
+  includeHidden?: boolean
 ): Promise<ProductRow[]> => {
   const conditions: string[] = [];
   const values: Array<string | number | string[] | null> = [];
@@ -44,13 +47,17 @@ export const listProducts = async (
     conditions.push('show_in_slider = TRUE');
   }
 
+  if (!includeHidden) {
+    conditions.push('is_hidden = FALSE');
+  }
+
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const orderBy = featured
     ? 'ORDER BY slider_order ASC, created_at DESC'
     : 'ORDER BY created_at DESC';
   const result = await query(
     `
-      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, created_at, updated_at
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at
       FROM products
       ${whereClause}
       ${orderBy};
@@ -64,7 +71,7 @@ export const listProducts = async (
 export const findProductById = async (id: string): Promise<ProductRow | null> => {
   const result = await query(
     `
-      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, created_at, updated_at
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at
       FROM products
       WHERE id = $1;
     `,
@@ -77,7 +84,7 @@ export const findProductById = async (id: string): Promise<ProductRow | null> =>
 export const findProductBySku = async (sku: string): Promise<ProductRow | null> => {
   const result = await query(
     `
-      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, created_at, updated_at
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at
       FROM products
       WHERE sku = $1;
     `,
@@ -91,9 +98,9 @@ export const createProduct = async (input: ProductInput): Promise<ProductRow> =>
   const id = randomUUID();
   const result = await query(
     `
-      INSERT INTO products (id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, created_at, updated_at;
+      INSERT INTO products (id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at;
     `,
     [
       id,
@@ -105,7 +112,8 @@ export const createProduct = async (input: ProductInput): Promise<ProductRow> =>
       input.images,
       input.showInSlider,
       input.sliderOrder,
-      input.stock
+      input.stock,
+      input.isHidden
     ]
   );
 
@@ -128,9 +136,10 @@ export const updateProduct = async (
           show_in_slider = $8,
           slider_order = $9,
           stock = $10,
+          is_hidden = $11,
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, created_at, updated_at;
+      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at;
     `,
     [
       id,
@@ -142,7 +151,8 @@ export const updateProduct = async (
       input.images,
       input.showInSlider,
       input.sliderOrder,
-      input.stock
+      input.stock,
+      input.isHidden
     ]
   );
 
@@ -154,7 +164,7 @@ export const deleteProduct = async (id: string): Promise<ProductRow | null> => {
     `
       DELETE FROM products
       WHERE id = $1
-      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, created_at, updated_at;
+      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at;
     `,
     [id]
   );

@@ -14,6 +14,7 @@ export type Product = {
   showInSlider: boolean;
   sliderOrder: number;
   stock: number;
+  isHidden: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -109,9 +110,14 @@ export const fetchCategories = async () => {
   return data.items;
 };
 
-export const fetchProducts = async (options?: { category?: string; featured?: boolean }) => {
+export const fetchProducts = async (options?: {
+  category?: string;
+  featured?: boolean;
+  includeHidden?: boolean;
+}) => {
   const category = options?.category;
   const featured = options?.featured;
+  const includeHidden = options?.includeHidden;
   const url = new URL(`${API_BASE}/api/products`);
   if (category) {
     url.searchParams.set('category', category);
@@ -119,7 +125,12 @@ export const fetchProducts = async (options?: { category?: string; featured?: bo
   if (featured) {
     url.searchParams.set('featured', 'true');
   }
-  const data = await fetchJson<{ items: Product[] }>(url.toString());
+  if (includeHidden) {
+    url.searchParams.set('includeHidden', 'true');
+  }
+  const data = await fetchJson<{ items: Product[] }>(url.toString(), {
+    headers: includeHidden ? authHeaders() : undefined
+  });
   return data.items.map(normalizeProduct);
 };
 
@@ -185,6 +196,18 @@ export const payOrder = async (orderId: string) => {
     headers: authHeaders()
   });
   return data.order;
+};
+
+export const requestNeedPart = async (payload: {
+  productId: string;
+  fullName: string;
+  phone: string;
+}) => {
+  return fetchJson<{ ok: boolean }>(`${API_BASE}/api/requests/need-part`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
 };
 
 export const deleteProduct = async (id: string) => {

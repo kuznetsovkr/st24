@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { createApp } from './app';
 import { initDb } from './db/init';
 import { ensureUploadsDir } from './uploads';
+import { startTelegramPolling } from './telegram';
 
 dotenv.config();
 
@@ -11,6 +12,7 @@ const app = createApp();
 const start = async () => {
   await initDb();
   ensureUploadsDir();
+  startTelegramPolling();
   app.listen(PORT, () => {
     console.log(`API server listening on http://localhost:${PORT}`);
   });

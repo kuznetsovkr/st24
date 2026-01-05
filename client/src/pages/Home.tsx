@@ -8,8 +8,8 @@ import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
 
 const HomePage = () => {
-  const { openProductModal } = useUI();
-  const { addItem, decrement, getQuantity, increment } = useCart();
+  const { openProductModal, openNeedPartModal } = useUI();
+  const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const sliderRef = useRef<HTMLDivElement | null>(null);
@@ -97,6 +97,7 @@ const HomePage = () => {
         <div className="slider-track" ref={sliderRef}>
           {featuredProducts.map((product) => {
             const quantity = getQuantity(product.id);
+            const isOutOfStock = product.stock === 0;
 
             return (
               <article key={product.id} className="slide">
@@ -129,9 +130,16 @@ const HomePage = () => {
                       Подробнее
                     </button>
                     {quantity === 0 ? (
-                      <button className="primary-button" onClick={() => handleAddToCart(product)}>
-                        В корзину
-                      </button>
+                      isOutOfStock ? (
+                        <span className="stock-badge">Нет в наличии</span>
+                      ) : (
+                        <button
+                          className="primary-button"
+                          onClick={() => handleAddToCart(product)}
+                        >
+                          В корзину
+                        </button>
+                      )
                     ) : (
                       <div className="qty-control" role="group" aria-label="Количество товара">
                         <button
@@ -142,16 +150,53 @@ const HomePage = () => {
                         >
                           -
                         </button>
-                        <span className="qty-value">{quantity}</span>
+                        <input
+                          className="qty-input"
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          value={quantity}
+                          onChange={(event) => {
+                            const rawValue = event.target.value;
+                            if (rawValue === '') {
+                              return;
+                            }
+                            const next = Number.parseInt(rawValue, 10);
+                            if (Number.isNaN(next)) {
+                              return;
+                            }
+                            setQuantity(product.id, next);
+                          }}
+                        />
                         <button
                           type="button"
                           className="qty-button"
                           onClick={() => increment(product.id)}
                           aria-label="Увеличить количество"
+                          disabled={typeof product.stock === 'number' && quantity >= product.stock}
                         >
                           +
                         </button>
                       </div>
+                    )}
+                    {isOutOfStock && (
+                      <button
+                        type="button"
+                        className="text-button need-help-link"
+                        onClick={() =>
+                          openNeedPartModal({
+                            id: product.id,
+                            name: product.name,
+                            priceCents: product.priceCents,
+                            description: product.description,
+                            sku: product.sku,
+                            image: product.images[0],
+                            stock: product.stock
+                          })
+                        }
+                      >
+                        Помогите, нужна деталь
+                      </button>
                     )}
                   </div>
                 </div>

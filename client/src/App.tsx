@@ -19,6 +19,7 @@ import { CartProvider } from './context/CartContext.tsx';
 import { UIProvider } from './context/UIContext.tsx';
 import ProductQuickViewModal from './components/ProductQuickViewModal.tsx';
 import AuthModal from './components/AuthModal.tsx';
+import NeedPartModal from './components/NeedPartModal.tsx';
 
 const App = () => (
   <BrowserRouter>
@@ -44,6 +45,7 @@ const App = () => (
             </Routes>
             <ProductQuickViewModal />
             <AuthModal />
+            <NeedPartModal />
           </AppLayout>
         </UIProvider>
       </CartProvider>

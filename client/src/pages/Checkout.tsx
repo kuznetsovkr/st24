@@ -11,7 +11,7 @@ import { formatPrice } from '../utils/formatPrice.ts';
 const CheckoutPage = () => {
   const navigate = useNavigate();
   const { user, status } = useAuth();
-  const { items, totalCount, totalPriceCents, mergeWithServer, refreshFromServer } = useCart();
+  const { items, totalCount, totalPriceCents, syncWithServer } = useCart();
   const { openAuthModal } = useUI();
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -73,8 +73,7 @@ const CheckoutPage = () => {
 
     setIsSubmitting(true);
     try {
-      await mergeWithServer();
-      const latest = await refreshFromServer();
+      const latest = await syncWithServer();
       const hasIssues = latest.some(
         (item) => typeof item.stock === 'number' && item.quantity > item.stock
       );

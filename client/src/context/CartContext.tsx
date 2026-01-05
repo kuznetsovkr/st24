@@ -25,6 +25,7 @@ type CartContextValue = {
   getQuantity: (id: string) => number;
   mergeWithServer: () => Promise<void>;
   refreshFromServer: () => Promise<CartEntry[]>;
+  syncWithServer: () => Promise<CartEntry[]>;
   totalCount: number;
   totalPriceCents: number;
 };
@@ -166,9 +167,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
 
     setItems((prev) =>
-      prev.map((entry) =>
-        entry.id === id ? { ...entry, quantity: clampQuantity(entry, quantity) } : entry
-      )
+      prev.map((entry) => (entry.id === id ? { ...entry, quantity } : entry))
     );
   };
 
@@ -230,6 +229,18 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     return serverItems;
   };
 
+  const syncWithServer = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      return items;
+    }
+
+    const synced = await syncCart(toSyncPayload(items));
+    skipNextSync.current = true;
+    setItems(synced);
+    return synced;
+  };
+
   const totals = useMemo(() => {
     const totalCount = items.reduce((sum, entry) => sum + entry.quantity, 0);
     const totalPriceCents = items.reduce(
@@ -250,6 +261,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     getQuantity,
     mergeWithServer,
     refreshFromServer,
+    syncWithServer,
     totalCount: totals.totalCount,
     totalPriceCents: totals.totalPriceCents
   };

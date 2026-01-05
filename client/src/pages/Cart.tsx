@@ -15,9 +15,10 @@ const CartPage = () => {
     totalPriceCents,
     increment,
     decrement,
+    setQuantity,
     removeItem,
     clear,
-    refreshFromServer
+    syncWithServer
   } = useCart();
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -31,7 +32,7 @@ const CartPage = () => {
       setCheckoutError(null);
       setIsChecking(true);
       try {
-        const latest = await refreshFromServer();
+        const latest = await syncWithServer();
         const hasIssues = latest.some(
           (item) => typeof item.stock === 'number' && item.quantity > item.stock
         );
@@ -90,7 +91,24 @@ const CartPage = () => {
                       >
                         -
                       </button>
-                      <span className="qty-value">{item.quantity}</span>
+                      <input
+                        className="qty-input"
+                        type="number"
+                        min="1"
+                        inputMode="numeric"
+                        value={item.quantity}
+                        onChange={(event) => {
+                          const rawValue = event.target.value;
+                          if (rawValue === '') {
+                            return;
+                          }
+                          const next = Number.parseInt(rawValue, 10);
+                          if (Number.isNaN(next)) {
+                            return;
+                          }
+                          setQuantity(item.id, next);
+                        }}
+                      />
                       <button
                         type="button"
                         className="qty-button"

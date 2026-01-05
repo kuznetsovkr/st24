@@ -3,8 +3,8 @@ import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
 
 const ProductQuickViewModal = () => {
-  const { productModal, closeProductModal } = useUI();
-  const { addItem, decrement, getQuantity, increment } = useCart();
+  const { productModal, closeProductModal, openNeedPartModal } = useUI();
+  const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const product = productModal.product;
 
   if (!productModal.open || !product) {
@@ -12,6 +12,7 @@ const ProductQuickViewModal = () => {
   }
 
   const quantity = getQuantity(product.id);
+  const isOutOfStock = product.stock === 0;
 
   const handleAddToCart = () => {
     addItem({
@@ -48,9 +49,13 @@ const ProductQuickViewModal = () => {
         </p>
         <div className="modal-actions">
           {quantity === 0 ? (
-            <button className="primary-button" onClick={handleAddToCart}>
-              Добавить в корзину
-            </button>
+            isOutOfStock ? (
+              <span className="stock-badge">Нет в наличии</span>
+            ) : (
+              <button className="primary-button" onClick={handleAddToCart}>
+                Добавить в корзину
+              </button>
+            )
           ) : (
             <div className="qty-control" role="group" aria-label="Количество товара">
               <button
@@ -61,12 +66,30 @@ const ProductQuickViewModal = () => {
               >
                 -
               </button>
-              <span className="qty-value">{quantity}</span>
+              <input
+                className="qty-input"
+                type="number"
+                min="1"
+                inputMode="numeric"
+                value={quantity}
+                onChange={(event) => {
+                  const rawValue = event.target.value;
+                  if (rawValue === '') {
+                    return;
+                  }
+                  const next = Number.parseInt(rawValue, 10);
+                  if (Number.isNaN(next)) {
+                    return;
+                  }
+                  setQuantity(product.id, next);
+                }}
+              />
               <button
                 type="button"
                 className="qty-button"
                 onClick={() => increment(product.id)}
                 aria-label="Увеличить количество"
+                disabled={typeof product.stock === 'number' && quantity >= product.stock}
               >
                 +
               </button>
@@ -76,6 +99,15 @@ const ProductQuickViewModal = () => {
             Закрыть
           </button>
         </div>
+        {isOutOfStock && (
+          <button
+            type="button"
+            className="text-button need-help-link"
+            onClick={() => openNeedPartModal(product)}
+          >
+            Помогите, нужна деталь
+          </button>
+        )}
       </div>
     </div>
   );

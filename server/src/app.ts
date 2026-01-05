@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express, { Request, Response } from 'express';
 import path from 'path';
-import { signToken } from './auth';
+import { signToken, verifyToken } from './auth';
 import { findAuthCode, saveAuthCode, deleteAuthCode } from './db/authCodes';
 import { findEmailCode, saveEmailCode, deleteEmailCode } from './db/emailCodes';
 import {
@@ -40,14 +40,30 @@ import {
   upsertUser
 } from './db/users';
 import { authenticate, requireAdmin } from './middleware/auth';
+import { handleTelegramUpdate, sendTelegramMessage } from './telegram';
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
 
 const CODE_TTL_MINUTES = 5;
 
 const normalizePhone = (value: string) => value.replace(/\D/g, '');
+const formatPhoneE164 = (value: string) => {
+  const digits = normalizePhone(value);
+  if (!digits) {
+    return value.trim();
+  }
+  let normalized = digits;
+  if (normalized.startsWith('8')) {
+    normalized = `7${normalized.slice(1)}`;
+  }
+  if (normalized.length === 10) {
+    normalized = `7${normalized}`;
+  }
+  return `+${normalized}`;
+};
 const getAdminPhone = () => normalizePhone(process.env.ADMIN_PHONE ?? '79964292550');
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
 
 const parsePriceCents = (value?: string) => {
   if (!value) {
@@ -97,6 +113,7 @@ const mapProduct = (row: ProductRow) => ({
   showInSlider: row.show_in_slider,
   sliderOrder: row.slider_order,
   stock: row.stock,
+  isHidden: row.is_hidden,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -137,6 +154,15 @@ const mapUser = (user: {
 
 const isUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+const isTelegramWebhookAllowed = (req: Request) => {
+  const secret = getTelegramWebhookSecret();
+  if (!secret) {
+    return true;
+  }
+  const header = req.headers['x-telegram-bot-api-secret-token'];
+  return header === secret;
+};
 
 const normalizeCartItems = (input: unknown): CartSyncItem[] => {
   if (!Array.isArray(input)) {
@@ -206,7 +232,27 @@ export const createApp = () => {
   app.get('/api/products', (req: Request, res: Response) => {
     const category = typeof req.query.category === 'string' ? req.query.category : undefined;
     const featured = req.query.featured === 'true';
-    listProducts(category, featured)
+    const includeHidden = req.query.includeHidden === 'true';
+
+    if (includeHidden) {
+      const header = req.headers.authorization;
+      if (!header) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+      try {
+        const payload = verifyToken(header.replace('Bearer ', ''));
+        if (payload.role !== 'admin') {
+          res.status(403).json({ error: 'Forbidden' });
+          return;
+        }
+      } catch {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+    }
+
+    listProducts(category, featured, includeHidden)
       .then((items) => res.json({ items: items.map(mapProduct) }))
       .catch(() => res.status(500).json({ error: 'Failed to load products' }));
   });
@@ -226,6 +272,7 @@ export const createApp = () => {
     const sliderOrder = parseSliderOrder(
       typeof req.body.sliderOrder === 'string' ? req.body.sliderOrder : undefined
     );
+    const isHidden = req.body.isHidden === 'true';
     const stock = parseStock(typeof req.body.stock === 'string' ? req.body.stock : undefined);
 
     const errors: string[] = [];
@@ -275,7 +322,8 @@ export const createApp = () => {
         images: filenames,
         showInSlider,
         sliderOrder: sliderOrder ?? 0,
-        stock: stock ?? 0
+        stock: stock ?? 0,
+        isHidden
       });
 
       res.status(201).json(mapProduct(product));
@@ -307,6 +355,7 @@ export const createApp = () => {
     const sliderOrder = parseSliderOrder(
       typeof req.body.sliderOrder === 'string' ? req.body.sliderOrder : undefined
     );
+    const isHidden = req.body.isHidden === 'true';
     const stock =
       typeof req.body.stock === 'string'
         ? parseStock(req.body.stock)
@@ -372,7 +421,8 @@ export const createApp = () => {
         images,
         showInSlider,
         sliderOrder: sliderOrder ?? 0,
-        stock: stock ?? existing.stock ?? 0
+        stock: stock ?? existing.stock ?? 0,
+        isHidden
       });
 
       if (!updated) {
@@ -598,6 +648,68 @@ export const createApp = () => {
       res.json({ order: mapOrder(order) });
     } catch {
       res.status(500).json({ error: 'Failed to update order' });
+    }
+  });
+
+  app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
+    if (!isTelegramWebhookAllowed(req)) {
+      res.status(403).json({ ok: false });
+      return;
+    }
+
+    try {
+      await handleTelegramUpdate(req.body ?? {});
+    } catch {
+      // ignore webhook processing errors
+    }
+
+    res.json({ ok: true });
+  });
+
+  app.post('/api/requests/need-part', async (req: Request, res: Response) => {
+    const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim() : '';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+    const productId =
+      typeof req.body.productId === 'string' ? req.body.productId.trim() : '';
+
+    const errors: string[] = [];
+    if (!fullName) {
+      errors.push('ФИО обязательно');
+    }
+    if (!phone) {
+      errors.push('Телефон обязателен');
+    }
+    if (!productId || !isUuid(productId)) {
+      errors.push('Некорректный товар');
+    }
+
+    if (errors.length > 0) {
+      res.status(400).json({ errors });
+      return;
+    }
+
+    const product = await findProductById(productId);
+    if (!product) {
+      res.status(404).json({ error: 'Product not found' });
+      return;
+    }
+
+    const normalizedPhone = formatPhoneE164(phone);
+    const lines = [
+      '🆘 Новая заявка: нужна деталь',
+      `🔧 Товар: ${product.name}`,
+      product.sku ? `🏷️ SKU: ${product.sku}` : null,
+      `📦 Остаток: ${product.stock}`,
+      `👤 ФИО: ${fullName}`,
+      `📞 Телефон: ${normalizedPhone}`
+    ].filter(Boolean);
+
+    try {
+      await sendTelegramMessage(lines.join('\n'));
+      res.json({ ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send request';
+      res.status(500).json({ error: message });
     }
   });
 

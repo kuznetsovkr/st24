@@ -21,6 +21,7 @@ export const initDb = async () => {
       show_in_slider BOOLEAN NOT NULL DEFAULT FALSE,
       slider_order INTEGER NOT NULL DEFAULT 0,
       stock INTEGER NOT NULL DEFAULT 0,
+      is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -39,6 +40,11 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE products
     ADD COLUMN IF NOT EXISTS stock INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 
   await query(`
@@ -111,6 +117,20 @@ export const initDb = async () => {
       quantity INTEGER NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (order_id, product_id)
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS telegram_subscribers (
+      chat_id BIGINT PRIMARY KEY,
+      username TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      language_code TEXT,
+      chat_type TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 

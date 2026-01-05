@@ -62,6 +62,7 @@ const AdminPage = () => {
   const [newImages, setNewImages] = useState<File[]>([]);
   const [newPreviews, setNewPreviews] = useState<string[]>([]);
   const [showInSlider, setShowInSlider] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
   const [sliderOrder, setSliderOrder] = useState('0');
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +92,7 @@ const AdminPage = () => {
     try {
       const [categoryItems, productItems] = await Promise.all([
         fetchCategories(),
-        fetchProducts()
+        fetchProducts({ includeHidden: true })
       ]);
       setCategories(categoryItems);
       setProducts(productItems);
@@ -120,6 +121,7 @@ const AdminPage = () => {
     setNewImages([]);
     setNewPreviews([]);
     setShowInSlider(false);
+    setIsHidden(false);
     setSliderOrder('0');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -164,6 +166,7 @@ const AdminPage = () => {
     formData.append('stock', stock.trim());
     formData.append('category', category);
     formData.append('showInSlider', showInSlider ? 'true' : 'false');
+    formData.append('isHidden', isHidden ? 'true' : 'false');
     formData.append('sliderOrder', sliderOrder.trim() || '0');
 
     if (newImages.length > 0) {
@@ -203,6 +206,7 @@ const AdminPage = () => {
     setCategory(product.category);
     setExistingImages(product.images);
     setShowInSlider(product.showInSlider);
+    setIsHidden(product.isHidden);
     setSliderOrder(String(product.sliderOrder ?? 0));
     setNewImages([]);
     setNewPreviews([]);
@@ -457,6 +461,14 @@ const AdminPage = () => {
             />
             <span>Отображать в слайдере на главной</span>
           </label>
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={isHidden}
+              onChange={(event) => setIsHidden(event.target.checked)}
+            />
+            <span>Отключить отображение на сайте</span>
+          </label>
           <label className="field">
             <span>Порядок в слайдере (меньше - выше)</span>
             <input
@@ -564,6 +576,9 @@ const AdminPage = () => {
                     <p className="muted">SKU: {product.sku}</p>
                     <p className="price">{formatPriceLabel(product.priceCents)}</p>
                     <p className="stock-text">Остаток: {product.stock}</p>
+                    {product.isHidden && (
+                      <span className="status-badge status-badge--hidden">Скрыт</span>
+                    )}
                     {product.description && <p className="muted">{product.description}</p>}
                     {product.showInSlider && (
                       <p className="eyebrow">В слайдере · {product.sliderOrder}</p>
@@ -589,6 +604,7 @@ const AdminPage = () => {
                     <th>SKU</th>
                     <th>Цена</th>
                     <th>Остаток</th>
+                    <th>Статус</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -608,6 +624,13 @@ const AdminPage = () => {
                       <td className="muted">{product.sku}</td>
                       <td>{formatPriceLabel(product.priceCents)}</td>
                       <td>{product.stock}</td>
+                      <td>
+                        {product.isHidden ? (
+                          <span className="status-badge status-badge--hidden">Скрыт</span>
+                        ) : (
+                          <span className="muted">Виден</span>
+                        )}
+                      </td>
                       <td>
                         <div className="admin-table-actions">
                           <button className="ghost-button" onClick={() => handleEdit(product)}>
