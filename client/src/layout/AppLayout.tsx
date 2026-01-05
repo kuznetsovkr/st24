@@ -37,16 +37,6 @@ const AppLayout = ({ children }: Props) => {
         </nav>
       </header>
       <main className="app-main">{children}</main>
-      <footer className="app-footer">
-        <div className="footer-brand">
-          <span className="logo">logo</span>
-          <p>Простая заготовка интернет-магазина на React + Node.</p>
-        </div>
-        <div className="footer-links">
-          <Link to="/privacy">Политика конфиденциальности</Link>
-          <Link to="/terms">Пользовательское соглашение</Link>
-        </div>
-      </footer>
     </div>
   );
 };

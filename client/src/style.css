@@ -158,16 +158,6 @@ a {
   gap: 20px;
 }
 
-.app-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.7);
-}
-
 .footer-links {
   display: flex;
   gap: 12px;
@@ -478,7 +468,4 @@ input:focus {
     align-items: flex-start;
   }
 
-  .app-footer {
-    flex-direction: column;
-  }
 }
