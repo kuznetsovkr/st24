@@ -1,0 +1,15 @@
+{
+  "name": "her",
+  "version": "0.1.0",
+  "private": true,
+  "description": "E-commerce MVP (frontend + backend)",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "test": "echo \"No root tests\""
+  },
+  "keywords": [],
+  "author": ""
+}
