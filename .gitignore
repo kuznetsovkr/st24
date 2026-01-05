@@ -3,6 +3,7 @@ node_modules
 *.log
 server/dist
 server/.env
+server/uploads
 client/node_modules
 client/dist
 .DS_Store

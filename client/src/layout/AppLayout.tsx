@@ -1,5 +1,7 @@
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import { useAuth } from '../context/AuthContext.tsx';
+import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 
 type Props = {
@@ -7,10 +9,21 @@ type Props = {
 };
 
 const AppLayout = ({ children }: Props) => {
-  const { cartCount } = useUI();
+  const navigate = useNavigate();
+  const { totalCount } = useCart();
+  const { status } = useAuth();
+  const { openAuthModal } = useUI();
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `nav-link${isActive ? ' nav-link--active' : ''}`;
+
+  const handleLoginClick = () => {
+    if (status === 'auth') {
+      navigate('/account');
+      return;
+    }
+    openAuthModal();
+  };
 
   return (
     <div className="app-shell">
@@ -24,8 +37,8 @@ const AppLayout = ({ children }: Props) => {
           </NavLink>
           <NavLink to="/cart" className={navLinkClass}>
             Корзина
-            <span className="cart-badge" aria-label={`Товаров в корзине: ${cartCount}`}>
-              {cartCount}
+            <span className="cart-badge" aria-label={`Товаров в корзине: ${totalCount}`}>
+              {totalCount}
             </span>
           </NavLink>
           <NavLink to="/b2b" className={navLinkClass}>
@@ -35,6 +48,16 @@ const AppLayout = ({ children }: Props) => {
             О нас
           </NavLink>
         </nav>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="login-button"
+            onClick={handleLoginClick}
+            aria-label={status === 'auth' ? 'Личный кабинет' : 'Войти'}
+          >
+            <img src="/login.svg" alt="" aria-hidden="true" />
+          </button>
+        </div>
       </header>
       <main className="app-main">{children}</main>
     </div>

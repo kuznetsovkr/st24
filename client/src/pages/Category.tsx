@@ -1,9 +1,61 @@
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { fetchProducts } from '../api';
+import type { Product } from '../api';
+import { useAuth } from '../context/AuthContext.tsx';
+import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import { formatPrice } from '../utils/formatPrice.ts';
 
 const CategoryPage = () => {
   const { slug } = useParams<{ slug: string }>();
   const { openProductModal } = useUI();
+  const { addItem, decrement, getQuantity, increment } = useCart();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [products, setProducts] = useState<Product[]>([]);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  useEffect(() => {
+    if (!slug) {
+      setStatus('error');
+      return;
+    }
+
+    let active = true;
+
+    const load = async () => {
+      try {
+        setStatus('loading');
+        const items = await fetchProducts({ category: slug });
+        if (!active) {
+          return;
+        }
+        setProducts(items);
+        setStatus('ready');
+      } catch {
+        if (active) {
+          setStatus('error');
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+
+  const handleAddToCart = (product: Product) => {
+    addItem({
+      id: product.id,
+      name: product.name,
+      priceCents: product.priceCents,
+      image: product.images[0],
+      stock: product.stock
+    });
+  };
 
   return (
     <div className="page">
@@ -11,27 +63,91 @@ const CategoryPage = () => {
         <div>
           <p className="eyebrow">Раздел каталога</p>
           <h1>{slug ? `Категория: ${slug}` : 'Категория'}</h1>
-          <p className="muted">
-            Здесь появится список товаров для выбранной категории. Пока — заглушка и кнопка быстрого
-            просмотра карточки.
-          </p>
+          <p className="muted">Выберите товар и добавьте его в корзину.</p>
         </div>
         <Link to="/catalog" className="ghost-button">
-          Назад в каталог
+          Назад к каталогу
         </Link>
       </header>
-      <div className="card">
-        <h3>Пример товара</h3>
-        <p className="muted">После подключения API здесь будет список позиций.</p>
-        <div className="button-row">
-          <button className="primary-button" onClick={() => openProductModal('Товар из категории')}>
-            Открыть карточку
-          </button>
-          <Link to="/cart" className="text-button">
-            Перейти к оформлению
+      {status === 'loading' && <p className="muted">Загружаем товары...</p>}
+      {status === 'error' && <p className="muted">Не удалось загрузить товары.</p>}
+      {status === 'ready' && products.length === 0 && (
+        <div className="card">
+          <h3>В этом разделе пока нет товаров</h3>
+          <p className="muted">Добавьте позиции в админке, и они появятся здесь.</p>
+          <Link to="/admin" className="primary-button">
+            Перейти в админку
           </Link>
         </div>
-      </div>
+      )}
+      {status === 'ready' && products.length > 0 && (
+        <div className="products-grid">
+          {products.map((product) => {
+            const quantity = getQuantity(product.id);
+
+            return (
+              <article key={product.id} className="product-card">
+                <div className="product-image">
+                  {product.images[0] ? (
+                    <img src={product.images[0]} alt={product.name} />
+                  ) : (
+                    <span>Фото</span>
+                  )}
+                </div>
+                <div className="product-meta">
+                  <h3>{product.name}</h3>
+                  <p className="price">{formatPrice(product.priceCents)}</p>
+                  {isAdmin && <p className="stock-text">Остаток: {product.stock}</p>}
+                  {product.description && <p className="muted">{product.description}</p>}
+                  <div className="product-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        openProductModal({
+                          id: product.id,
+                          name: product.name,
+                          priceCents: product.priceCents,
+                          description: product.description,
+                          sku: product.sku,
+                          image: product.images[0],
+                          stock: product.stock
+                        })
+                      }
+                    >
+                      Подробнее
+                    </button>
+                    {quantity === 0 ? (
+                      <button className="primary-button" onClick={() => handleAddToCart(product)}>
+                        В корзину
+                      </button>
+                    ) : (
+                      <div className="qty-control" role="group" aria-label="Количество товара">
+                        <button
+                          type="button"
+                          className="qty-button"
+                          onClick={() => decrement(product.id)}
+                          aria-label="Уменьшить количество"
+                        >
+                          -
+                        </button>
+                        <span className="qty-value">{quantity}</span>
+                        <button
+                          type="button"
+                          className="qty-button"
+                          onClick={() => increment(product.id)}
+                          aria-label="Увеличить количество"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
