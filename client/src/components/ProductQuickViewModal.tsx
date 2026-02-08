@@ -26,14 +26,28 @@ const ProductQuickViewModal = () => {
 
   return (
     <div className="modal-backdrop" onClick={closeProductModal}>
-      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-card modal-card--product" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
             <p className="eyebrow">Быстрый просмотр</p>
             <h3>{product.name}</h3>
           </div>
           <button className="icon-button" aria-label="Закрыть" onClick={closeProductModal}>
-            x
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="17"
+              height="17"
+              viewBox="0 0 17 17"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M16.5 0.5L0.5 16.5M16.5 16.5L0.5 0.5"
+                stroke="#433F3C"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
         </div>
         {product.image && (

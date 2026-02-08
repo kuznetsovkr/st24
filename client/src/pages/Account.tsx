@@ -683,7 +683,21 @@ const AccountPage = () => {
                 <h3>{detailsOrder ? `Детали заказа №${detailsOrder.orderNumber}` : 'Детали'}</h3>
               </div>
               <button className="icon-button" aria-label="Закрыть" onClick={handleCloseDetails}>
-                x
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="17"
+                  height="17"
+                  viewBox="0 0 17 17"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M16.5 0.5L0.5 16.5M16.5 16.5L0.5 0.5"
+                    stroke="#433F3C"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
             </div>
             {detailsState === 'loading' && <p className="muted">Загружаем позиции...</p>}

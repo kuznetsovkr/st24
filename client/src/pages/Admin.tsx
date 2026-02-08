@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import {
   clearAuthToken,
@@ -14,6 +14,12 @@ import {
   verifyAuthCode
 } from '../api';
 import type { AuthUser, Category, Product } from '../api';
+import {
+  applyFontTheme,
+  getStoredFontTheme,
+  setStoredFontTheme,
+  type FontTheme
+} from '../utils/fontTheme';
 
 const MAX_IMAGES = 5;
 
@@ -45,6 +51,7 @@ const AdminPage = () => {
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [fontTheme, setFontTheme] = useState<FontTheme>(() => getStoredFontTheme());
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -68,6 +75,10 @@ const AdminPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    applyFontTheme(fontTheme);
+  }, [fontTheme]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -256,6 +267,12 @@ const AdminPage = () => {
     }
   };
 
+  const handleFontThemeChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextTheme = event.target.value === 'franklin' ? 'franklin' : 'default';
+    setFontTheme(nextTheme);
+    setStoredFontTheme(nextTheme);
+  };
+
   const handleVerify = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAuthMessage(null);
@@ -379,6 +396,21 @@ const AdminPage = () => {
           Выйти
         </button>
       </header>
+      <div className="card">
+        <h3>Оформление шрифтов</h3>
+        <div className="stacked-form">
+          <label className="field">
+            <span>Вариант оформления сайта</span>
+            <select value={fontTheme} onChange={handleFontThemeChange}>
+              <option value="default">Текущие шрифты</option>
+              <option value="franklin">Franklin Gothic (новые)</option>
+            </select>
+            <span className="form-help">
+              Применяется ко всем текущим страницам в этом браузере.
+            </span>
+          </label>
+        </div>
+      </div>
       <div className="card">
         <form className="admin-form" onSubmit={handleSubmit}>
           <div className="form-grid">

@@ -70,6 +70,30 @@ const HomePage = () => {
     });
   };
 
+  const handleOpenProduct = (product: Product) => {
+    openProductModal({
+      id: product.id,
+      name: product.name,
+      priceCents: product.priceCents,
+      description: product.description,
+      sku: product.sku,
+      image: product.images[0],
+      stock: product.stock
+    });
+  };
+
+  const handleNeedPart = (product: Product) => {
+    openNeedPartModal({
+      id: product.id,
+      name: product.name,
+      priceCents: product.priceCents,
+      description: product.description,
+      sku: product.sku,
+      image: product.images[0],
+      stock: product.stock
+    });
+  };
+
   return (
     <div className="page">
       <div className="slider-header">
@@ -100,7 +124,11 @@ const HomePage = () => {
             const isOutOfStock = product.stock === 0;
 
             return (
-              <article key={product.id} className="slide">
+              <article
+                key={product.id}
+                className="slide slide--clickable"
+                onClick={() => handleOpenProduct(product)}
+              >
                 <div className="product-photo">
                   {product.images[0] ? (
                     <img src={product.images[0]} alt={product.name} />
@@ -115,17 +143,10 @@ const HomePage = () => {
                   <div className="product-actions">
                     <button
                       className="ghost-button"
-                      onClick={() =>
-                        openProductModal({
-                          id: product.id,
-                          name: product.name,
-                          priceCents: product.priceCents,
-                          description: product.description,
-                          sku: product.sku,
-                          image: product.images[0],
-                          stock: product.stock
-                        })
-                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleOpenProduct(product);
+                      }}
                     >
                       Подробнее
                     </button>
@@ -135,13 +156,16 @@ const HomePage = () => {
                       ) : (
                         <button
                           className="primary-button"
-                          onClick={() => handleAddToCart(product)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleAddToCart(product);
+                          }}
                         >
                           В корзину
                         </button>
                       )
                     ) : (
-                      <div className="qty-control" role="group" aria-label="Количество товара">
+                      <div className="qty-control" role="group" onClick={(event) => event.stopPropagation()} aria-label="Количество товара">
                         <button
                           type="button"
                           className="qty-button"
@@ -183,17 +207,10 @@ const HomePage = () => {
                       <button
                         type="button"
                         className="text-button need-help-link"
-                        onClick={() =>
-                          openNeedPartModal({
-                            id: product.id,
-                            name: product.name,
-                            priceCents: product.priceCents,
-                            description: product.description,
-                            sku: product.sku,
-                            image: product.images[0],
-                            stock: product.stock
-                          })
-                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleNeedPart(product);
+                        }}
                       >
                         Помогите, нужна деталь
                       </button>
