@@ -199,22 +199,22 @@ const AdminPage = () => {
 
   const setDragImageFromEvent = (event: DragEvent<HTMLDivElement>) => {
     const img = event.currentTarget.querySelector('img');
-    if (!img) {
-      return;
+    if (img) {
+      const rect = img.getBoundingClientRect();
+      if (rect.width && rect.height) {
+        event.dataTransfer.setDragImage(img, rect.width / 2, rect.height / 2);
+        return;
+      }
     }
-    const rect = img.getBoundingClientRect();
-    const clone = img.cloneNode(true) as HTMLImageElement;
-    clone.style.width = `${rect.width}px`;
-    clone.style.height = `${rect.height}px`;
-    clone.style.borderRadius = '12px';
-    clone.style.objectFit = 'cover';
-    clone.style.position = 'absolute';
-    clone.style.top = '-1000px';
-    clone.style.left = '-1000px';
-    clone.style.pointerEvents = 'none';
-    document.body.appendChild(clone);
-    event.dataTransfer.setDragImage(clone, rect.width / 2, rect.height / 2);
-    setTimeout(() => clone.remove(), 0);
+
+    const fallbackRect = event.currentTarget.getBoundingClientRect();
+    if (fallbackRect.width && fallbackRect.height) {
+      event.dataTransfer.setDragImage(
+        event.currentTarget,
+        fallbackRect.width / 2,
+        fallbackRect.height / 2
+      );
+    }
   };
 
   const handleDragStart = (event: DragEvent<HTMLDivElement>, index: number) => {
