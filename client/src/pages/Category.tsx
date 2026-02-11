@@ -128,7 +128,9 @@ const CategoryPage = () => {
                   <h3>{product.name}</h3>
                   <p className="price">{formatPrice(product.priceCents)}</p>
                   {isAdmin && <p className="stock-text">Остаток: {product.stock}</p>}
-                  {product.description && <p className="muted">{product.description}</p>}
+                  {product.description && (
+                    <p className="muted product-description">{product.description}</p>
+                  )}
                   <div className="product-actions">
                     <button
                       className="ghost-button"
