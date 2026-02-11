@@ -84,7 +84,7 @@ const AdminPage = () => {
   const [sku, setSku] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [stock, setStock] = useState('0');
+  const [stock, setStock] = useState('');
   const [category, setCategory] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [existingImages, setExistingImages] = useState<string[]>([]);
@@ -150,7 +150,7 @@ const AdminPage = () => {
     setSku('');
     setDescription('');
     setPrice('');
-    setStock('0');
+    setStock('');
     setEditingId(null);
     setExistingImages([]);
     setNewImages([]);
@@ -277,7 +277,7 @@ const AdminPage = () => {
     setStatus(null);
     setError(null);
 
-    if (!name.trim() || !sku.trim() || !price.trim() || stock.trim() === '' || !category) {
+    if (!name.trim() || !sku.trim() || !price.trim() || !category) {
       setError('Заполните название, SKU, цену и категорию.');
       return;
     }
@@ -289,7 +289,8 @@ const AdminPage = () => {
     formData.append('sku', sku.trim());
     formData.append('description', description.trim());
     formData.append('price', price.trim());
-    formData.append('stock', stock.trim());
+    const stockValue = stock.trim() === '' ? '0' : stock.trim();
+    formData.append('stock', stockValue);
     formData.append('category', category);
     formData.append('showInSlider', showInSlider ? 'true' : 'false');
     formData.append('isHidden', isHidden ? 'true' : 'false');
@@ -332,7 +333,7 @@ const AdminPage = () => {
     setSku(product.sku);
     setDescription(product.description);
     setPrice(formatPriceInput(product.priceCents));
-    setStock(String(product.stock ?? 0));
+    setStock(product.stock === 0 ? '' : String(product.stock ?? 0));
     setCategory(product.category);
     setExistingImages(product.images);
     setShowInSlider(product.showInSlider);
@@ -600,9 +601,14 @@ const AdminPage = () => {
                 type="number"
                 min="0"
                 step="1"
+                placeholder="0"
                 value={stock}
                 onChange={(event) => setStock(event.target.value)}
-                required
+                onFocus={() => {
+                  if (stock === '0') {
+                    setStock('');
+                  }
+                }}
               />
             </label>
 

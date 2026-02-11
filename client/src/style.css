@@ -613,7 +613,7 @@ h3 {
   border: 1px solid var(--border);
   width: 100%;
   max-width: 320px;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 3 / 4;
   align-self: center;
 }
 
@@ -1279,7 +1279,7 @@ input[type='file'] {
 
 .cart-thumb {
   width: 120px;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 3 / 4;
   border-radius: 12px;
   background: var(--accent-soft);
   border: 1px dashed rgba(0, 0, 0, 0.2);
