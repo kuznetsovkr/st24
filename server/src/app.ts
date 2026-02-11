@@ -92,6 +92,27 @@ const parseSliderOrder = (value?: string) => {
   return parsed;
 };
 
+const parseImageOrder = (value?: string) => {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed
+      .filter((item) => typeof item === 'string')
+      .map((item) => {
+        const trimmed = item.split('?')[0];
+        const parts = trimmed.split('/');
+        return parts[parts.length - 1] || trimmed;
+      });
+  } catch {
+    return null;
+  }
+};
+
 const parseStock = (value?: string) => {
   if (value === undefined || value === '') {
     return 0;
@@ -344,6 +365,10 @@ export const createApp = () => {
 
     const files = (req.files ?? []) as Express.Multer.File[];
     const filenames = files.map((file) => file.filename);
+    const imagesOrder =
+      typeof req.body.imagesOrder === 'string'
+        ? parseImageOrder(req.body.imagesOrder)
+        : null;
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     const sku = typeof req.body.sku === 'string' ? req.body.sku.trim() : '';
     const description =
@@ -410,6 +435,18 @@ export const createApp = () => {
     } else if (replaceImages) {
       images = [];
       removeAfterUpdate = currentImages;
+    } else if (imagesOrder && imagesOrder.length > 0) {
+      const available = new Set(currentImages);
+      const ordered: string[] = [];
+      const seen = new Set<string>();
+      for (const entry of imagesOrder) {
+        if (available.has(entry) && !seen.has(entry)) {
+          ordered.push(entry);
+          seen.add(entry);
+        }
+      }
+      const missing = currentImages.filter((entry) => !seen.has(entry));
+      images = [...ordered, ...missing];
     }
 
     try {

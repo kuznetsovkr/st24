@@ -1,4 +1,5 @@
-import { useRef } from 'react';
+import { useEffect, useState } from 'react';
+import type { MouseEvent } from 'react';
 
 type ProductImageSliderProps = {
   images?: string[];
@@ -7,62 +8,103 @@ type ProductImageSliderProps = {
 };
 
 const ProductImageSlider = ({ images = [], alt, className }: ProductImageSliderProps) => {
-  const trackRef = useRef<HTMLDivElement | null>(null);
   const slides = images.filter(Boolean);
   const hasSlides = slides.length > 0;
   const canSlide = slides.length > 1;
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  const handleSlide = (direction: 'prev' | 'next') => {
-    const track = trackRef.current;
-    if (!track) {
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [slides.join('|')]);
+
+  useEffect(() => {
+    if (activeIndex >= slides.length) {
+      setActiveIndex(0);
+    }
+  }, [activeIndex, slides.length]);
+
+  const showIndex = (index: number) => {
+    if (!slides.length) {
       return;
     }
-    const firstSlide = track.querySelector<HTMLElement>('.product-image-slide');
-    const styles = window.getComputedStyle(track);
-    const gapValue = styles.columnGap || styles.gap || '0';
-    const gap = Number.parseFloat(gapValue) || 0;
-    const slideWidth = firstSlide?.getBoundingClientRect().width ?? track.clientWidth;
-    const offset = slideWidth + gap;
-    track.scrollBy({
-      left: direction === 'next' ? offset : -offset,
-      behavior: 'smooth'
-    });
+    const nextIndex = (index + slides.length) % slides.length;
+    setActiveIndex(nextIndex);
   };
 
+  const handlePrev = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    showIndex(activeIndex - 1);
+  };
+
+  const handleNext = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    showIndex(activeIndex + 1);
+  };
+
+  const handleHover = (event: MouseEvent<HTMLDivElement>) => {
+    if (!canSlide) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width) {
+      return;
+    }
+    const x = event.clientX - rect.left;
+    const ratio = x / rect.width;
+    const index = Math.min(slides.length - 1, Math.max(0, Math.floor(ratio * slides.length)));
+    setActiveIndex((prev) => (prev === index ? prev : index));
+  };
+
+  const activeSrc = slides[activeIndex];
+
   return (
-    <div className={`${className ?? ''} product-image-slider`.trim()}>
-      {hasSlides ? (
-        <div className="product-image-track" ref={trackRef}>
-          {slides.map((src, index) => (
-            <div className="product-image-slide" key={`${src}-${index}`}>
-              <img src={src} alt={`${alt} ${index + 1}`} loading="lazy" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <span>Фото</span>
-      )}
+    <div className="product-image-slider">
+      <div className={`${className ?? ''} product-image-frame`.trim()}>
+        {hasSlides ? (
+          <>
+            <img src={activeSrc} alt={`${alt} ${activeIndex + 1}`} loading="lazy" />
+            {canSlide && (
+              <div
+                className="product-image-hotspots"
+                onMouseMove={handleHover}
+                onMouseEnter={handleHover}
+                aria-hidden="true"
+              />
+            )}
+          </>
+        ) : (
+          <span>Фото</span>
+        )}
+      </div>
       {canSlide && (
         <div className="product-image-controls">
           <button
             type="button"
-            className="product-image-control"
+            className="product-image-arrow"
             aria-label="Предыдущее фото"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleSlide('prev');
-            }}
+            onClick={handlePrev}
           >
             {'<'}
           </button>
+          <div className="product-image-dots">
+            {slides.map((_, index) => (
+              <button
+                key={`dot-${index}`}
+                type="button"
+                className={`product-image-dot${index === activeIndex ? ' is-active' : ''}`}
+                aria-label={`Фото ${index + 1}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  showIndex(index);
+                }}
+              />
+            ))}
+          </div>
           <button
             type="button"
-            className="product-image-control"
+            className="product-image-arrow"
             aria-label="Следующее фото"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleSlide('next');
-            }}
+            onClick={handleNext}
           >
             {'>'}
           </button>

@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, FormEvent } from 'react';
+import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import {
   clearAuthToken,
   createProduct,
@@ -35,6 +35,20 @@ const copyFileToMemory = async (file: File) => {
   const buffer = await file.arrayBuffer();
   return new File([buffer], file.name, { type: file.type, lastModified: file.lastModified });
 };
+
+const moveItem = <T,>(items: T[], from: number, to: number) => {
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+};
+
+const getImageName = (value: string) => {
+  const trimmed = value.split('?')[0];
+  const parts = trimmed.split('/');
+  return parts[parts.length - 1] || trimmed;
+};
+
 
 
 const formatPriceInput = (priceCents: number) => {
@@ -76,6 +90,8 @@ const AdminPage = () => {
   const [existingImages, setExistingImages] = useState<string[]>([]);
   const [newImages, setNewImages] = useState<File[]>([]);
   const [newPreviews, setNewPreviews] = useState<string[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [showInSlider, setShowInSlider] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const [sliderOrder, setSliderOrder] = useState('0');
@@ -181,6 +197,81 @@ const AdminPage = () => {
     }
   };
 
+  const setDragImageFromEvent = (event: DragEvent<HTMLDivElement>) => {
+    const img = event.currentTarget.querySelector('img');
+    if (!img) {
+      return;
+    }
+    const rect = img.getBoundingClientRect();
+    const clone = img.cloneNode(true) as HTMLImageElement;
+    clone.style.width = `${rect.width}px`;
+    clone.style.height = `${rect.height}px`;
+    clone.style.borderRadius = '12px';
+    clone.style.objectFit = 'cover';
+    clone.style.position = 'absolute';
+    clone.style.top = '-1000px';
+    clone.style.left = '-1000px';
+    clone.style.pointerEvents = 'none';
+    document.body.appendChild(clone);
+    event.dataTransfer.setDragImage(clone, rect.width / 2, rect.height / 2);
+    setTimeout(() => clone.remove(), 0);
+  };
+
+  const handleDragStart = (event: DragEvent<HTMLDivElement>, index: number) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(index));
+    setDragImageFromEvent(event);
+    setDragIndex(index);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>, index: number) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>, index: number) => {
+    const related = event.relatedTarget as Node | null;
+    if (related && event.currentTarget.contains(related)) {
+      return;
+    }
+    if (dragOverIndex === index) {
+      setDragOverIndex(null);
+    }
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>, index: number) => {
+    event.preventDefault();
+    if (dragIndex === null) {
+      return;
+    }
+    if (dragIndex !== index) {
+      setNewImages((prev) => moveItem(prev, dragIndex, index));
+      setNewPreviews((prev) => moveItem(prev, dragIndex, index));
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleExistingDrop = (event: DragEvent<HTMLDivElement>, index: number) => {
+    event.preventDefault();
+    if (dragIndex === null) {
+      return;
+    }
+    if (dragIndex !== index) {
+      setExistingImages((prev) => moveItem(prev, dragIndex, index));
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setStatus(null);
@@ -207,6 +298,10 @@ const AdminPage = () => {
     if (newImages.length > 0) {
       newImages.forEach((file) => formData.append('images', file));
       formData.append('replaceImages', 'true');
+    }
+    if (editingId && newImages.length === 0 && existingImages.length > 0) {
+      const order = existingImages.map(getImageName);
+      formData.append('imagesOrder', JSON.stringify(order));
     }
 
     try {
@@ -583,8 +678,19 @@ const AdminPage = () => {
             <div>
               <p className="muted">Текущие изображения</p>
               <div className="image-preview">
-                {existingImages.map((src) => (
-                  <img key={src} src={src} alt="Изображение товара" />
+                {existingImages.map((src, index) => (
+                  <div
+                    className={`image-preview-item${dragIndex === index ? ' is-dragging' : ''}${dragOverIndex === index ? ' is-drag-over' : ''}`}
+                    key={src}
+                    draggable
+                    onDragStart={(event) => handleDragStart(event, index)}
+                    onDragOver={(event) => handleDragOver(event, index)}
+                    onDrop={(event) => handleExistingDrop(event, index)}
+                    onDragLeave={(event) => handleDragLeave(event, index)}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <img src={src} alt="Изображение товара" />
+                  </div>
                 ))}
               </div>
             </div>
@@ -596,8 +702,17 @@ const AdminPage = () => {
               </p>
               <div className="image-preview">
                 {newPreviews.map((src, index) => (
-                  <div className="image-preview-item" key={`${src}-${index}`}>
-                    <img src={src} alt={`Удалить ${index + 1}`} />
+                  <div
+                    className={`image-preview-item${dragIndex === index ? ' is-dragging' : ''}${dragOverIndex === index ? ' is-drag-over' : ''}`}
+                    key={`${src}-${index}`}
+                    draggable
+                    onDragStart={(event) => handleDragStart(event, index)}
+                    onDragOver={(event) => handleDragOver(event, index)}
+                    onDrop={(event) => handleDrop(event, index)}
+                    onDragLeave={(event) => handleDragLeave(event, index)}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <img src={src} alt={`Изображение ${index + 1}`} />
                     <button
                       type="button"
                       className="image-preview-remove"
