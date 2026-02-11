@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import {
   clearAuthToken,
@@ -30,6 +30,12 @@ const readFileAsDataUrl = (file: File) =>
     reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
     reader.readAsDataURL(file);
   });
+
+const copyFileToMemory = async (file: File) => {
+  const buffer = await file.arrayBuffer();
+  return new File([buffer], file.name, { type: file.type, lastModified: file.lastModified });
+};
+
 
 const formatPriceInput = (priceCents: number) => {
   const value = (priceCents / 100).toFixed(2);
@@ -151,11 +157,27 @@ const AdminPage = () => {
     }
 
     try {
-      const previews = await Promise.all(limited.map(readFileAsDataUrl));
-      setNewImages(limited);
-      setNewPreviews(previews);
+      const prepared = await Promise.all(
+        limited.map(async (file) => {
+          const [preview, memoryFile] = await Promise.all([
+            readFileAsDataUrl(file),
+            copyFileToMemory(file)
+          ]);
+          return { preview, file: memoryFile };
+        })
+      );
+      setNewImages(prepared.map((item) => item.file));
+      setNewPreviews(prepared.map((item) => item.preview));
     } catch {
       setError('Не удалось обработать изображения.');
+    }
+  };
+
+  const handleRemoveNewImage = (index: number) => {
+    setNewImages((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+    setNewPreviews((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -574,7 +596,16 @@ const AdminPage = () => {
               </p>
               <div className="image-preview">
                 {newPreviews.map((src, index) => (
-                  <img key={`${src}-${index}`} src={src} alt={`Изображение ${index + 1}`} />
+                  <div className="image-preview-item" key={`${src}-${index}`}>
+                    <img src={src} alt={`Удалить ${index + 1}`} />
+                    <button
+                      type="button"
+                      className="image-preview-remove"
+                      onClick={() => handleRemoveNewImage(index)}
+                    >
+                      Удалить
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

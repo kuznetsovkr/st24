@@ -7,6 +7,7 @@ type ProductPreview = {
   priceCents: number;
   description?: string;
   image?: string;
+  images?: string[];
   sku?: string;
   stock?: number;
 };

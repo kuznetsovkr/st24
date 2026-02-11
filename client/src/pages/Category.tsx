@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchProducts } from '../api';
 import type { Product } from '../api';
+import ProductImageSlider from '../components/ProductImageSlider.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
@@ -65,6 +66,7 @@ const CategoryPage = () => {
       description: product.description,
       sku: product.sku,
       image: product.images[0],
+      images: product.images,
       stock: product.stock
     });
   };
@@ -77,6 +79,7 @@ const CategoryPage = () => {
       description: product.description,
       sku: product.sku,
       image: product.images[0],
+      images: product.images,
       stock: product.stock
     });
   };
@@ -116,13 +119,11 @@ const CategoryPage = () => {
                 className="product-card product-card--clickable"
                 onClick={() => handleOpenProduct(product)}
               >
-                <div className="product-image">
-                  {product.images[0] ? (
-                    <img src={product.images[0]} alt={product.name} />
-                  ) : (
-                    <span>Фото</span>
-                  )}
-                </div>
+                <ProductImageSlider
+                  className="product-image"
+                  images={product.images}
+                  alt={product.name}
+                />
                 <div className="product-meta">
                   <h3>{product.name}</h3>
                   <p className="price">{formatPrice(product.priceCents)}</p>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchProducts } from '../api';
 import type { Product } from '../api';
+import ProductImageSlider from '../components/ProductImageSlider.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
@@ -78,6 +79,7 @@ const HomePage = () => {
       description: product.description,
       sku: product.sku,
       image: product.images[0],
+      images: product.images,
       stock: product.stock
     });
   };
@@ -90,6 +92,7 @@ const HomePage = () => {
       description: product.description,
       sku: product.sku,
       image: product.images[0],
+      images: product.images,
       stock: product.stock
     });
   };
@@ -129,13 +132,11 @@ const HomePage = () => {
                 className="slide slide--clickable"
                 onClick={() => handleOpenProduct(product)}
               >
-                <div className="product-photo">
-                  {product.images[0] ? (
-                    <img src={product.images[0]} alt={product.name} />
-                  ) : (
-                    <span>Фото</span>
-                  )}
-                </div>
+                <ProductImageSlider
+                  className="product-photo"
+                  images={product.images}
+                  alt={product.name}
+                />
                 <div className="product-info">
                   <h3>{product.name}</h3>
                   <p className="price">{formatPrice(product.priceCents)}</p>

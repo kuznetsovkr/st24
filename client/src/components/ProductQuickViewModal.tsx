@@ -1,3 +1,4 @@
+import ProductImageSlider from './ProductImageSlider.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
@@ -11,6 +12,13 @@ const ProductQuickViewModal = () => {
     return null;
   }
 
+  const images = product.images?.length
+    ? product.images
+    : product.image
+    ? [product.image]
+    : [];
+  const previewImage = images[0];
+
   const quantity = getQuantity(product.id);
   const isOutOfStock = product.stock === 0;
 
@@ -19,7 +27,7 @@ const ProductQuickViewModal = () => {
       id: product.id,
       name: product.name,
       priceCents: product.priceCents,
-      image: product.image,
+      image: previewImage,
       stock: product.stock
     });
   };
@@ -50,11 +58,7 @@ const ProductQuickViewModal = () => {
             </svg>
           </button>
         </div>
-        {product.image && (
-          <div className="modal-image">
-            <img src={product.image} alt={product.name} />
-          </div>
-        )}
+        <ProductImageSlider className="modal-image" images={images} alt={product.name} />
         {product.sku && <p className="muted">SKU: {product.sku}</p>}
         <p className="price">{formatPrice(product.priceCents)}</p>
         <p className="muted">
