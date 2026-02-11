@@ -79,6 +79,8 @@ const AdminPage = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockSort, setStockSort] = useState<'none' | 'desc' | 'asc'>('none');
 
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -195,6 +197,10 @@ const AdminPage = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleRemoveExistingImage = (index: number) => {
+    setExistingImages((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const setDragImageFromEvent = (event: DragEvent<HTMLDivElement>) => {
@@ -440,6 +446,39 @@ const AdminPage = () => {
     setAuthUser(null);
     setAuthStatus('guest');
   };
+
+  const handleStockSortToggle = () => {
+    setStockSort((prev) => {
+      if (prev === 'none') {
+        return 'desc';
+      }
+      if (prev === 'desc') {
+        return 'asc';
+      }
+      return 'none';
+    });
+  };
+
+  const categoryNameBySlug = categories.reduce<Record<string, string>>((acc, item) => {
+    acc[item.slug] = item.name;
+    return acc;
+  }, {});
+
+  const filteredProducts =
+    categoryFilter === 'all'
+      ? products
+      : products.filter((product) => product.category === categoryFilter);
+
+  const displayedProducts =
+    stockSort === 'none'
+      ? filteredProducts
+      : [...filteredProducts].sort((a, b) => {
+          const aStock = a.stock ?? 0;
+          const bStock = b.stock ?? 0;
+          return stockSort === 'desc' ? bStock - aStock : aStock - bStock;
+        });
+
+  const stockSortLabel = stockSort === 'desc' ? '↓' : stockSort === 'asc' ? '↑' : '';
 
   if (authStatus === 'checking') {
     return (
@@ -696,6 +735,16 @@ const AdminPage = () => {
                     onDragEnd={handleDragEnd}
                   >
                     <img src={src} alt="Изображение товара" />
+                    <button
+                      type="button"
+                      className="image-preview-remove"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleRemoveExistingImage(index);
+                      }}
+                    >
+                      Удалить
+                    </button>
                   </div>
                 ))}
               </div>
@@ -757,28 +806,50 @@ const AdminPage = () => {
 
       <div className="card">
         <h3>Добавленные товары</h3>
-        <div className="admin-view-toggle">
-          <button
-            type="button"
-            className={`ghost-button${viewMode === 'grid' ? ' is-active' : ''}`}
-            onClick={() => setViewMode('grid')}
-          >
-            Карточки
-          </button>
-          <button
-            type="button"
-            className={`ghost-button${viewMode === 'table' ? ' is-active' : ''}`}
-            onClick={() => setViewMode('table')}
-          >
-            Список
-          </button>
+        <div className="admin-list-controls">
+          <div className="admin-view-toggle">
+            <button
+              type="button"
+              className={`ghost-button${viewMode === 'grid' ? ' is-active' : ''}`}
+              onClick={() => setViewMode('grid')}
+            >
+              Карточки
+            </button>
+            <button
+              type="button"
+              className={`ghost-button${viewMode === 'table' ? ' is-active' : ''}`}
+              onClick={() => setViewMode('table')}
+            >
+              Список
+            </button>
+          </div>
+          <div className="admin-filters">
+            <label className="admin-filter">
+              <span>Категория</span>
+              <select
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+              >
+                <option value="all">Все категории</option>
+                {categories.map((item) => (
+                  <option key={item.slug} value={item.slug}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
         {isLoading && <p className="muted">Загрузка списка...</p>}
-        {!isLoading && products.length === 0 && <p className="muted">Пока товаров нет.</p>}
-        {!isLoading && products.length > 0 && (
+        {!isLoading && displayedProducts.length === 0 && (
+          <p className="muted">
+            {products.length === 0 ? 'Пока товаров нет.' : 'Нет товаров для выбранной категории.'}
+          </p>
+        )}
+        {!isLoading && displayedProducts.length > 0 && (
           <>
             <div className={viewMode === 'grid' ? 'products-grid' : 'products-grid is-hidden'}>
-              {products.map((product) => (
+              {displayedProducts.map((product) => (
                 <article key={product.id} className="product-card">
                   <div className="product-image">
                     {product.images[0] ? (
@@ -817,15 +888,36 @@ const AdminPage = () => {
                   <tr>
                     <th>Фото</th>
                     <th>Название</th>
+                    <th>Категория</th>
                     <th>SKU</th>
                     <th>Цена</th>
-                    <th>Остаток</th>
+                    <th
+                      className="admin-table-sort-cell"
+                      aria-sort={
+                        stockSort === 'none'
+                          ? 'none'
+                          : stockSort === 'asc'
+                          ? 'ascending'
+                          : 'descending'
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="admin-table-sort"
+                        onClick={handleStockSortToggle}
+                      >
+                        Остаток
+                        {stockSortLabel && (
+                          <span className="admin-table-sort-indicator">{stockSortLabel}</span>
+                        )}
+                      </button>
+                    </th>
                     <th>Статус</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((product) => (
+                  {displayedProducts.map((product) => (
                     <tr key={product.id}>
                       <td>
                         <div className="admin-table-thumb">
@@ -837,6 +929,9 @@ const AdminPage = () => {
                         </div>
                       </td>
                       <td>{product.name}</td>
+                      <td className="muted">
+                        {categoryNameBySlug[product.category] ?? product.category}
+                      </td>
                       <td className="muted">{product.sku}</td>
                       <td>{formatPriceLabel(product.priceCents)}</td>
                       <td>{product.stock}</td>

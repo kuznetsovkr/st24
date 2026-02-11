@@ -1018,6 +1018,39 @@ input[type='file'] {
   margin-bottom: 12px;
 }
 
+.admin-list-controls .admin-view-toggle {
+  margin-bottom: 0;
+}
+.admin-list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.admin-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  min-width: 220px;
+}
+
+.admin-filter span {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .ghost-button.is-active {
   border-color: var(--primary);
   color: var(--text);
@@ -1047,6 +1080,24 @@ input[type='file'] {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.admin-table-sort {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.admin-table-sort-indicator {
+  font-size: 12px;
 }
 
 .admin-table-thumb {
