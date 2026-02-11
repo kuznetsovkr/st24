@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import {
   clearAuthToken,
@@ -49,6 +49,8 @@ const AdminPage = () => {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'code' | 'password'>('code');
+  const [password, setPassword] = useState('');
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [fontTheme, setFontTheme] = useState<FontTheme>(() => getStoredFontTheme());
@@ -258,7 +260,13 @@ const AdminPage = () => {
 
     setIsSendingCode(true);
     try {
-      await requestAuthCode(phone.trim());
+      const result = await requestAuthCode(phone.trim());
+      if (result.requiresPassword) {
+        setAuthMode('password');
+        setAuthMessage('Введите пароль администратора.');
+        return;
+      }
+      setAuthMode('code');
       setAuthMessage('Код отправлен. Проверьте консоль сервера.');
     } catch {
       setAuthMessage('Не удалось отправить код.');
@@ -276,21 +284,34 @@ const AdminPage = () => {
   const handleVerify = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAuthMessage(null);
-    if (!phone.trim() || !code.trim()) {
-      setAuthMessage('Введите телефон и код.');
+    if (!phone.trim()) {
+      setAuthMessage('Введите номер телефона.');
+      return;
+    }
+    if (authMode === 'password') {
+      if (!password.trim()) {
+        setAuthMessage('Введите пароль.');
+        return;
+      }
+    } else if (!code.trim()) {
+      setAuthMessage('Введите код.');
       return;
     }
 
     setIsVerifying(true);
     try {
-      const result = await verifyAuthCode(phone.trim(), code.trim());
+      const result =
+        authMode === 'password'
+          ? await verifyAuthCode(phone.trim(), '', password.trim())
+          : await verifyAuthCode(phone.trim(), code.trim());
       setAuthToken(result.token);
       setAuthUser(result.user);
       setAuthStatus('auth');
       setCode('');
+      setPassword('');
       setAuthMessage(null);
     } catch {
-      setAuthMessage('Неверный код.');
+      setAuthMessage(authMode === 'password' ? 'Неверный пароль.' : 'Неверный код.');
     } finally {
       setIsVerifying(false);
     }
@@ -331,10 +352,16 @@ const AdminPage = () => {
                 type="tel"
                 placeholder="+7"
                 value={phone}
-                onChange={(event) => setPhone(event.target.value)}
+                onChange={(event) => {
+                  setPhone(event.target.value);
+                  setAuthMode('code');
+                  setCode('');
+                  setPassword('');
+                }}
                 required
               />
             </label>
+            {authMode === 'code' && (
             <div className="button-row">
               <button
                 type="button"
@@ -345,13 +372,18 @@ const AdminPage = () => {
                 {isSendingCode ? 'Отправляем...' : 'Получить код'}
               </button>
             </div>
+            )}
             <label className="field">
-              <span>Код из консоли</span>
+              <span>{authMode === 'password' ? 'Пароль администратора' : 'Код из консоли'}</span>
               <input
-                type="text"
-                inputMode="numeric"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
+                type={authMode === 'password' ? 'password' : 'text'}
+                inputMode={authMode === 'password' ? undefined : 'numeric'}
+                value={authMode === 'password' ? password : code}
+                onChange={(event) =>
+                  authMode === 'password'
+                    ? setPassword(event.target.value)
+                    : setCode(event.target.value)
+                }
                 required
               />
             </label>

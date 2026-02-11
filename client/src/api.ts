@@ -218,18 +218,21 @@ export const deleteProduct = async (id: string) => {
 };
 
 export const requestAuthCode = async (phone: string) => {
-  return fetchJson<{ ok: boolean; expiresInMinutes: number }>(`${API_BASE}/api/auth/request-code`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone })
-  });
+  return fetchJson<{ ok: boolean; expiresInMinutes: number; requiresPassword?: boolean }>(
+    `${API_BASE}/api/auth/request-code`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    }
+  );
 };
 
-export const verifyAuthCode = async (phone: string, code: string) => {
+export const verifyAuthCode = async (phone: string, code: string, password?: string) => {
   return fetchJson<{ token: string; user: AuthUser }>(`${API_BASE}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, code })
+    body: JSON.stringify({ phone, code, password })
   });
 };
 

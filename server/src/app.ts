@@ -61,6 +61,7 @@ const formatPhoneE164 = (value: string) => {
   return `+${normalized}`;
 };
 const getAdminPhone = () => normalizePhone(process.env.ADMIN_PHONE ?? '79964292550');
+const getAdminPassword = () => process.env.ADMIN_PASSWORD ?? '';
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -721,6 +722,16 @@ export const createApp = () => {
       return;
     }
 
+    if (phone === getAdminPhone()) {
+      const adminPassword = getAdminPassword();
+      if (!adminPassword) {
+        res.status(500).json({ error: 'ADMIN_PASSWORD is not configured' });
+        return;
+      }
+      res.json({ ok: true, expiresInMinutes: 0, requiresPassword: true });
+      return;
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveAuthCode(phone, code, expiresAt);
@@ -732,8 +743,34 @@ export const createApp = () => {
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
     const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
 
-    if (!phone || !code) {
+    if (!phone) {
+      res.status(400).json({ error: 'Телефон обязателен' });
+      return;
+    }
+
+    if (phone === getAdminPhone()) {
+      const adminPassword = getAdminPassword();
+      if (!adminPassword) {
+        res.status(500).json({ error: 'ADMIN_PASSWORD is not configured' });
+        return;
+      }
+      if (!password.trim()) {
+        res.status(400).json({ error: 'Пароль обязателен' });
+        return;
+      }
+      if (password !== adminPassword) {
+        res.status(400).json({ error: 'Неверный пароль' });
+        return;
+      }
+      const user = await upsertUser(phone, 'admin');
+      const token = signToken({ userId: user.id, phone: user.phone, role: user.role });
+      res.json({ token, user: mapUser(user) });
+      return;
+    }
+
+    if (!code) {
       res.status(400).json({ error: 'Телефон и код обязательны' });
       return;
     }
