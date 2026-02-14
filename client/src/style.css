@@ -1490,7 +1490,6 @@ input[type='file'] {
   border-radius: 12px;
   border: 1px solid var(--border);
   padding: 6px 8px;
-  background: var(--surface-soft);
 }
 
 .qty-button {
@@ -1498,7 +1497,6 @@ input[type='file'] {
   height: 28px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--surface-soft);
   color: var(--text);
   font-weight: var(--weight-semibold);
   cursor: pointer;
@@ -1522,7 +1520,6 @@ input[type='file'] {
   border: 1px solid var(--border);
   text-align: center;
   font-weight: var(--weight-semibold);
-  background: var(--surface-soft);
   appearance: textfield;
   -moz-appearance: textfield;
 }

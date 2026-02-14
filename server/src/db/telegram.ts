@@ -74,3 +74,57 @@ export const deactivateTelegramSubscriber = async (chatId: string) => {
     [chatId]
   );
 };
+
+export const upsertTelegramOrderSubscriber = async (
+  input: TelegramSubscriberInput
+): Promise<TelegramSubscriberRow> => {
+  const result = await query(
+    `
+      INSERT INTO telegram_order_subscribers (chat_id, username, first_name, last_name, language_code, chat_type, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+      ON CONFLICT (chat_id) DO UPDATE
+        SET username = EXCLUDED.username,
+            first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            language_code = EXCLUDED.language_code,
+            chat_type = EXCLUDED.chat_type,
+            is_active = TRUE,
+            updated_at = NOW()
+      RETURNING chat_id, username, first_name, last_name, language_code, chat_type, is_active, created_at, updated_at;
+    `,
+    [
+      input.chatId,
+      input.username ?? null,
+      input.firstName ?? null,
+      input.lastName ?? null,
+      input.languageCode ?? null,
+      input.chatType ?? null
+    ]
+  );
+
+  return result.rows[0] as TelegramSubscriberRow;
+};
+
+export const listTelegramOrderSubscribers = async (): Promise<TelegramSubscriberRow[]> => {
+  const result = await query(
+    `
+      SELECT chat_id, username, first_name, last_name, language_code, chat_type, is_active, created_at, updated_at
+      FROM telegram_order_subscribers
+      WHERE is_active = TRUE;
+    `
+  );
+
+  return result.rows as TelegramSubscriberRow[];
+};
+
+export const deactivateTelegramOrderSubscriber = async (chatId: string) => {
+  await query(
+    `
+      UPDATE telegram_order_subscribers
+      SET is_active = FALSE,
+          updated_at = NOW()
+      WHERE chat_id = $1;
+    `,
+    [chatId]
+  );
+};

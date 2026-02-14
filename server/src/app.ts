@@ -40,7 +40,12 @@ import {
   upsertUser
 } from './db/users';
 import { authenticate, requireAdmin } from './middleware/auth';
-import { handleTelegramUpdate, sendTelegramMessage } from './telegram';
+import {
+  handleTelegramOrderUpdate,
+  handleTelegramUpdate,
+  sendOrderTelegramMessage,
+  sendTelegramMessage
+} from './telegram';
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
 
 const CODE_TTL_MINUTES = 5;
@@ -65,6 +70,8 @@ const getAdminPassword = () => process.env.ADMIN_PASSWORD ?? '';
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
+const getTelegramOrdersWebhookSecret = () =>
+  process.env.TELEGRAM_ORDERS_WEBHOOK_SECRET;
 
 const parsePriceCents = (value?: string) => {
   if (!value) {
@@ -160,6 +167,33 @@ const mapOrderItem = (row: OrderItemRow) => ({
   quantity: row.quantity
 });
 
+const formatRubles = (cents: number) => `${(cents / 100).toFixed(2)} ₽`;
+
+const buildPaidOrderNotification = (order: OrderRow, items: OrderItemRow[]) => {
+  const pickupPoint = order.pickup_point?.trim() ? order.pickup_point : 'не указан';
+  const orderItemsBlock =
+    items.length > 0
+      ? items
+          .map((item, index) => {
+            const lineTotal = item.price_cents * item.quantity;
+            return `${index + 1}. ${item.name} x${item.quantity} — ${formatRubles(lineTotal)}`;
+          })
+          .join('\n')
+      : 'Состав заказа пуст';
+
+  return [
+    'Новый оплаченный заказ',
+    `Номер заказа: ${order.order_number}`,
+    `ФИО: ${order.full_name}`,
+    `Телефон: ${order.phone}`,
+    `Email: ${order.email}`,
+    'Состав заказа:',
+    orderItemsBlock,
+    `Стоимость: ${formatRubles(order.total_cents)}`,
+    `Пункт выдачи: ${pickupPoint}`
+  ].join('\n');
+};
+
 const mapUser = (user: {
   id: string;
   phone: string;
@@ -177,8 +211,7 @@ const mapUser = (user: {
 const isUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
-const isTelegramWebhookAllowed = (req: Request) => {
-  const secret = getTelegramWebhookSecret();
+const isTelegramWebhookAllowed = (req: Request, secret?: string) => {
   if (!secret) {
     return true;
   }
@@ -677,12 +710,37 @@ export const createApp = () => {
     }
 
     try {
-      const order = await markOrderPaid(req.params.id, userId);
-      if (!order) {
+      const existingOrder = await findOrderByIdForUser(req.params.id, userId);
+      if (!existingOrder) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
+
+      let order = existingOrder;
+      if (existingOrder.status !== 'paid') {
+        const paidOrder = await markOrderPaid(req.params.id, userId);
+        if (!paidOrder) {
+          res.status(404).json({ error: 'Order not found' });
+          return;
+        }
+        order = paidOrder;
+      }
+
       await replaceCartItems(userId, []);
+
+      if (existingOrder.status !== 'paid') {
+        try {
+          const orderItems = await listOrderItemsForUser(order.id, userId);
+          const notification = buildPaidOrderNotification(order, orderItems);
+          await sendOrderTelegramMessage(notification);
+        } catch (error) {
+          console.error(
+            `Failed to send paid order notification for order ${order.id}`,
+            error
+          );
+        }
+      }
+
       res.json({ order: mapOrder(order) });
     } catch {
       res.status(500).json({ error: 'Failed to update order' });
@@ -690,13 +748,28 @@ export const createApp = () => {
   });
 
   app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
-    if (!isTelegramWebhookAllowed(req)) {
+    if (!isTelegramWebhookAllowed(req, getTelegramWebhookSecret())) {
       res.status(403).json({ ok: false });
       return;
     }
 
     try {
       await handleTelegramUpdate(req.body ?? {});
+    } catch {
+      // ignore webhook processing errors
+    }
+
+    res.json({ ok: true });
+  });
+
+  app.post('/api/telegram/orders-webhook', async (req: Request, res: Response) => {
+    if (!isTelegramWebhookAllowed(req, getTelegramOrdersWebhookSecret())) {
+      res.status(403).json({ ok: false });
+      return;
+    }
+
+    try {
+      await handleTelegramOrderUpdate(req.body ?? {});
     } catch {
       // ignore webhook processing errors
     }
