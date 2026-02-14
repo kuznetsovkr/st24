@@ -38,13 +38,7 @@ const CatalogPage = () => {
         <div>
           <p className="eyebrow">Каталог</p>
           <h1>Разделы каталога</h1>
-          <p className="muted">
-            Заготовка для клиентской навигации. Категории можно заменить данными с бэка.
-          </p>
         </div>
-        <Link to="/cart" className="primary-button">
-          Перейти в корзину
-        </Link>
       </header>
       {status === 'loading' && <p className="muted">Загрузка категорий...</p>}
       {status === 'error' && <p className="muted">Не удалось загрузить категории.</p>}

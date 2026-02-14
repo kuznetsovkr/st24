@@ -5,9 +5,15 @@ type ProductImageSliderProps = {
   images?: string[];
   alt: string;
   className?: string;
+  reserveControlsSpace?: boolean;
 };
 
-const ProductImageSlider = ({ images = [], alt, className }: ProductImageSliderProps) => {
+const ProductImageSlider = ({
+  images = [],
+  alt,
+  className,
+  reserveControlsSpace = true
+}: ProductImageSliderProps) => {
   const slides = images.filter(Boolean);
   const hasSlides = slides.length > 0;
   const canSlide = slides.length > 1;
@@ -73,18 +79,21 @@ const ProductImageSlider = ({ images = [], alt, className }: ProductImageSliderP
             )}
           </>
         ) : (
-          <span>Фото</span>
+          <span>{'\u0424\u043e\u0442\u043e'}</span>
         )}
       </div>
-      {canSlide && (
+
+      {hasSlides && canSlide && (
         <div className="product-image-controls">
           <button
             type="button"
-            className="product-image-arrow"
-            aria-label="Предыдущее фото"
+            className="product-image-arrow product-image-arrow--prev"
+            aria-label={'\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u0435 \u0444\u043e\u0442\u043e'}
             onClick={handlePrev}
           >
-            {'<'}
+            <svg xmlns="http://www.w3.org/2000/svg" width="9" height="17" viewBox="0 0 9 17" fill="none" aria-hidden="true">
+              <path d="M0.5 16.5L8.5 8.5L0.5 0.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
           <div className="product-image-dots">
             {slides.map((_, index) => (
@@ -92,7 +101,7 @@ const ProductImageSlider = ({ images = [], alt, className }: ProductImageSliderP
                 key={`dot-${index}`}
                 type="button"
                 className={`product-image-dot${index === activeIndex ? ' is-active' : ''}`}
-                aria-label={`Фото ${index + 1}`}
+                aria-label={`\u0424\u043e\u0442\u043e ${index + 1}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   showIndex(index);
@@ -102,13 +111,19 @@ const ProductImageSlider = ({ images = [], alt, className }: ProductImageSliderP
           </div>
           <button
             type="button"
-            className="product-image-arrow"
-            aria-label="Следующее фото"
+            className="product-image-arrow product-image-arrow--next"
+            aria-label={'\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0435 \u0444\u043e\u0442\u043e'}
             onClick={handleNext}
           >
-            {'>'}
+            <svg xmlns="http://www.w3.org/2000/svg" width="9" height="17" viewBox="0 0 9 17" fill="none" aria-hidden="true">
+              <path d="M0.5 16.5L8.5 8.5L0.5 0.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         </div>
+      )}
+
+      {hasSlides && !canSlide && reserveControlsSpace && (
+        <div className="product-image-controls-placeholder" aria-hidden="true" />
       )}
     </div>
   );

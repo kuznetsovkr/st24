@@ -101,9 +101,7 @@ const HomePage = () => {
     <div className="page">
       <div className="slider-header">
         <div>
-          <p className="eyebrow">Главная</p>
           <h1>Подборка товаров</h1>
-          <p className="muted">Товары для слайдера выбираются вручную в админ-панели.</p>
         </div>
         <div className="slider-controls">
           <button className="slider-button" onClick={() => handleSlide('prev')}>

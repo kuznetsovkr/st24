@@ -15,8 +15,8 @@ const ProductQuickViewModal = () => {
   const images = product.images?.length
     ? product.images
     : product.image
-    ? [product.image]
-    : [];
+      ? [product.image]
+      : [];
   const previewImage = images[0];
 
   const quantity = getQuantity(product.id);
@@ -37,7 +37,6 @@ const ProductQuickViewModal = () => {
       <div className="modal-card modal-card--product" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <p className="eyebrow">Быстрый просмотр</p>
             <h3>{product.name}</h3>
           </div>
           <button className="icon-button" aria-label="Закрыть" onClick={closeProductModal}>
@@ -58,13 +57,41 @@ const ProductQuickViewModal = () => {
             </svg>
           </button>
         </div>
-        <ProductImageSlider className="modal-image" images={images} alt={product.name} />
-        {product.sku && <p className="muted">SKU: {product.sku}</p>}
-        <p className="price">{formatPrice(product.priceCents)}</p>
-        <p className="muted">
-          {product.description ??
-            'Описание появится позже. Добавьте товар в админ-панели и заполните подробности.'}
-        </p>
+
+        <div className="modal-product-layout">
+          <ProductImageSlider className="modal-image" images={images} alt={product.name} reserveControlsSpace={false} />
+
+          <div className="modal-product-content">
+            <div className="modal-product-block">
+              <p className="modal-block-title">Характеристики</p>
+              <ul className="modal-specs-list">
+                <li>Хар. 1</li>
+                <li>Хар. 2</li>
+                <li>Хар. 3</li>
+                <li>Хар. 4</li>
+              </ul>
+            </div>
+
+            <div className="modal-product-block">
+              <p className="modal-block-title">SKU</p>
+              <p className="muted">{product.sku || '—'}</p>
+            </div>
+
+            <div className="modal-product-block">
+              <p className="modal-block-title">Описание</p>
+              <p className="muted">
+                {product.description ??
+                  'Описание появится позже. Добавьте товар в админ-панели и заполните подробности.'}
+              </p>
+            </div>
+
+            <div className="modal-product-block">
+              <p className="modal-block-title">Цена</p>
+              <p className="price">{formatPrice(product.priceCents)}</p>
+            </div>
+          </div>
+        </div>
+
         <div className="modal-actions">
           {quantity === 0 ? (
             isOutOfStock ? (
@@ -117,6 +144,7 @@ const ProductQuickViewModal = () => {
             Закрыть
           </button>
         </div>
+
         {isOutOfStock && (
           <button
             type="button"
