@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
@@ -33,6 +33,22 @@ const AppLayout = ({ children }: Props) => {
   const handleCloseMenu = () => {
     setIsMenuOpen(false);
   };
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const isMenuTopState = isMenuOpen;
+    const hasOverlayOpen = isMenuOpen;
+
+    html.classList.toggle('ui-top-white', isMenuTopState);
+    body.classList.toggle('ui-top-white', isMenuTopState);
+    html.classList.toggle('ui-overlay-open', hasOverlayOpen);
+    body.classList.toggle('ui-overlay-open', hasOverlayOpen);
+
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    const themeColor = isMenuTopState ? '#ffffff' : '#f7f7f7';
+    metaTheme?.setAttribute('content', themeColor);
+  }, [isMenuOpen]);
 
   return (
     <div className="app-shell">
