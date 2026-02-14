@@ -1,6 +1,6 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './layout/AppLayout.tsx';
-import AboutPage from './pages/About.tsx';
+import ContactsPage from './pages/Contacts.tsx';
 import AdminPage from './pages/Admin.tsx';
 import B2BPage from './pages/B2B.tsx';
 import CartPage from './pages/Cart.tsx';
@@ -35,7 +35,8 @@ const App = () => (
               <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/payment/:orderId" element={<PaymentPage />} />
               <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
-              <Route path="/about" element={<AboutPage />} />
+              <Route path="/contacts" element={<ContactsPage />} />
+              <Route path="/about" element={<Navigate to="/contacts" replace />} />
               <Route path="/b2b" element={<B2BPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="/terms" element={<TermsPage />} />

@@ -62,15 +62,15 @@ const AppLayout = ({ children }: Props) => {
           </NavLink>
           <NavLink to="/cart" className={navLinkClass}>
             Корзина
-              <span className="cart-badge" aria-label={`Товаров в корзине: ${totalCount}`}>
+            <span className="cart-badge" aria-label={`Товаров в корзине: ${totalCount}`}>
               {totalCount}
             </span>
           </NavLink>
           <NavLink to="/b2b" className={navLinkClass}>
             Юр. лица
           </NavLink>
-          <NavLink to="/about" className={navLinkClass}>
-            О нас
+          <NavLink to="/contacts" className={navLinkClass}>
+            Контакты
           </NavLink>
         </nav>
         <div className="header-actions">
@@ -106,53 +106,53 @@ const AppLayout = ({ children }: Props) => {
         aria-modal="true"
         aria-hidden={!isMenuOpen}
       >
-          <div className="mobile-menu-header">
-            <button className="icon-button" aria-label="Закрыть" onClick={handleCloseMenu}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="17"
-                height="17"
-                viewBox="0 0 17 17"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M16.5 0.5L0.5 16.5M16.5 16.5L0.5 0.5"
-                  stroke="#433F3C"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
-          <nav className="mobile-menu-nav">
-            <NavLink to="/catalog" className={navLinkClass} onClick={handleCloseMenu}>
-              Каталог
-            </NavLink>
-            <NavLink to="/cart" className={navLinkClass} onClick={handleCloseMenu}>
-              Корзина{' '}
-              <span className="cart-badge" aria-label={`Товаров в корзине: ${totalCount}`}>
-                {totalCount}
-              </span>
-            </NavLink>
-            <NavLink to="/b2b" className={navLinkClass} onClick={handleCloseMenu}>
-              Юр. лица
-            </NavLink>
-            <NavLink to="/about" className={navLinkClass} onClick={handleCloseMenu}>
-              О нас
-            </NavLink>
-            <button
-              type="button"
-              className="nav-link mobile-menu-account"
-              onClick={() => {
-                handleLoginClick();
-                handleCloseMenu();
-              }}
+        <div className="mobile-menu-header">
+          <button className="icon-button" aria-label="Закрыть" onClick={handleCloseMenu}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="17"
+              height="17"
+              viewBox="0 0 17 17"
+              fill="none"
+              aria-hidden="true"
             >
-              Личный кабинет
-            </button>
-          </nav>
+              <path
+                d="M16.5 0.5L0.5 16.5M16.5 16.5L0.5 0.5"
+                stroke="#433F3C"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
+        <nav className="mobile-menu-nav">
+          <NavLink to="/catalog" className={navLinkClass} onClick={handleCloseMenu}>
+            Каталог
+          </NavLink>
+          <NavLink to="/cart" className={navLinkClass} onClick={handleCloseMenu}>
+            Корзина{' '}
+            <span className="cart-badge" aria-label={`Товаров в корзине: ${totalCount}`}>
+              {totalCount}
+            </span>
+          </NavLink>
+          <NavLink to="/b2b" className={navLinkClass} onClick={handleCloseMenu}>
+            Юр. лица
+          </NavLink>
+          <NavLink to="/contacts" className={navLinkClass} onClick={handleCloseMenu}>
+            Контакты
+          </NavLink>
+          <button
+            type="button"
+            className="nav-link mobile-menu-account"
+            onClick={() => {
+              handleLoginClick();
+              handleCloseMenu();
+            }}
+          >
+            Личный кабинет
+          </button>
+        </nav>
+      </div>
       <main className="app-main">{children}</main>
     </div>
   );

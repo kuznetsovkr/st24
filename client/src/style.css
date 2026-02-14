@@ -357,6 +357,88 @@ a {
   margin-bottom: 16px;
 }
 
+.contacts-info-card {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.contacts-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.contacts-info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contacts-info-block .eyebrow{
+  font-weight: var(--weight-bold);
+  text-decoration: underline;
+  text-decoration-color: var(--primary);
+  font-size: 16px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  color: var(--text);
+}
+
+.contacts-inline-link {
+  width: fit-content;
+  font-size: 16px;
+  text-decoration-thickness: 1px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.contacts-hours-item {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.contacts-map-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contacts-map {
+  width: 100%;
+  min-height: 420px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.contacts-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.contacts-map-actions .link-button {
+  font-size: 16px;
+}
+
+.contacts-map-link {
+  align-self: flex-start;
+}
+
+.contacts-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contacts-note-list p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .page--center {
   display: flex;
   align-items: center;
@@ -648,6 +730,14 @@ h3 {
   justify-content: end;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.modal-card--product .need-help-link {
+  order: 3;
+}
+
+.modal-card--product .modal-actions {
+  order: 4;
 }
 
 .modal-image {
@@ -1740,6 +1830,11 @@ input[type='file'] {
     align-items: flex-start;
   }
 
+  .slider-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .slide {
     min-height: 0;
   }
@@ -1755,6 +1850,15 @@ input[type='file'] {
   .app-header {
     flex-wrap: nowrap;
     position: static;
+  }
+
+  .contacts-map {
+    min-height: 320px;
+  }
+
+  .contacts-info-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
   }
 
   .modal-card--product {
