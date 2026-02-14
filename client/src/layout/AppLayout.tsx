@@ -12,7 +12,7 @@ const AppLayout = ({ children }: Props) => {
   const navigate = useNavigate();
   const { totalCount } = useCart();
   const { status } = useAuth();
-  const { openAuthModal } = useUI();
+  const { openAuthModal, productModal } = useUI();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -37,18 +37,21 @@ const AppLayout = ({ children }: Props) => {
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
-    const isMenuTopState = isMenuOpen;
+    const isProductModalTopState = productModal.open;
+    const isMenuTopState = isMenuOpen && !isProductModalTopState;
     const hasOverlayOpen = isMenuOpen;
 
     html.classList.toggle('ui-top-white', isMenuTopState);
     body.classList.toggle('ui-top-white', isMenuTopState);
+    html.classList.toggle('ui-top-dim', isProductModalTopState);
+    body.classList.toggle('ui-top-dim', isProductModalTopState);
     html.classList.toggle('ui-overlay-open', hasOverlayOpen);
     body.classList.toggle('ui-overlay-open', hasOverlayOpen);
 
     const metaTheme = document.querySelector('meta[name="theme-color"]');
-    const themeColor = isMenuTopState ? '#ffffff' : '#f7f7f7';
+    const themeColor = isProductModalTopState ? '#c6c6c6' : isMenuTopState ? '#ffffff' : '#f7f7f7';
     metaTheme?.setAttribute('content', themeColor);
-  }, [isMenuOpen]);
+  }, [isMenuOpen, productModal.open]);
 
   return (
     <div className="app-shell">
