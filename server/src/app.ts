@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { signToken, verifyToken } from './auth';
+import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
 import { findAuthCode, saveAuthCode, deleteAuthCode } from './db/authCodes';
 import { findEmailCode, saveEmailCode, deleteEmailCode } from './db/emailCodes';
 import {
@@ -155,6 +156,7 @@ const mapOrder = (row: OrderRow) => ({
   phone: row.phone,
   email: row.email,
   pickupPoint: row.pickup_point ?? '',
+  deliveryCostCents: row.delivery_cost_cents,
   totalCents: row.total_cents,
   createdAt: row.created_at,
   updatedAt: row.updated_at
@@ -167,7 +169,11 @@ const mapOrderItem = (row: OrderItemRow) => ({
   quantity: row.quantity
 });
 
-const formatRubles = (cents: number) => `${(cents / 100).toFixed(2)} ₽`;
+const formatRubles = (cents: number) =>
+  `${new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(cents / 100)} ₽`;
 
 const buildPaidOrderNotification = (order: OrderRow, items: OrderItemRow[]) => {
   const pickupPoint = order.pickup_point?.trim() ? order.pickup_point : 'не указан';
@@ -190,6 +196,7 @@ const buildPaidOrderNotification = (order: OrderRow, items: OrderItemRow[]) => {
     `✉️ Email: ${order.email}`,
     '📦 Состав заказа:',
     orderItemsBlock,
+    `🚚 Доставка: ${formatRubles(order.delivery_cost_cents)}`,
     `💰 Стоимость: ${formatRubles(order.total_cents)}`,
     `📍 Пункт выдачи: ${pickupPoint}`
   ].join('\n');
@@ -277,6 +284,36 @@ export const createApp = () => {
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
+  });
+
+  app.all('/api/cdek/widget', async (req: Request, res: Response) => {
+    try {
+      const response = await proxyCdekWidgetRequest(req.query, req.body);
+      for (const [key, value] of response.forwardedHeaders) {
+        res.setHeader(key, value);
+      }
+      res.setHeader('X-Service-Version', 'node-1.0.0');
+      res.status(response.status).json(response.body);
+    } catch (error) {
+      if (error instanceof CdekProxyError) {
+        if (error.status >= 500) {
+          console.error('CDEK proxy error', {
+            message: error.message,
+            details: error.details
+          });
+        }
+        res.status(error.status).json({
+          message: error.message,
+          details: error.details
+        });
+        return;
+      }
+
+      const message =
+        error instanceof Error ? error.message : 'Failed to process CDEK request';
+      console.error('CDEK proxy unexpected error', error);
+      res.status(500).json({ message });
+    }
   });
 
   app.get('/api/categories', (_req: Request, res: Response) => {
@@ -590,6 +627,13 @@ export const createApp = () => {
       typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const pickupPoint =
       typeof req.body.pickupPoint === 'string' ? req.body.pickupPoint.trim() : '';
+    const deliveryCostInput = req.body.deliveryCostCents;
+    const deliveryCostCents =
+      typeof deliveryCostInput === 'number'
+        ? Math.round(deliveryCostInput)
+        : typeof deliveryCostInput === 'string' && deliveryCostInput.trim() !== ''
+          ? Number.parseInt(deliveryCostInput, 10)
+          : 0;
 
     const errors: string[] = [];
     if (!fullName) {
@@ -604,6 +648,9 @@ export const createApp = () => {
     if (!pickupPoint) {
       errors.push('Выберите пункт выдачи');
     }
+    if (Number.isNaN(deliveryCostCents) || deliveryCostCents < 0) {
+      errors.push('Некорректная стоимость доставки');
+    }
 
     if (errors.length > 0) {
       res.status(400).json({ errors });
@@ -617,16 +664,18 @@ export const createApp = () => {
         return;
       }
 
-      const totalCents = cartItems.reduce(
+      const itemsTotalCents = cartItems.reduce(
         (sum, item) => sum + item.price_cents * item.quantity,
         0
       );
+      const totalCents = itemsTotalCents + deliveryCostCents;
       const order = await createOrder({
         userId,
         fullName,
         phone,
         email,
         pickupPoint,
+        deliveryCostCents,
         totalCents,
         items: cartItems.map((item) => ({
           productId: item.product_id,

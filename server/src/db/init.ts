@@ -102,10 +102,16 @@ export const initDb = async () => {
       phone TEXT NOT NULL,
       email TEXT NOT NULL,
       pickup_point TEXT,
+      delivery_cost_cents INTEGER NOT NULL DEFAULT 0,
       total_cents INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS delivery_cost_cents INTEGER NOT NULL DEFAULT 0;
   `);
 
   await query(`

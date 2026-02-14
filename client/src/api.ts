@@ -35,6 +35,7 @@ export type Order = {
   phone: string;
   email: string;
   pickupPoint: string;
+  deliveryCostCents: number;
   totalCents: number;
   createdAt: string;
   updatedAt: string;
@@ -61,7 +62,7 @@ export type CartSyncItem = {
   quantity: number;
 };
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 const TOKEN_KEY = 'her_auth_token';
 
 export const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
@@ -157,6 +158,7 @@ export const createOrder = async (payload: {
   phone: string;
   email: string;
   pickupPoint: string;
+  deliveryCostCents?: number;
 }) => {
   const data = await fetchJson<{ order: Order }>(`${API_BASE}/api/orders`, {
     method: 'POST',

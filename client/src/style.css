@@ -72,6 +72,10 @@ body {
   background: var(--bg);
 }
 
+p{
+  margin: 0;
+}
+
 html {
   background: var(--bg);
 }
@@ -1668,13 +1672,29 @@ input[type='file'] {
 
 .cdek-placeholder {
   display: flex;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+  justify-content: flex-start;
   padding: 16px;
   border-radius: 12px;
   border: 1px dashed rgba(0, 0, 0, 0.25);
   background: var(--accent-soft);
+}
+
+.cdek-placeholder-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cdek-widget-inline {
+  width: 100%;
+  height: 440px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--panel);
 }
 
 .chip {
@@ -1686,6 +1706,12 @@ input[type='file'] {
   color: var(--text);
   font-size: 12px;
   font-weight: var(--weight-semibold);
+}
+
+.cdek-meta {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .checkout-summary {
@@ -1807,13 +1833,12 @@ input[type='file'] {
     max-width: 200px;
   }
 
-  .cdek-placeholder {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   .cart-total {
     min-width: 0;
+  }
+
+  .cdek-widget-inline {
+    height: 360px;
   }
 }
 

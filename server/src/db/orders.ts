@@ -10,6 +10,7 @@ export type OrderRow = {
   phone: string;
   email: string;
   pickup_point: string | null;
+  delivery_cost_cents: number;
   total_cents: number;
   created_at: string;
   updated_at: string;
@@ -52,6 +53,7 @@ type CreateOrderInput = {
   phone: string;
   email: string;
   pickupPoint: string | null;
+  deliveryCostCents: number;
   totalCents: number;
   items: OrderItemInput[];
 };
@@ -90,9 +92,9 @@ export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
       const id = randomUUID();
       const orderResult = await client.query(
         `
-          INSERT INTO orders (id, user_id, status, full_name, phone, email, pickup_point, total_cents)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, total_cents, created_at, updated_at;
+          INSERT INTO orders (id, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at;
         `,
         [
           id,
@@ -102,6 +104,7 @@ export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
           input.phone,
           input.email,
           input.pickupPoint,
+          input.deliveryCostCents,
           input.totalCents
         ]
       );
@@ -152,7 +155,7 @@ export const findOrderByIdForUser = async (
 ): Promise<OrderRow | null> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, total_cents, created_at, updated_at
+      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at
       FROM orders
       WHERE id = $1 AND user_id = $2;
     `,
@@ -165,7 +168,7 @@ export const findOrderByIdForUser = async (
 export const listOrdersByUser = async (userId: string): Promise<OrderRow[]> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, total_cents, created_at, updated_at
+      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at
       FROM orders
       WHERE user_id = $1
       ORDER BY created_at DESC;
@@ -210,7 +213,7 @@ export const markOrderPaid = async (
       SET status = 'paid',
           updated_at = NOW()
       WHERE id = $1 AND user_id = $2
-      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, total_cents, created_at, updated_at;
+      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at;
     `,
     [id, userId]
   );
