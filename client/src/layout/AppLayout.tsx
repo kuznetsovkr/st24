@@ -49,7 +49,7 @@ const AppLayout = ({ children }: Props) => {
     body.classList.toggle('ui-overlay-open', hasOverlayOpen);
 
     const metaTheme = document.querySelector('meta[name="theme-color"]');
-    const themeColor = isProductModalTopState ? '#c6c6c6' : isMenuTopState ? '#ffffff' : '#f7f7f7';
+    const themeColor = isProductModalTopState ? '#c4c4c4' : isMenuTopState ? '#ffffff' : '#f7f7f7';
     metaTheme?.setAttribute('content', themeColor);
   }, [isMenuOpen, productModal.open]);
 
