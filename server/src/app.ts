@@ -755,8 +755,8 @@ export const createApp = () => {
 
     try {
       await handleTelegramUpdate(req.body ?? {});
-    } catch {
-      // ignore webhook processing errors
+    } catch (error) {
+      console.error('Failed to process telegram webhook update', error);
     }
 
     res.json({ ok: true });
@@ -770,8 +770,8 @@ export const createApp = () => {
 
     try {
       await handleTelegramOrderUpdate(req.body ?? {});
-    } catch {
-      // ignore webhook processing errors
+    } catch (error) {
+      console.error('Failed to process telegram orders webhook update', error);
     }
 
     res.json({ ok: true });
