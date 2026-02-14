@@ -935,6 +935,74 @@ input[type='file'] {
   border-radius: 8px;
 }
 
+.need-part-success {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.need-part-success-icon {
+  width: clamp(96px, 30%, 170px);
+  aspect-ratio: 1 / 1;
+  border-radius: 999px;
+  border: 2px solid var(--primary);
+  background: transparent;
+  color: #000000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: need-part-success-pop 0.45s ease-out both;
+}
+
+.need-part-success-icon svg {
+  width: 46%;
+  height: auto;
+  display: block;
+}
+
+.need-part-success-check {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: need-part-check-draw 0.4s ease-out 0.2s forwards;
+}
+
+.need-part-success-text {
+  max-width: 320px;
+  animation: need-part-success-fade 0.35s ease-out 0.2s both;
+}
+
+@keyframes need-part-success-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.84);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes need-part-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes need-part-success-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .products-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

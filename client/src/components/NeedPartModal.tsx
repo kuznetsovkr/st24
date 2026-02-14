@@ -13,7 +13,7 @@ const NeedPartModal = () => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [agreed, setAgreed] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -24,8 +24,9 @@ const NeedPartModal = () => {
     setFullName(user?.fullName ?? '');
     setPhone(formatPhone(user?.phone ?? ''));
     setAgreed(false);
-    setMessage(null);
+    setIsSubmitted(false);
     setError(null);
+    setIsSubmitting(false);
   }, [needPartModal.open, user]);
 
   if (!needPartModal.open || !product) {
@@ -34,7 +35,7 @@ const NeedPartModal = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setMessage(null);
+    setIsSubmitted(false);
     setError(null);
 
     if (!fullName.trim() || !phone.trim()) {
@@ -53,7 +54,7 @@ const NeedPartModal = () => {
         fullName: fullName.trim(),
         phone: phone.trim()
       });
-      setMessage('Заявка отправлена. Мы свяжемся с вами.');
+      setIsSubmitted(true);
     } catch (submitError) {
       if (submitError instanceof Error) {
         setError(submitError.message);
@@ -91,53 +92,72 @@ const NeedPartModal = () => {
             </svg>
           </button>
         </div>
-        <p className="muted">
-          Товар: {product.name}
-          {product.sku ? ` · SKU ${product.sku}` : ''}
-        </p>
-        <form className="stacked-form" onSubmit={handleSubmit}>
-          <label className="field">
-            <span>ФИО</span>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-              placeholder="Иванов Иван Иванович"
-              required
-            />
-          </label>
-          <label className="field">
-            <span>Телефон</span>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(event) => setPhone(formatPhone(event.target.value))}
-              placeholder="+7"
-              required
-            />
-          </label>
-          <label className="checkbox-field">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(event) => setAgreed(event.target.checked)}
-            />
-            <span>
-              Согласен с <Link to="/terms">условиями оферты</Link> и{' '}
-              <Link to="/privacy">политикой обработки персональных данных</Link>.
-            </span>
-          </label>
-          {message && <p className="status-text">{message}</p>}
-          {error && <p className="status-text status-text--error">{error}</p>}
-          <div className="modal-actions">
-            <button className="primary-button" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Отправляем...' : 'Отправить заявку'}
-            </button>
-            <button type="button" className="ghost-button" onClick={closeNeedPartModal}>
-              Отменить
-            </button>
+
+        {isSubmitted ? (
+          <div className="need-part-success" role="status" aria-live="polite">
+            <div className="need-part-success-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="17" height="13" viewBox="0 0 17 13" fill="none">
+                <path
+                  className="need-part-success-check"
+                  d="M16.5 0.5L5.3 12.5L0.5 8"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <p className="status-text need-part-success-text">Заявка отправлена. Мы свяжемся с вами.</p>
           </div>
-        </form>
+        ) : (
+          <>
+            <p className="muted">
+              Товар: {product.name}
+              {product.sku ? ` · SKU ${product.sku}` : ''}
+            </p>
+            <form className="stacked-form" onSubmit={handleSubmit}>
+              <label className="field">
+                <span>ФИО</span>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  placeholder="Иванов Иван Иванович"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Телефон</span>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(formatPhone(event.target.value))}
+                  placeholder="+7"
+                  required
+                />
+              </label>
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(event) => setAgreed(event.target.checked)}
+                />
+                <span>
+                  Согласен с <Link to="/terms">условиями оферты</Link> и{' '}
+                  <Link to="/privacy">политикой обработки персональных данных</Link>.
+                </span>
+              </label>
+              {error && <p className="status-text status-text--error">{error}</p>}
+              <div className="modal-actions">
+                <button className="primary-button" type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? 'Отправляем...' : 'Отправить заявку'}
+                </button>
+                <button type="button" className="ghost-button" onClick={closeNeedPartModal}>
+                  Отменить
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
