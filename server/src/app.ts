@@ -171,26 +171,27 @@ const formatRubles = (cents: number) => `${(cents / 100).toFixed(2)} ₽`;
 
 const buildPaidOrderNotification = (order: OrderRow, items: OrderItemRow[]) => {
   const pickupPoint = order.pickup_point?.trim() ? order.pickup_point : 'не указан';
+  const phone = formatPhoneE164(order.phone);
   const orderItemsBlock =
     items.length > 0
       ? items
           .map((item, index) => {
             const lineTotal = item.price_cents * item.quantity;
-            return `${index + 1}. ${item.name} x${item.quantity} — ${formatRubles(lineTotal)}`;
+            return `🔹 ${index + 1}. ${item.name} x${item.quantity} — ${formatRubles(lineTotal)}`;
           })
           .join('\n')
-      : 'Состав заказа пуст';
+      : '🔹 Состав заказа пуст';
 
   return [
-    'Новый оплаченный заказ',
-    `Номер заказа: ${order.order_number}`,
-    `ФИО: ${order.full_name}`,
-    `Телефон: ${order.phone}`,
-    `Email: ${order.email}`,
-    'Состав заказа:',
+    '✅ Новый оплаченный заказ',
+    `🧾 Номер заказа: ${order.order_number}`,
+    `👤 ФИО: ${order.full_name}`,
+    `📞 Телефон: ${phone}`,
+    `✉️ Email: ${order.email}`,
+    '📦 Состав заказа:',
     orderItemsBlock,
-    `Стоимость: ${formatRubles(order.total_cents)}`,
-    `Пункт выдачи: ${pickupPoint}`
+    `💰 Стоимость: ${formatRubles(order.total_cents)}`,
+    `📍 Пункт выдачи: ${pickupPoint}`
   ].join('\n');
 };
 
