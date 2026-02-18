@@ -1395,6 +1395,24 @@ input[type='file'] {
   color: var(--muted);
 }
 
+.admin-table-name-col {
+  width: 285px;
+  min-width: 285px;
+  max-width: 285px;
+}
+
+.admin-table-name-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+  max-height: 2.5em;
+}
+
 .admin-table-sort {
   border: none;
   background: transparent;

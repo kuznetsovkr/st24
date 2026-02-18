@@ -1017,7 +1017,7 @@ const AdminPage = () => {
                 <thead>
                   <tr>
                     <th>Фото</th>
-                    <th>Название</th>
+                    <th className="admin-table-name-col">Название</th>
                     <th>Категория</th>
                     <th>SKU</th>
                     <th>Цена</th>
@@ -1062,7 +1062,11 @@ const AdminPage = () => {
                           )}
                         </div>
                       </td>
-                      <td>{product.name}</td>
+                      <td className="admin-table-name-col">
+                        <span className="admin-table-name-text" title={product.name}>
+                          {product.name}
+                        </span>
+                      </td>
                       <td className="muted">
                         {categoryNameBySlug[product.category] ?? product.category}
                       </td>
