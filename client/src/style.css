@@ -396,6 +396,31 @@ a {
   color: var(--muted);
 }
 
+.contacts-link-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contacts-inline-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+}
+
+.contacts-inline-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.contacts-inline-icon--telegram svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 .contacts-hours-item {
   margin: 0;
   color: var(--muted);
@@ -1360,6 +1385,17 @@ input[type='file'] {
   cursor: pointer;
 }
 
+.admin-table-sort-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+}
+
+.admin-table-sort-icon svg {
+  display: block;
+}
+
 .admin-table-sort-indicator {
   font-size: 12px;
 }
@@ -1388,6 +1424,52 @@ input[type='file'] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.admin-delete-button {
+  border: none;
+  background: transparent;
+  color: #d93025;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.admin-delete-button:hover {
+  opacity: 0.7;
+}
+
+.admin-delete-button svg {
+  display: block;
+}
+
+.admin-edit-button {
+  border: none;
+  background: transparent;
+  color: #000000;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.admin-edit-button:hover {
+  opacity: 0.7;
+}
+
+.admin-edit-button svg {
+  display: block;
 }
 
 .order-table-wrap {

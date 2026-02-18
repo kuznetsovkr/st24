@@ -64,6 +64,50 @@ const formatPriceLabel = (priceCents: number) =>
     maximumFractionDigits: 0
   }).format(priceCents / 100);
 
+const DeleteCrossIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="17"
+    height="17"
+    viewBox="0 0 17 17"
+    fill="none"
+    aria-hidden="true"
+  >
+    <path
+      d="M16.5 0.5L0.5 16.5M16.5 16.5L0.5 0.5"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const EditPencilIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    width="17"
+    height="17"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="m4.5,1h5.515c.334,0,.663.03.985.088v5.412c0,1.378,1.122,2.5,2.5,2.5h5.411c.033.178.057.359.071.541.022.275.274.479.539.458.275-.022.48-.264.458-.539-.125-1.536-.793-2.981-1.883-4.07l-3.485-3.485c-1.228-1.228-2.86-1.904-4.596-1.904h-5.515C2.019,0,0,2.019,0,4.5v15c0,2.481,2.019,4.5,4.5,4.5h4c.276,0,.5-.224.5-.5s-.224-.5-.5-.5h-4c-1.93,0-3.5-1.57-3.5-3.5V4.5c0-1.93,1.57-3.5,3.5-3.5Zm12.889,5.096c.545.545.965,1.195,1.24,1.904h-5.129c-.827,0-1.5-.673-1.5-1.5V1.368c.706.273,1.353.692,1.904,1.243l3.485,3.485Zm5.878,5.636c-.943-.944-2.592-.944-3.535,0l-7.707,7.707c-.661.661-1.025,1.54-1.025,2.475v1.586c0,.276.224.5.5.5h1.586c.935,0,1.814-.364,2.475-1.025l7.707-7.707c.472-.472.732-1.1.732-1.768s-.26-1.296-.732-1.768Zm-.707,2.828l-7.707,7.707c-.472.472-1.1.732-1.768.732h-1.086v-1.086c0-.668.26-1.295.732-1.768l7.707-7.707c.566-.566,1.555-.566,2.121,0,.283.283.439.66.439,1.061s-.156.777-.439,1.061Z" />
+  </svg>
+);
+
+const StockSortIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M11.854,18.561c.195,.195,.195,.512,0,.707l-4.293,4.293c-.283,.283-.66,.439-1.061,.439s-.777-.156-1.061-.439L1.146,19.268c-.195-.195-.195-.512,0-.707s.512-.195,.707,0l4.146,4.146V.5c0-.276,.224-.5,.5-.5s.5,.224,.5,.5V22.707l4.146-4.146c.195-.195,.512-.195,.707,0ZM22.854,4.732L18.561,.439c-.566-.566-1.555-.566-2.121,0l-4.293,4.293c-.195,.195-.195,.512,0,.707s.512,.195,.707,0L17,1.293V23.5c0,.276,.224,.5,.5,.5s.5-.224,.5-.5V1.293l4.146,4.146c.098,.098,.226,.146,.354,.146s.256-.049,.354-.146c.195-.195,.195-.512,0-.707Z" />
+  </svg>
+);
+
 const AdminPage = () => {
   const [authStatus, setAuthStatus] = useState<'checking' | 'guest' | 'auth'>('checking');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -945,11 +989,21 @@ const AdminPage = () => {
                     )}
                   </div>
                   <div className="button-row">
-                    <button className="ghost-button" onClick={() => handleEdit(product)}>
-                      Редактировать
+                    <button
+                      type="button"
+                      className="admin-edit-button"
+                      aria-label="Редактировать товар"
+                      onClick={() => handleEdit(product)}
+                    >
+                      <EditPencilIcon />
                     </button>
-                    <button className="text-button" onClick={() => handleDelete(product)}>
-                      Удалить
+                    <button
+                      type="button"
+                      className="admin-delete-button"
+                      aria-label="Удалить товар"
+                      onClick={() => handleDelete(product)}
+                    >
+                      <DeleteCrossIcon />
                     </button>
                   </div>
                 </article>
@@ -981,6 +1035,9 @@ const AdminPage = () => {
                         onClick={handleStockSortToggle}
                       >
                         Остаток
+                        <span className="admin-table-sort-icon">
+                          <StockSortIcon />
+                        </span>
                         {stockSortLabel && (
                           <span className="admin-table-sort-indicator">{stockSortLabel}</span>
                         )}
@@ -1021,11 +1078,21 @@ const AdminPage = () => {
                       </td>
                       <td>
                         <div className="admin-table-actions">
-                          <button className="ghost-button" onClick={() => handleEdit(product)}>
-                            Редактировать
+                          <button
+                            type="button"
+                            className="admin-edit-button"
+                            aria-label="Редактировать товар"
+                            onClick={() => handleEdit(product)}
+                          >
+                            <EditPencilIcon />
                           </button>
-                          <button className="text-button" onClick={() => handleDelete(product)}>
-                            Удалить
+                          <button
+                            type="button"
+                            className="admin-delete-button"
+                            aria-label="Удалить товар"
+                            onClick={() => handleDelete(product)}
+                          >
+                            <DeleteCrossIcon />
                           </button>
                         </div>
                       </td>
