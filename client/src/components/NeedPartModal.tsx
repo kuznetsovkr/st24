@@ -142,8 +142,8 @@ const NeedPartModal = () => {
                   onChange={(event) => setAgreed(event.target.checked)}
                 />
                 <span>
-                  Согласен с <Link to="/terms">условиями оферты</Link> и{' '}
-                  <Link to="/privacy">политикой обработки персональных данных</Link>.
+                  Согласен с <Link to="/terms" target="_blank" rel="noopener noreferrer">условиями оферты</Link> и{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">политикой обработки персональных данных</Link>.
                 </span>
               </label>
               {error && <p className="status-text status-text--error">{error}</p>}
