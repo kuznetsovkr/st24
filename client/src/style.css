@@ -873,6 +873,10 @@ h3 {
   gap: 12px;
 }
 
+.stacked-form input{
+  font-size: 16px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -1681,6 +1685,23 @@ input[type='file'] {
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
   align-items: start;
+}
+
+.cart-empty-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cart-empty-card h3,
+.cart-empty-card .muted {
+  margin: 0;
+}
+
+.cart-empty-action {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 4px;
 }
 
 .cart-items {

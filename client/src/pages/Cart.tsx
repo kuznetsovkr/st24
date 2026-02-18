@@ -64,10 +64,10 @@ const CartPage = () => {
         </div>
       </header>
       {items.length === 0 ? (
-        <div className="card">
+        <div className="card cart-empty-card">
           <h3>Корзина пустая</h3>
           <p className="muted">Добавьте товары из каталога и вернитесь сюда.</p>
-          <Link to="/catalog" className="primary-button">
+          <Link to="/catalog" className="primary-button cart-empty-action">
             Перейти в каталог
           </Link>
         </div>
