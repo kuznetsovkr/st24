@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchProducts } from '../api';
 import type { Product } from '../api';
-import ProductImageSlider from '../components/ProductImageSlider.tsx';
+import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
-import { formatPrice } from '../utils/formatPrice.ts';
 
 const HomePage = () => {
   const { openProductModal, openNeedPartModal } = useUI();
@@ -120,105 +119,20 @@ const HomePage = () => {
       )}
       {status === 'ready' && featuredProducts.length > 0 && (
         <div className="slider-track" ref={sliderRef}>
-          {featuredProducts.map((product) => {
-            const quantity = getQuantity(product.id);
-            const isOutOfStock = product.stock === 0;
-
-            return (
-              <article
-                key={product.id}
-                className="slide slide--clickable"
-                onClick={() => handleOpenProduct(product)}
-              >
-                <ProductImageSlider
-                  className="product-photo"
-                  images={product.images}
-                  alt={product.name}
-                />
-                <div className="product-info">
-                  <h3>{product.name}</h3>
-                  <p className="price">{formatPrice(product.priceCents)}</p>
-                  {isAdmin && <p className="stock-text">Остаток: {product.stock}</p>}
-                  <div className="product-actions">
-                    <button
-                      className="ghost-button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleOpenProduct(product);
-                      }}
-                    >
-                      Подробнее
-                    </button>
-                    {quantity === 0 ? (
-                      isOutOfStock ? (
-                        <span className="stock-badge">Нет в наличии</span>
-                      ) : (
-                        <button
-                          className="primary-button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleAddToCart(product);
-                          }}
-                        >
-                          В корзину
-                        </button>
-                      )
-                    ) : (
-                      <div className="qty-control" role="group" onClick={(event) => event.stopPropagation()} aria-label="Количество товара">
-                        <button
-                          type="button"
-                          className="qty-button"
-                          onClick={() => decrement(product.id)}
-                          aria-label="Уменьшить количество"
-                        >
-                          -
-                        </button>
-                        <input
-                          className="qty-input"
-                          type="number"
-                          min="1"
-                          inputMode="numeric"
-                          value={quantity}
-                          onChange={(event) => {
-                            const rawValue = event.target.value;
-                            if (rawValue === '') {
-                              return;
-                            }
-                            const next = Number.parseInt(rawValue, 10);
-                            if (Number.isNaN(next)) {
-                              return;
-                            }
-                            setQuantity(product.id, next);
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="qty-button"
-                          onClick={() => increment(product.id)}
-                          aria-label="Увеличить количество"
-                          disabled={typeof product.stock === 'number' && quantity >= product.stock}
-                        >
-                          +
-                        </button>
-                      </div>
-                    )}
-                    {isOutOfStock && (
-                      <button
-                        type="button"
-                        className="text-button need-help-link"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleNeedPart(product);
-                        }}
-                      >
-                        Помогите, нужна деталь
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+          {featuredProducts.map((product) => (
+            <ProductMiniCard
+              key={product.id}
+              product={product}
+              quantity={getQuantity(product.id)}
+              isAdmin={isAdmin}
+              onOpen={handleOpenProduct}
+              onAddToCart={handleAddToCart}
+              onNeedPart={handleNeedPart}
+              onDecrement={decrement}
+              onIncrement={increment}
+              onSetQuantity={setQuantity}
+            />
+          ))}
         </div>
       )}
 

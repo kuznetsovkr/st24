@@ -1277,9 +1277,6 @@ input[type='file'] {
   font-size: 16px;
 }
 
-.product-meta .ghost-button {
-  align-self: flex-start;
-}
 
 .stock-text {
   margin: 0;
@@ -1500,10 +1497,18 @@ input[type='file'] {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  color: var(--text);
+  border: none;
+  background: var(--panel);
+  color: #000000;
   font-weight: var(--weight-semibold);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qty-button svg {
+  display: block;
 }
 
 .qty-button:disabled {
@@ -1521,7 +1526,8 @@ input[type='file'] {
   width: 58px;
   padding: 4px 6px;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: none;
+  font-size: 16px;
   text-align: center;
   font-weight: var(--weight-semibold);
   appearance: textfield;

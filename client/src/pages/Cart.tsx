@@ -4,6 +4,7 @@ import { useCart } from '../context/CartContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
+import QuantityStepIcon from '../components/QuantityStepIcon.tsx';
 
 const CartPage = () => {
   const navigate = useNavigate();
@@ -89,7 +90,7 @@ const CartPage = () => {
                         onClick={() => decrement(item.id)}
                         aria-label="Уменьшить количество"
                       >
-                        -
+                        <QuantityStepIcon type="minus" />
                       </button>
                       <input
                         className="qty-input"
@@ -118,7 +119,7 @@ const CartPage = () => {
                           typeof item.stock === 'number' && item.quantity >= item.stock
                         }
                       >
-                        +
+                        <QuantityStepIcon type="plus" />
                       </button>
                     </div>
                     <button type="button" className="text-button" onClick={() => removeItem(item.id)}>

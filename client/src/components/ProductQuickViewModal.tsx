@@ -1,4 +1,5 @@
 import ProductImageSlider from './ProductImageSlider.tsx';
+import QuantityStepIcon from './QuantityStepIcon.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
@@ -109,7 +110,7 @@ const ProductQuickViewModal = () => {
                 onClick={() => decrement(product.id)}
                 aria-label="Уменьшить количество"
               >
-                -
+                <QuantityStepIcon type="minus" />
               </button>
               <input
                 className="qty-input"
@@ -136,7 +137,7 @@ const ProductQuickViewModal = () => {
                 aria-label="Увеличить количество"
                 disabled={typeof product.stock === 'number' && quantity >= product.stock}
               >
-                +
+                <QuantityStepIcon type="plus" />
               </button>
             </div>
           )}
