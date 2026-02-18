@@ -53,6 +53,8 @@ import {
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
 
 const CODE_TTL_MINUTES = 5;
+const PHONE_CODE_LENGTH = 4;
+const EMAIL_CODE_LENGTH = 6;
 const B2B_CARD_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const B2B_CARD_ALLOWED_MIME = new Set([
   'application/pdf',
@@ -155,6 +157,13 @@ const parsePositiveInt = (value?: string, min = 1, max = 100000) => {
     return null;
   }
   return parsed;
+};
+
+const generateNumericCode = (length: number) => {
+  const safeLength = Math.max(1, Math.floor(length));
+  const min = Math.pow(10, safeLength - 1);
+  const max = Math.pow(10, safeLength);
+  return String(Math.floor(min + Math.random() * (max - min)));
 };
 
 const b2bUpload = multer({
@@ -1089,11 +1098,10 @@ export const createApp = () => {
       return;
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = generateNumericCode(PHONE_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveAuthCode(phone, code, expiresAt);
-    console.log(`Auth code for ${phone}: ${code}`);
-    res.json({ ok: true, expiresInMinutes: CODE_TTL_MINUTES });
+    res.json({ ok: true, expiresInMinutes: CODE_TTL_MINUTES, code });
   });
 
   app.post('/api/auth/verify', async (req: Request, res: Response) => {
@@ -1261,7 +1269,7 @@ export const createApp = () => {
       return;
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = generateNumericCode(EMAIL_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveEmailCode(email, code, expiresAt);
     console.log(`Email verification code for ${email}: ${code}`);
@@ -1336,7 +1344,7 @@ export const createApp = () => {
       return;
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = generateNumericCode(PHONE_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveAuthCode(phone, code, expiresAt);
     console.log(`Phone verification code for ${phone}: ${code}`);

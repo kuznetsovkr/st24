@@ -235,7 +235,12 @@ export const deleteProduct = async (id: string) => {
 };
 
 export const requestAuthCode = async (phone: string) => {
-  return fetchJson<{ ok: boolean; expiresInMinutes: number; requiresPassword?: boolean }>(
+  return fetchJson<{
+    ok: boolean;
+    expiresInMinutes: number;
+    requiresPassword?: boolean;
+    code?: string;
+  }>(
     `${API_BASE}/api/auth/request-code`,
     {
       method: 'POST',

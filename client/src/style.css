@@ -301,6 +301,17 @@ a {
   background: var(--accent-soft);
 }
 
+.ghost-button:disabled {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: rgba(0, 0, 0, 0.45);
+  cursor: not-allowed;
+}
+
+.ghost-button:disabled:hover {
+  background: var(--surface-soft);
+}
+
 .text-button {
   padding: 10px 6px;
   background: transparent;
@@ -760,6 +771,10 @@ h3 {
   gap: 10px;
 }
 
+.auth-submit-button {
+  width: 100%;
+}
+
 .modal-card--product .need-help-link {
   order: 3;
 }
@@ -1044,6 +1059,11 @@ input[type='file'] {
   font-weight: var(--weight-semibold);
   color: var(--text);
   margin: 0;
+}
+
+.auth-code-status {
+  font-size: 14px;
+  font-weight: var(--weight-regular);
 }
 
 .status-text--error {

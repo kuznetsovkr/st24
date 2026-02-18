@@ -461,7 +461,10 @@ const AdminPage = () => {
         return;
       }
       setAuthMode('code');
-      setAuthMessage('Код отправлен. Проверьте консоль сервера.');
+      if (result.code) {
+        window.alert(`Тестовый SMS-код: ${result.code}`);
+      }
+      setAuthMessage('Код отправлен.');
     } catch {
       setAuthMessage('Не удалось отправить код.');
     } finally {
@@ -566,7 +569,7 @@ const AdminPage = () => {
             <p className="eyebrow">Админ-панель</p>
             <h1>Вход по телефону</h1>
             <p className="muted">
-              Отправим код в консоль сервера. Роль администратора выдаётся для номера
+              Для обычного номера код покажем в alert как тестовое SMS. Роль администратора выдаётся для номера
               +79964292550.
             </p>
           </div>

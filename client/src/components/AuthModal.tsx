@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { requestAuthCode, setAuthToken, verifyAuthCode } from '../api';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -6,37 +6,64 @@ import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPhone } from '../utils/formatPhone.ts';
 
+const RESEND_TIMEOUT_SECONDS = 30;
+
 const AuthModal = () => {
   const { authModalOpen, closeAuthModal } = useUI();
   const { mergeWithServer } = useCart();
   const { setUser } = useAuth();
+
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'code' | 'password'>('code');
-  const [message, setMessage] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState<string | null>(null);
+  const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  const [isCodeRequested, setIsCodeRequested] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+
+  useEffect(() => {
+    if (resendSeconds <= 0) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      setResendSeconds((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [resendSeconds]);
 
   if (!authModalOpen) {
     return null;
   }
 
+  const showAuthFields = authMode === 'password' || isCodeRequested;
+  const requestStatusText =
+    requestMessage === 'Код отправлен.' && resendSeconds > 0
+      ? `Код отправлен. Получить новый код можно через ${resendSeconds} сек.`
+      : requestMessage;
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setMessage(null);
+    setVerifyMessage(null);
+
     if (!phone.trim()) {
-      setMessage('Введите номер телефона.');
+      setVerifyMessage('Введите номер телефона.');
       return;
     }
 
     if (authMode === 'password') {
       if (!password.trim()) {
-        setMessage('Введите пароль.');
+        setVerifyMessage('Введите пароль.');
         return;
       }
     } else if (!code.trim()) {
-      setMessage('Введите код.');
+      setVerifyMessage('Введите код.');
       return;
     }
 
@@ -46,12 +73,13 @@ const AuthModal = () => {
         authMode === 'password'
           ? await verifyAuthCode(phone.trim(), '', password.trim())
           : await verifyAuthCode(phone.trim(), code.trim());
+
       setAuthToken(result.token);
       setUser(result.user);
       await mergeWithServer();
       closeAuthModal();
     } catch {
-      setMessage(authMode === 'password' ? 'Неверный пароль.' : 'Неверный код.');
+      setVerifyMessage(authMode === 'password' ? 'Неверный пароль.' : 'Неверный код.');
     } finally {
       setIsVerifying(false);
     }
@@ -62,27 +90,44 @@ const AuthModal = () => {
     setAuthMode('code');
     setCode('');
     setPassword('');
+    setIsCodeRequested(false);
+    setResendSeconds(0);
+    setRequestMessage(null);
+    setVerifyMessage(null);
   };
 
   const handleRequestCode = async () => {
-    setMessage(null);
+    setRequestMessage(null);
+    setVerifyMessage(null);
+
     if (!phone.trim()) {
-      setMessage('Введите номер телефона.');
+      setRequestMessage('Введите номер телефона.');
       return;
     }
 
     setIsRequesting(true);
     try {
       const result = await requestAuthCode(phone.trim());
+
       if (result.requiresPassword) {
         setAuthMode('password');
-        setMessage('Введите пароль администратора.');
+        setIsCodeRequested(true);
+        setVerifyMessage('Введите пароль администратора.');
         return;
       }
+
       setAuthMode('code');
-      setMessage('Код отправлен. Проверьте консоль сервера.');
+      setCode('');
+      setIsCodeRequested(true);
+      setResendSeconds(RESEND_TIMEOUT_SECONDS);
+
+      if (result.code) {
+        window.alert(`Тестовый SMS-код: ${result.code}`);
+      }
+
+      setRequestMessage('Код отправлен.');
     } catch {
-      setMessage('Не удалось отправить код.');
+      setRequestMessage('Не удалось отправить код.');
     } finally {
       setIsRequesting(false);
     }
@@ -114,11 +159,13 @@ const AuthModal = () => {
             </svg>
           </button>
         </div>
+
         <p className="muted">
           {authMode === 'password'
             ? 'Для администратора используется пароль.'
-            : 'Код придет в консоль бэкенда. В проде подключим SMS.'}
+            : 'Код показывается в alert как тестовое SMS. В проде подключим SMS.'}
         </p>
+
         <form className="stacked-form" onSubmit={handleSubmit}>
           <label className="field">
             <span>Телефон</span>
@@ -130,39 +177,54 @@ const AuthModal = () => {
               required
             />
           </label>
+
           {authMode === 'code' && (
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={handleRequestCode}
-              disabled={isRequesting}
-            >
-              {isRequesting ? 'Отправляем...' : 'Получить код'}
-            </button>
+            <>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleRequestCode}
+                disabled={isRequesting || resendSeconds > 0}
+              >
+                {isRequesting ? 'Отправляем...' : 'Получить код'}
+              </button>
+
+              {requestStatusText && (
+                <p className="status-text auth-code-status">{requestStatusText}</p>
+              )}
+            </>
           )}
-          <label className="field">
-            <span>{authMode === 'password' ? 'Пароль' : 'Код'}</span>
-            <input
-              type={authMode === 'password' ? 'password' : 'text'}
-              inputMode={authMode === 'password' ? undefined : 'numeric'}
-              value={authMode === 'password' ? password : code}
-              onChange={(event) =>
-                authMode === 'password'
-                  ? setPassword(event.target.value)
-                  : setCode(event.target.value)
-              }
-              required
-            />
-          </label>
-          <div className="modal-actions">
-            <button type="submit" className="primary-button" disabled={isVerifying}>
-              {isVerifying ? 'Проверяем...' : 'Войти'}
-            </button>
-            <button type="button" className="ghost-button" onClick={closeAuthModal}>
-              Отменить
-            </button>
-          </div>
-          {message && <p className="status-text">{message}</p>}
+
+          {showAuthFields && (
+            <>
+              <label className="field">
+                <span>{authMode === 'password' ? 'Пароль' : 'Код'}</span>
+                <input
+                  type={authMode === 'password' ? 'password' : 'text'}
+                  inputMode={authMode === 'password' ? undefined : 'numeric'}
+                  value={authMode === 'password' ? password : code}
+                  onChange={(event) =>
+                    authMode === 'password'
+                      ? setPassword(event.target.value)
+                      : setCode(event.target.value)
+                  }
+                  required
+                />
+              </label>
+
+              <div className="modal-actions">
+                <button
+                  type="submit"
+                  className="primary-button auth-submit-button"
+                  disabled={isVerifying}
+                >
+                  {isVerifying ? 'Проверяем...' : 'Войти'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {verifyMessage && <p className="status-text">{verifyMessage}</p>}
         </form>
       </div>
     </div>
