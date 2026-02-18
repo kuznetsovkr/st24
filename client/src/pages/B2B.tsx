@@ -9,14 +9,26 @@ const B2BPage = () => {
   const [email, setEmail] = useState('');
   const [comment, setComment] = useState('');
   const [enterpriseCard, setEnterpriseCard] = useState<File | null>(null);
-  const [status, setStatus] = useState('');
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const resetForm = () => {
+    setCompanyName('');
+    setContactPerson('');
+    setPhone('');
+    setEmail('');
+    setComment('');
+    setEnterpriseCard(null);
+    setError('');
+    setIsSubmitted(false);
+    setIsSubmitting(false);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus('');
     setError('');
+    setIsSubmitted(false);
 
     if (!companyName.trim()) {
       setError('Укажите ФИО или название компании.');
@@ -41,7 +53,7 @@ const B2BPage = () => {
     setIsSubmitting(true);
     try {
       await requestB2BInquiry(payload);
-      setStatus('Заявка отправлена. Мы свяжемся с вами.');
+      setIsSubmitted(true);
       setCompanyName('');
       setContactPerson('');
       setPhone('');
@@ -70,82 +82,101 @@ const B2BPage = () => {
       </header>
 
       <div className="card">
-        <form className="stacked-form" onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <label className="field">
-              <span>ФИО или название компании</span>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(event) => setCompanyName(event.target.value)}
-                placeholder="ООО Пример / Иванов Иван Иванович"
-                required
-              />
-            </label>
-            <label className="field">
-              <span>Контактное лицо</span>
-              <input
-                type="text"
-                value={contactPerson}
-                onChange={(event) => setContactPerson(event.target.value)}
-                placeholder="Имя менеджера"
-              />
-            </label>
-            <label className="field">
-              <span>Телефон</span>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(event) => setPhone(formatPhone(event.target.value))}
-                placeholder="+7"
-                required
-              />
-            </label>
-            <label className="field">
-              <span>Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="mail@example.com"
-              />
-            </label>
-          </div>
-
-          <label className="field">
-            <span>Карточка предприятия (файл)</span>
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setEnterpriseCard(file);
-              }}
-            />
-            <span className="form-help">
-              PDF, DOC, DOCX, XLS, XLSX, JPG, PNG. Максимальный размер: 10 МБ.
-            </span>
-          </label>
-
-          <label className="field">
-            <span>Комментарий</span>
-            <textarea
-              rows={4}
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Уточнения по заявке"
-            />
-          </label>
-
-          {status ? <p className="status-text">{status}</p> : null}
-          {error ? <p className="status-text status-text--error">{error}</p> : null}
-
-          <div className="button-row">
-            <button className="primary-button" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Отправляем...' : 'Отправить запрос'}
+        {isSubmitted ? (
+          <div className="need-part-success" role="status" aria-live="polite">
+            <div className="need-part-success-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="17" height="13" viewBox="0 0 17 13" fill="none">
+                <path
+                  className="need-part-success-check"
+                  d="M16.5 0.5L5.3 12.5L0.5 8"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <p className="status-text need-part-success-text">Заявка отправлена. Мы свяжемся с вами.</p>
+            <button type="button" className="ghost-button" onClick={resetForm}>
+              Заполнить новую заявку
             </button>
           </div>
-        </form>
+        ) : (
+          <form className="stacked-form" onSubmit={handleSubmit}>
+            <div className="form-grid">
+              <label className="field">
+                <span>ФИО или название компании</span>
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(event) => setCompanyName(event.target.value)}
+                  placeholder="ООО Пример / Иванов Иван Иванович"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Контактное лицо</span>
+                <input
+                  type="text"
+                  value={contactPerson}
+                  onChange={(event) => setContactPerson(event.target.value)}
+                  placeholder="Имя менеджера"
+                />
+              </label>
+              <label className="field">
+                <span>Телефон</span>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(formatPhone(event.target.value))}
+                  placeholder="+7"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="mail@example.com"
+                />
+              </label>
+            </div>
+
+            <label className="field">
+              <span>Карточка предприятия (файл)</span>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setEnterpriseCard(file);
+                }}
+              />
+              <span className="form-help">
+                PDF, DOC, DOCX, XLS, XLSX, JPG, PNG. Максимальный размер: 10 МБ.
+              </span>
+            </label>
+
+            <label className="field">
+              <span>Комментарий</span>
+              <textarea
+                rows={4}
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                placeholder="Уточнения по заявке"
+              />
+            </label>
+
+            {error ? <p className="status-text status-text--error">{error}</p> : null}
+
+            <div className="button-row">
+              <button className="primary-button" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Отправляем...' : 'Отправить запрос'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
