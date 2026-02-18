@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchProducts } from '../api';
+import { fetchCategories, fetchProducts } from '../api';
 import type { Product } from '../api';
 import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -14,11 +14,13 @@ const CategoryPage = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [products, setProducts] = useState<Product[]>([]);
+  const [categoryTitle, setCategoryTitle] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
     if (!slug) {
       setStatus('error');
+      setCategoryTitle('');
       return;
     }
 
@@ -27,11 +29,16 @@ const CategoryPage = () => {
     const load = async () => {
       try {
         setStatus('loading');
-        const items = await fetchProducts({ category: slug });
+        const [items, categories] = await Promise.all([
+          fetchProducts({ category: slug }),
+          fetchCategories().catch(() => [])
+        ]);
         if (!active) {
           return;
         }
         setProducts(items);
+        const matchedCategory = categories.find((category) => category.slug === slug);
+        setCategoryTitle(matchedCategory?.name ?? slug);
         setStatus('ready');
       } catch {
         if (active) {
@@ -88,7 +95,7 @@ const CategoryPage = () => {
       <header className="page-header">
         <div>
           <p className="eyebrow">Раздел каталога</p>
-          <h1>{slug ? `Категория: ${slug}` : 'Категория'}</h1>
+          <h1>{slug ? `${categoryTitle || slug}` : 'Категория'}</h1>
           <p className="muted">Выберите товар и добавьте его в корзину.</p>
         </div>
         <Link to="/catalog" className="ghost-button">

@@ -155,6 +155,20 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS telegram_b2b_subscribers (
+      chat_id BIGINT PRIMARY KEY,
+      username TEXT,
+      first_name TEXT,
+      last_name TEXT,
+      language_code TEXT,
+      chat_type TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS cart_items (
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,

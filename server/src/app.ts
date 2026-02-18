@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express, { Request, Response } from 'express';
+import multer from 'multer';
 import path from 'path';
 import { signToken, verifyToken } from './auth';
 import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
@@ -42,14 +43,26 @@ import {
 } from './db/users';
 import { authenticate, requireAdmin } from './middleware/auth';
 import {
+  handleTelegramB2BUpdate,
   handleTelegramOrderUpdate,
   handleTelegramUpdate,
+  sendB2BTelegramMessage,
   sendOrderTelegramMessage,
   sendTelegramMessage
 } from './telegram';
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
 
 const CODE_TTL_MINUTES = 5;
+const B2B_CARD_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const B2B_CARD_ALLOWED_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'image/jpeg',
+  'image/png'
+]);
 
 const normalizePhone = (value: string) => value.replace(/\D/g, '');
 const formatPhoneE164 = (value: string) => {
@@ -73,6 +86,7 @@ const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
 const getTelegramOrdersWebhookSecret = () =>
   process.env.TELEGRAM_ORDERS_WEBHOOK_SECRET;
+const getTelegramB2BWebhookSecret = () => process.env.TELEGRAM_B2B_WEBHOOK_SECRET;
 
 const parsePriceCents = (value?: string) => {
   if (!value) {
@@ -131,6 +145,25 @@ const parseStock = (value?: string) => {
   }
   return parsed;
 };
+
+const b2bUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: B2B_CARD_MAX_FILE_SIZE,
+    files: 1
+  },
+  fileFilter: (_req, file, cb) => {
+    if (B2B_CARD_ALLOWED_MIME.has(file.mimetype)) {
+      cb(null, true);
+      return;
+    }
+    cb(
+      new Error(
+        'Допустимы только PDF, DOC, DOCX, XLS, XLSX, JPG или PNG файлы карточки предприятия.'
+      )
+    );
+  }
+});
 
 const mapProduct = (row: ProductRow) => ({
   id: row.id,
@@ -825,6 +858,87 @@ export const createApp = () => {
     }
 
     res.json({ ok: true });
+  });
+
+  app.post('/api/telegram/b2b-webhook', async (req: Request, res: Response) => {
+    if (!isTelegramWebhookAllowed(req, getTelegramB2BWebhookSecret())) {
+      res.status(403).json({ ok: false });
+      return;
+    }
+
+    try {
+      await handleTelegramB2BUpdate(req.body ?? {});
+    } catch (error) {
+      console.error('Failed to process telegram B2B webhook update', error);
+    }
+
+    res.json({ ok: true });
+  });
+
+  app.post('/api/requests/b2b', (req: Request, res: Response) => {
+    b2bUpload.single('enterpriseCard')(req, res, async (uploadError) => {
+      if (uploadError) {
+        res.status(400).json({
+          error:
+            uploadError instanceof Error
+              ? uploadError.message
+              : 'Не удалось загрузить карточку предприятия'
+        });
+        return;
+      }
+
+      const companyName =
+        typeof req.body.companyName === 'string' ? req.body.companyName.trim() : '';
+      const contactPerson =
+        typeof req.body.contactPerson === 'string' ? req.body.contactPerson.trim() : '';
+      const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+      const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+      const comment = typeof req.body.comment === 'string' ? req.body.comment.trim() : '';
+
+      const errors: string[] = [];
+      if (!companyName) {
+        errors.push('Укажите ФИО или название компании');
+      }
+      if (!phone) {
+        errors.push('Укажите телефон для связи');
+      }
+      if (email && !isValidEmail(email)) {
+        errors.push('Некорректный email');
+      }
+
+      if (errors.length > 0) {
+        res.status(400).json({ errors });
+        return;
+      }
+
+      const file = req.file as Express.Multer.File | undefined;
+      const messageLines = [
+        '🏢 Новая заявка от юр. лица',
+        `🧾 Компания / ФИО: ${companyName}`,
+        contactPerson ? `👤 Контактное лицо: ${contactPerson}` : null,
+        `📞 Телефон: ${formatPhoneE164(phone)}`,
+        email ? `✉️ Email: ${email}` : null,
+        comment ? `📝 Комментарий: ${comment}` : null,
+        file ? `📎 Карточка предприятия: ${file.originalname || 'прикреплена'}` : '📎 Карточка предприятия: не приложена'
+      ].filter(Boolean);
+
+      try {
+        await sendB2BTelegramMessage(
+          messageLines.join('\n'),
+          file
+            ? {
+                bytes: file.buffer,
+                fileName: file.originalname || 'enterprise-card',
+                mimeType: file.mimetype
+              }
+            : undefined
+        );
+        res.json({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to send request';
+        res.status(500).json({ error: message });
+      }
+    });
   });
 
   app.post('/api/requests/need-part', async (req: Request, res: Response) => {
