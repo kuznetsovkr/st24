@@ -7,6 +7,10 @@ export type CartItemRow = {
   price_cents: number;
   images: string[];
   stock: number;
+  weight_grams: number;
+  length_cm: number;
+  width_cm: number;
+  height_cm: number;
 };
 
 export type CartSyncItem = {
@@ -31,7 +35,7 @@ export const listCartItems = async (userId: string): Promise<CartItemRow[]> => {
   const result = await query(
     `
       SELECT cart_items.product_id, cart_items.quantity, products.name, products.price_cents, products.images
-           , products.stock
+           , products.stock, products.weight_grams, products.length_cm, products.width_cm, products.height_cm
       FROM cart_items
       JOIN products ON products.id = cart_items.product_id
       WHERE cart_items.user_id = $1

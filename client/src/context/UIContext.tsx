@@ -10,6 +10,10 @@ type ProductPreview = {
   images?: string[];
   sku?: string;
   stock?: number;
+  weightGrams?: number;
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
 };
 
 type ProductModalState = {

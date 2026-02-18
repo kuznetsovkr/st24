@@ -60,7 +60,11 @@ const CategoryPage = () => {
       name: product.name,
       priceCents: product.priceCents,
       image: product.images[0],
-      stock: product.stock
+      stock: product.stock,
+      weightGrams: product.weightGrams,
+      lengthCm: product.lengthCm,
+      widthCm: product.widthCm,
+      heightCm: product.heightCm
     });
   };
 
@@ -73,6 +77,10 @@ const CategoryPage = () => {
       sku: product.sku,
       image: product.images[0],
       images: product.images,
+      weightGrams: product.weightGrams,
+      lengthCm: product.lengthCm,
+      widthCm: product.widthCm,
+      heightCm: product.heightCm,
       stock: product.stock
     });
   };
@@ -86,6 +94,10 @@ const CategoryPage = () => {
       sku: product.sku,
       image: product.images[0],
       images: product.images,
+      weightGrams: product.weightGrams,
+      lengthCm: product.lengthCm,
+      widthCm: product.widthCm,
+      heightCm: product.heightCm,
       stock: product.stock
     });
   };

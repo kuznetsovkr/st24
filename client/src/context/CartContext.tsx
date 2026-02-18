@@ -8,6 +8,10 @@ export type CartItem = {
   priceCents: number;
   image?: string | null;
   stock?: number;
+  weightGrams?: number;
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
 };
 
 export type CartEntry = CartItem & {

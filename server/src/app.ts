@@ -146,6 +146,17 @@ const parseStock = (value?: string) => {
   return parsed;
 };
 
+const parsePositiveInt = (value?: string, min = 1, max = 100000) => {
+  if (value === undefined || value === '') {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < min || parsed > max) {
+    return null;
+  }
+  return parsed;
+};
+
 const b2bUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -175,6 +186,10 @@ const mapProduct = (row: ProductRow) => ({
   images: (row.images ?? []).map(toPublicUrl),
   showInSlider: row.show_in_slider,
   sliderOrder: row.slider_order,
+  weightGrams: row.weight_grams,
+  lengthCm: row.length_cm,
+  widthCm: row.width_cm,
+  heightCm: row.height_cm,
   stock: row.stock,
   isHidden: row.is_hidden,
   createdAt: row.created_at,
@@ -304,7 +319,11 @@ const mapCartItem = (row: CartItemRow) => {
     priceCents: row.price_cents,
     image: image ? toPublicUrl(image) : null,
     quantity: row.quantity,
-    stock: row.stock
+    stock: row.stock,
+    weightGrams: row.weight_grams,
+    lengthCm: row.length_cm,
+    widthCm: row.width_cm,
+    heightCm: row.height_cm
   };
 };
 
@@ -400,6 +419,26 @@ export const createApp = () => {
     );
     const isHidden = req.body.isHidden === 'true';
     const stock = parseStock(typeof req.body.stock === 'string' ? req.body.stock : undefined);
+    const weightGrams = parsePositiveInt(
+      typeof req.body.weightGrams === 'string' ? req.body.weightGrams : undefined,
+      1,
+      50000
+    );
+    const lengthCm = parsePositiveInt(
+      typeof req.body.lengthCm === 'string' ? req.body.lengthCm : undefined,
+      1,
+      300
+    );
+    const widthCm = parsePositiveInt(
+      typeof req.body.widthCm === 'string' ? req.body.widthCm : undefined,
+      1,
+      300
+    );
+    const heightCm = parsePositiveInt(
+      typeof req.body.heightCm === 'string' ? req.body.heightCm : undefined,
+      1,
+      300
+    );
 
     const errors: string[] = [];
 
@@ -432,6 +471,14 @@ export const createApp = () => {
       errors.push('Некорректный остаток');
     }
 
+    if (weightGrams === null) {
+      errors.push('Некорректный вес (граммы)');
+    }
+
+    if (lengthCm === null || widthCm === null || heightCm === null) {
+      errors.push('Некорректные габариты (см)');
+    }
+
     if (errors.length > 0) {
       removeUploadedFiles(filenames);
       res.status(400).json({ errors });
@@ -448,6 +495,10 @@ export const createApp = () => {
         images: filenames,
         showInSlider,
         sliderOrder: sliderOrder ?? 0,
+        weightGrams: weightGrams ?? 500,
+        lengthCm: lengthCm ?? 10,
+        widthCm: widthCm ?? 10,
+        heightCm: heightCm ?? 10,
         stock: stock ?? 0,
         isHidden
       });
@@ -490,6 +541,22 @@ export const createApp = () => {
       typeof req.body.stock === 'string'
         ? parseStock(req.body.stock)
         : existing.stock ?? 0;
+    const weightGrams =
+      typeof req.body.weightGrams === 'string'
+        ? parsePositiveInt(req.body.weightGrams, 1, 50000)
+        : existing.weight_grams ?? 500;
+    const lengthCm =
+      typeof req.body.lengthCm === 'string'
+        ? parsePositiveInt(req.body.lengthCm, 1, 300)
+        : existing.length_cm ?? 10;
+    const widthCm =
+      typeof req.body.widthCm === 'string'
+        ? parsePositiveInt(req.body.widthCm, 1, 300)
+        : existing.width_cm ?? 10;
+    const heightCm =
+      typeof req.body.heightCm === 'string'
+        ? parsePositiveInt(req.body.heightCm, 1, 300)
+        : existing.height_cm ?? 10;
 
     const errors: string[] = [];
 
@@ -511,6 +578,18 @@ export const createApp = () => {
 
     if (typeof req.body.stock === 'string' && stock === null) {
       errors.push('Некорректный остаток');
+    }
+
+    if (typeof req.body.weightGrams === 'string' && weightGrams === null) {
+      errors.push('Некорректный вес (граммы)');
+    }
+
+    if (
+      (typeof req.body.lengthCm === 'string' && lengthCm === null) ||
+      (typeof req.body.widthCm === 'string' && widthCm === null) ||
+      (typeof req.body.heightCm === 'string' && heightCm === null)
+    ) {
+      errors.push('Некорректные габариты (см)');
     }
 
     if (!category || !(await isValidCategory(category))) {
@@ -563,6 +642,10 @@ export const createApp = () => {
         images,
         showInSlider,
         sliderOrder: sliderOrder ?? 0,
+        weightGrams: weightGrams ?? existing.weight_grams ?? 500,
+        lengthCm: lengthCm ?? existing.length_cm ?? 10,
+        widthCm: widthCm ?? existing.width_cm ?? 10,
+        heightCm: heightCm ?? existing.height_cm ?? 10,
         stock: stock ?? existing.stock ?? 0,
         isHidden
       });

@@ -20,6 +20,10 @@ export const initDb = async () => {
       images TEXT[] NOT NULL DEFAULT '{}',
       show_in_slider BOOLEAN NOT NULL DEFAULT FALSE,
       slider_order INTEGER NOT NULL DEFAULT 0,
+      weight_grams INTEGER NOT NULL DEFAULT 500,
+      length_cm INTEGER NOT NULL DEFAULT 10,
+      width_cm INTEGER NOT NULL DEFAULT 10,
+      height_cm INTEGER NOT NULL DEFAULT 10,
       stock INTEGER NOT NULL DEFAULT 0,
       is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,6 +39,26 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE products
     ADD COLUMN IF NOT EXISTS slider_order INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS weight_grams INTEGER NOT NULL DEFAULT 500;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS length_cm INTEGER NOT NULL DEFAULT 10;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS width_cm INTEGER NOT NULL DEFAULT 10;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS height_cm INTEGER NOT NULL DEFAULT 10;
   `);
 
   await query(`

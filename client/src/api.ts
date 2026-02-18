@@ -13,6 +13,10 @@ export type Product = {
   images: string[];
   showInSlider: boolean;
   sliderOrder: number;
+  weightGrams: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
   stock: number;
   isHidden: boolean;
   createdAt: string;
@@ -55,6 +59,10 @@ export type CartItem = {
   image?: string | null;
   quantity: number;
   stock: number;
+  weightGrams: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
 };
 
 export type CartSyncItem = {

@@ -88,6 +88,10 @@ const AdminPage = () => {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
+  const [weightGrams, setWeightGrams] = useState('500');
+  const [lengthCm, setLengthCm] = useState('10');
+  const [widthCm, setWidthCm] = useState('10');
+  const [heightCm, setHeightCm] = useState('10');
   const [category, setCategory] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [existingImages, setExistingImages] = useState<string[]>([]);
@@ -154,6 +158,10 @@ const AdminPage = () => {
     setDescription('');
     setPrice('');
     setStock('');
+    setWeightGrams('500');
+    setLengthCm('10');
+    setWidthCm('10');
+    setHeightCm('10');
     setEditingId(null);
     setExistingImages([]);
     setNewImages([]);
@@ -284,8 +292,17 @@ const AdminPage = () => {
     setStatus(null);
     setError(null);
 
-    if (!name.trim() || !sku.trim() || !price.trim() || !category) {
-      setError('Заполните название, SKU, цену и категорию.');
+    if (
+      !name.trim() ||
+      !sku.trim() ||
+      !price.trim() ||
+      !weightGrams.trim() ||
+      !lengthCm.trim() ||
+      !widthCm.trim() ||
+      !heightCm.trim() ||
+      !category
+    ) {
+      setError('Заполните название, SKU, цену, вес, габариты и категорию.');
       return;
     }
 
@@ -298,6 +315,10 @@ const AdminPage = () => {
     formData.append('price', price.trim());
     const stockValue = stock.trim() === '' ? '0' : stock.trim();
     formData.append('stock', stockValue);
+    formData.append('weightGrams', weightGrams.trim());
+    formData.append('lengthCm', lengthCm.trim());
+    formData.append('widthCm', widthCm.trim());
+    formData.append('heightCm', heightCm.trim());
     formData.append('category', category);
     formData.append('showInSlider', showInSlider ? 'true' : 'false');
     formData.append('isHidden', isHidden ? 'true' : 'false');
@@ -341,6 +362,10 @@ const AdminPage = () => {
     setDescription(product.description);
     setPrice(formatPriceInput(product.priceCents));
     setStock(product.stock === 0 ? '' : String(product.stock ?? 0));
+    setWeightGrams(String(product.weightGrams));
+    setLengthCm(String(product.lengthCm));
+    setWidthCm(String(product.widthCm));
+    setHeightCm(String(product.heightCm));
     setCategory(product.category);
     setExistingImages(product.images);
     setShowInSlider(product.showInSlider);
@@ -651,6 +676,50 @@ const AdminPage = () => {
                 }}
               />
             </label>
+            <label className="field">
+              <span>Вес (г)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={weightGrams}
+                onChange={(event) => setWeightGrams(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Длина (см)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={lengthCm}
+                onChange={(event) => setLengthCm(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Ширина (см)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={widthCm}
+                onChange={(event) => setWidthCm(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Высота (см)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={heightCm}
+                onChange={(event) => setHeightCm(event.target.value)}
+                required
+              />
+            </label>
 
             <label className="field">
               <span>Категория</span>
@@ -864,6 +933,9 @@ const AdminPage = () => {
                     <p className="muted">SKU: {product.sku}</p>
                     <p className="price">{formatPriceLabel(product.priceCents)}</p>
                     <p className="stock-text">Остаток: {product.stock}</p>
+                    <p className="muted">
+                      Вес: {product.weightGrams} г · {product.lengthCm}x{product.widthCm}x{product.heightCm} см
+                    </p>
                     {product.isHidden && (
                       <span className="status-badge status-badge--hidden">Скрыт</span>
                     )}
@@ -892,6 +964,7 @@ const AdminPage = () => {
                     <th>Категория</th>
                     <th>SKU</th>
                     <th>Цена</th>
+                    <th>Вес и габариты</th>
                     <th
                       className="admin-table-sort-cell"
                       aria-sort={
@@ -935,6 +1008,9 @@ const AdminPage = () => {
                       </td>
                       <td className="muted">{product.sku}</td>
                       <td>{formatPriceLabel(product.priceCents)}</td>
+                      <td className="muted">
+                        {product.weightGrams} г · {product.lengthCm}x{product.widthCm}x{product.heightCm} см
+                      </td>
                       <td>{product.stock}</td>
                       <td>
                         {product.isHidden ? (

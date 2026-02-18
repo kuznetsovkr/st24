@@ -29,7 +29,11 @@ const ProductQuickViewModal = () => {
       name: product.name,
       priceCents: product.priceCents,
       image: previewImage,
-      stock: product.stock
+      stock: product.stock,
+      weightGrams: product.weightGrams,
+      lengthCm: product.lengthCm,
+      widthCm: product.widthCm,
+      heightCm: product.heightCm
     });
   };
 
@@ -66,10 +70,11 @@ const ProductQuickViewModal = () => {
             <div className="modal-product-block">
               <p className="modal-block-title">Характеристики</p>
               <ul className="modal-specs-list">
-                <li>Хар. 1</li>
-                <li>Хар. 2</li>
-                <li>Хар. 3</li>
-                <li>Хар. 4</li>
+                <li>Вес: {product.weightGrams ? `${product.weightGrams} г` : '—'}</li>
+                <li>
+                  Габариты: {product.lengthCm ?? '—'} x {product.widthCm ?? '—'} x{' '}
+                  {product.heightCm ?? '—'} см
+                </li>
               </ul>
             </div>
 

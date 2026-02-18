@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPhone } from '../utils/formatPhone.ts';
+import { buildShippingParcels } from '../utils/parcelPacking.ts';
 import { formatPrice } from '../utils/formatPrice.ts';
 
 const CDEK_WIDGET_SCRIPT_ID = 'cdek-widget-script';
@@ -49,18 +50,6 @@ declare global {
   }
 }
 
-const buildWidgetParcels = (totalCount: number): CdekWidgetParcel[] => {
-  const safeCount = Math.max(1, totalCount);
-  return [
-    {
-      length: 30,
-      width: 20,
-      height: 15,
-      weight: Math.max(500, safeCount * 500)
-    }
-  ];
-};
-
 const buildPickupPointLabel = (office: CdekWidgetOffice) => {
   const addressLine = [office.city, office.address].filter(Boolean).join(', ');
   if (office.name && addressLine) {
@@ -99,6 +88,10 @@ const CheckoutPage = () => {
   }, [cdekFromCodeRaw, cdekFromLocation]);
   const cdekDefaultLocation =
     (import.meta.env.VITE_CDEK_DEFAULT_LOCATION ?? '').trim() || DEFAULT_CDEK_LOCATION;
+  const shippingParcels = useMemo<CdekWidgetParcel[]>(
+    () => buildShippingParcels(items),
+    [items]
+  );
   const deliveryLabel =
     deliveryCostCents === null ? 'после выбора ПВЗ' : formatPrice(deliveryCostCents);
   const grandTotalCents = totalPriceCents + (deliveryCostCents ?? 0);
@@ -145,7 +138,7 @@ const CheckoutPage = () => {
           door: true,
           office: false
         },
-        goods: buildWidgetParcels(totalCount),
+        goods: shippingParcels,
         onReady: () => {
           if (!disposed) {
             setIsWidgetLoading(false);
@@ -207,7 +200,7 @@ const CheckoutPage = () => {
         widgetRef.current = null;
       }
     };
-  }, [yandexApiKey, cdekFrom, cdekDefaultLocation]);
+  }, [yandexApiKey, cdekFrom, cdekDefaultLocation, shippingParcels]);
 
   useEffect(() => {
     const widget = widgetRef.current;
@@ -215,8 +208,8 @@ const CheckoutPage = () => {
       return;
     }
     widget.resetParcels();
-    widget.addParcel(buildWidgetParcels(totalCount));
-  }, [totalCount]);
+    widget.addParcel(shippingParcels);
+  }, [shippingParcels]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

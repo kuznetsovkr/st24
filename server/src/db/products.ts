@@ -11,6 +11,10 @@ export type ProductRow = {
   images: string[];
   show_in_slider: boolean;
   slider_order: number;
+  weight_grams: number;
+  length_cm: number;
+  width_cm: number;
+  height_cm: number;
   stock: number;
   is_hidden: boolean;
   created_at: string;
@@ -26,6 +30,10 @@ type ProductInput = {
   images: string[];
   showInSlider: boolean;
   sliderOrder: number;
+  weightGrams: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
   stock: number;
   isHidden: boolean;
 };
@@ -57,7 +65,7 @@ export const listProducts = async (
     : 'ORDER BY created_at DESC';
   const result = await query(
     `
-      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
       FROM products
       ${whereClause}
       ${orderBy};
@@ -71,7 +79,7 @@ export const listProducts = async (
 export const findProductById = async (id: string): Promise<ProductRow | null> => {
   const result = await query(
     `
-      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
       FROM products
       WHERE id = $1;
     `,
@@ -84,7 +92,7 @@ export const findProductById = async (id: string): Promise<ProductRow | null> =>
 export const findProductBySku = async (sku: string): Promise<ProductRow | null> => {
   const result = await query(
     `
-      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
       FROM products
       WHERE sku = $1;
     `,
@@ -98,9 +106,12 @@ export const createProduct = async (input: ProductInput): Promise<ProductRow> =>
   const id = randomUUID();
   const result = await query(
     `
-      INSERT INTO products (id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at;
+      INSERT INTO products (
+        id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order,
+        weight_grams, length_cm, width_cm, height_cm, stock, is_hidden
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at;
     `,
     [
       id,
@@ -112,6 +123,10 @@ export const createProduct = async (input: ProductInput): Promise<ProductRow> =>
       input.images,
       input.showInSlider,
       input.sliderOrder,
+      input.weightGrams,
+      input.lengthCm,
+      input.widthCm,
+      input.heightCm,
       input.stock,
       input.isHidden
     ]
@@ -135,11 +150,15 @@ export const updateProduct = async (
           images = $7,
           show_in_slider = $8,
           slider_order = $9,
-          stock = $10,
-          is_hidden = $11,
+          weight_grams = $10,
+          length_cm = $11,
+          width_cm = $12,
+          height_cm = $13,
+          stock = $14,
+          is_hidden = $15,
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at;
+      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at;
     `,
     [
       id,
@@ -151,6 +170,10 @@ export const updateProduct = async (
       input.images,
       input.showInSlider,
       input.sliderOrder,
+      input.weightGrams,
+      input.lengthCm,
+      input.widthCm,
+      input.heightCm,
       input.stock,
       input.isHidden
     ]
@@ -164,7 +187,7 @@ export const deleteProduct = async (id: string): Promise<ProductRow | null> => {
     `
       DELETE FROM products
       WHERE id = $1
-      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, stock, is_hidden, created_at, updated_at;
+      RETURNING id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at;
     `,
     [id]
   );
