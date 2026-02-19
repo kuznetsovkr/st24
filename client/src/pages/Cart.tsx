@@ -23,6 +23,9 @@ const CartPage = () => {
   } = useCart();
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
+  const [expandedCartItemIds, setExpandedCartItemIds] = useState<Set<string>>(
+    () => new Set()
+  );
 
   const hasStockIssues = items.some(
     (item) => typeof item.stock === 'number' && item.quantity > item.stock
@@ -54,6 +57,18 @@ const CartPage = () => {
     openAuthModal();
   };
 
+  const toggleCartItemName = (itemId: string) => {
+    setExpandedCartItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="page">
       <header className="page-header">
@@ -80,7 +95,15 @@ const CartPage = () => {
                   {item.image ? <img src={item.image} alt={item.name} /> : <span>Фото</span>}
                 </div>
                 <div className="cart-details">
-                  <h3>{item.name}</h3>
+                  <button
+                    type="button"
+                    className={`cart-item-name${expandedCartItemIds.has(item.id) ? ' is-expanded' : ''}`}
+                    title={item.name}
+                    data-full-name={item.name}
+                    onClick={() => toggleCartItemName(item.id)}
+                  >
+                    {item.name}
+                  </button>
                   <p className="muted">{formatPrice(item.priceCents)} за шт.</p>
                   <div className="cart-actions">
                     <div className="qty-control" role="group" aria-label="Количество товара">
@@ -134,14 +157,12 @@ const CartPage = () => {
                 </div>
                 <div className="cart-total">
                   <p className="price">{formatPrice(item.priceCents * item.quantity)}</p>
-                  <p className="muted">{item.quantity} шт.</p>
                 </div>
               </article>
             ))}
           </div>
           <aside className="cart-summary card">
-            <h3>Итого</h3>
-            <p className="muted">Товаров: {totalCount}</p>
+            <h3>Итого товаров: {totalCount}</h3>
             <p className="price">{formatPrice(totalPriceCents)}</p>
             {checkoutError && <p className="status-text status-text--error">{checkoutError}</p>}
             {!checkoutError && hasStockIssues && (

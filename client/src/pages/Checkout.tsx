@@ -74,6 +74,9 @@ const CheckoutPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWidgetLoading, setIsWidgetLoading] = useState(false);
+  const [expandedSummaryItemIds, setExpandedSummaryItemIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const promptedRef = useRef(false);
   const widgetRef = useRef<CdekWidgetInstance | null>(null);
   const yandexApiKey = (import.meta.env.VITE_YANDEX_MAPS_API_KEY ?? '').trim();
@@ -279,6 +282,18 @@ const CheckoutPage = () => {
     }
   };
 
+  const toggleSummaryItemName = (itemId: string) => {
+    setExpandedSummaryItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
   if (status === 'loading') {
     return (
       <div className="page">
@@ -426,17 +441,33 @@ const CheckoutPage = () => {
           <ul className="checkout-summary-list">
             {items.map((item) => (
               <li key={item.id}>
-                <span>{item.name}</span>
-                <span>
+                <button
+                  type="button"
+                  className={`checkout-summary-item-name${expandedSummaryItemIds.has(item.id) ? ' is-expanded' : ''}`}
+                  title={item.name}
+                  data-full-name={item.name}
+                  onClick={() => toggleSummaryItemName(item.id)}
+                >
+                  {item.name}
+                </button>
+                <span className="checkout-summary-item-price">
                   {item.quantity} x {formatPrice(item.priceCents)}
                 </span>
               </li>
             ))}
           </ul>
           <div className="checkout-summary-total">
-            <p className="muted">Товары: {formatPrice(totalPriceCents)}</p>
-            <p className="muted">Доставка: {deliveryLabel}</p>
-            <p className="price">Сумма: {formatPrice(grandTotalCents)}</p>
+            <p className="muted checkout-summary-row">
+              <span>{'\u0422\u043e\u0432\u0430\u0440\u044b:'}</span>{' '}
+              <span className="checkout-summary-value">{formatPrice(totalPriceCents)}</span>
+            </p>
+            <p className="muted checkout-summary-row">
+              <span>{'\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430:'}</span>{' '}
+              <span className={deliveryCostCents === null ? undefined : 'checkout-summary-value'}>
+                {deliveryLabel}
+              </span>
+            </p>
+            <p className="price">{'\u0421\u0443\u043c\u043c\u0430:'} {formatPrice(grandTotalCents)}</p>
           </div>
           <button
             form="checkout-form"
