@@ -944,6 +944,7 @@ input {
   padding: 12px;
   color: var(--text);
   outline: none;
+  font-size: 16px;
 }
 
 input:focus {
