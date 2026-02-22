@@ -370,7 +370,7 @@ const CheckoutPage = () => {
           <h1>Контактные данные</h1>
           <p className="muted">Заполните форму и перейдите к оплате.</p>
         </div>
-        <Link to="/cart" className="ghost-button">
+        <Link to="/cart" className="link-button">
           Назад в корзину
         </Link>
       </header>

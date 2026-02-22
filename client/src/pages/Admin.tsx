@@ -112,6 +112,19 @@ const StockSortIcon = () => (
   </svg>
 );
 
+const LogoutIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M8,23.5c0,.276-.224,.5-.5,.5H3.5c-1.93,0-3.5-1.57-3.5-3.5V3.5C0,1.57,1.57,0,3.5,0H7.5c.276,0,.5,.224,.5,.5s-.224,.5-.5,.5H3.5c-1.378,0-2.5,1.121-2.5,2.5V20.5c0,1.379,1.122,2.5,2.5,2.5H7.5c.276,0,.5,.224,.5,.5Zm16-11.5s0,0,0,0c0-.473-.184-.918-.52-1.253l-4.628-4.601c-.196-.193-.512-.193-.707,.002-.195,.196-.194,.513,.002,.707,0,0,4.645,4.631,4.658,4.646H5.5c-.276,0-.5,.224-.5,.5s.224,.5,.5,.5H22.803c-.011,.013-4.656,4.646-4.656,4.646-.196,.194-.197,.512-.002,.707,.098,.099,.226,.147,.354,.147,.127,0,.255-.049,.353-.146l4.628-4.604c.335-.334,.518-.777,.519-1.249,0,0,0,0,0,0,0,0,0,0,0,0Z" />
+  </svg>
+);
+
 const AdminPage = () => {
   const [authStatus, setAuthStatus] = useState<'checking' | 'guest' | 'auth'>('checking');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -128,7 +141,7 @@ const AdminPage = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'boxes' | 'fonts'>('products');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockSort, setStockSort] = useState<'none' | 'desc' | 'asc'>('none');
@@ -708,11 +721,14 @@ const AdminPage = () => {
         });
 
   const stockSortLabel = stockSort === 'desc' ? '↓' : stockSort === 'asc' ? '↑' : '';
-  const activeTabTitle = activeTab === 'products' ? 'Товары' : 'Коробки';
+  const activeTabTitle =
+    activeTab === 'products' ? 'Товары' : activeTab === 'boxes' ? 'Коробки' : 'Шрифты';
   const activeTabDescription =
     activeTab === 'products'
       ? 'Добавление, редактирование и удаление карточек.'
-      : 'Настройка типов коробок для расчёта доставки.';
+      : activeTab === 'boxes'
+      ? 'Настройка типов коробок для расчёта доставки.'
+      : 'Настройка шрифтового оформления интерфейса.';
 
   if (authStatus === 'checking') {
     return (
@@ -799,9 +815,19 @@ const AdminPage = () => {
           </div>
         </header>
         <div className="card">
-          <button className="ghost-button" onClick={handleLogout}>
-            Выйти
-          </button>
+          <a
+            href="#logout"
+            className="admin-logout-link"
+            onClick={(event) => {
+              event.preventDefault();
+              handleLogout();
+            }}
+          >
+            <span className="admin-logout-icon">
+              <LogoutIcon />
+            </span>
+            <span>Выйти</span>
+          </a>
         </div>
       </div>
     );
@@ -833,31 +859,36 @@ const AdminPage = () => {
             >
               Коробки
             </a>
+            <a
+              href="#fonts"
+              className={`admin-tab-link${activeTab === 'fonts' ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveTab('fonts');
+              }}
+            >
+              Шрифты
+            </a>
           </nav>
           <h1>{activeTabTitle}</h1>
           <p className="muted">{activeTabDescription}</p>
         </div>
-        <button className="ghost-button" onClick={handleLogout}>
-          Выйти
-        </button>
+        <a
+          href="#logout"
+          className="admin-logout-link"
+          onClick={(event) => {
+            event.preventDefault();
+            handleLogout();
+          }}
+        >
+          <span className="admin-logout-icon">
+            <LogoutIcon />
+          </span>
+          <span>Выйти</span>
+        </a>
       </header>
       {activeTab === 'products' && (
         <>
-      <div className="card">
-        <h3>Оформление шрифтов</h3>
-        <div className="stacked-form">
-          <label className="field">
-            <span>Вариант оформления сайта</span>
-            <select value={fontTheme} onChange={handleFontThemeChange}>
-              <option value="default">Текущие шрифты</option>
-              <option value="franklin">Franklin Gothic (новые)</option>
-            </select>
-            <span className="form-help">
-              Применяется ко всем текущим страницам в этом браузере.
-            </span>
-          </label>
-        </div>
-      </div>
       <div className="card">
         <form className="admin-form" onSubmit={handleSubmit}>
           <div className="form-grid">
@@ -1297,6 +1328,23 @@ const AdminPage = () => {
         )}
       </div>
         </>
+      )}
+      {activeTab === 'fonts' && (
+        <div className="card">
+          <h3>Оформление шрифтов</h3>
+          <div className="stacked-form">
+            <label className="field">
+              <span>Вариант оформления сайта</span>
+              <select value={fontTheme} onChange={handleFontThemeChange}>
+                <option value="default">Текущие шрифты</option>
+                <option value="franklin">Franklin Gothic (новые)</option>
+              </select>
+              <span className="form-help">
+                Применяется ко всем текущим страницам в этом браузере.
+              </span>
+            </label>
+          </div>
+        </div>
       )}
       {activeTab === 'boxes' && (
         <>

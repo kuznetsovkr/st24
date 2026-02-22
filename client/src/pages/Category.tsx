@@ -110,7 +110,7 @@ const CategoryPage = () => {
           <h1>{slug ? `${categoryTitle || slug}` : 'Категория'}</h1>
           <p className="muted">Выберите товар и добавьте его в корзину.</p>
         </div>
-        <Link to="/catalog" className="ghost-button">
+        <Link to="/catalog" className="link-button">
           Назад к каталогу
         </Link>
       </header>

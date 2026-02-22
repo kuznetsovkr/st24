@@ -115,12 +115,26 @@ const HomePage = () => {
           <h1>Подборка товаров</h1>
         </div>
         <div className="slider-controls">
-          <button className="slider-button" onClick={() => handleSlide('prev')}>
-            Назад
-          </button>
-          <button className="slider-button slider-button--primary" onClick={() => handleSlide('next')}>
-            Вперёд
-          </button>
+          <a
+            href="#featured-slider"
+            className="slider-link"
+            onClick={(event) => {
+              event.preventDefault();
+              handleSlide('prev');
+            }}
+          >
+            назад
+          </a>
+          <a
+            href="#featured-slider"
+            className="slider-link slider-link"
+            onClick={(event) => {
+              event.preventDefault();
+              handleSlide('next');
+            }}
+          >
+            вперёд
+          </a>
         </div>
       </div>
 
@@ -130,7 +144,7 @@ const HomePage = () => {
         <p className="muted">Пока нет товаров для слайдера. Отметьте товары в админке.</p>
       )}
       {status === 'ready' && featuredProducts.length > 0 && (
-        <div className="slider-track" ref={sliderRef}>
+        <div id="featured-slider" className="slider-track" ref={sliderRef}>
           {featuredProducts.map((product) => (
             <ProductMiniCard
               key={product.id}

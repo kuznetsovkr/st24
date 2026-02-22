@@ -524,30 +524,29 @@ a {
   gap: 8px;
 }
 
-.slider-button {
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface-soft);
-  color: var(--text);
-  padding: 10px 14px;
-  font-weight: var(--weight-semibold);
+.slider-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: var(--weight-medium);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  text-decoration: underline;
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  transition: color 0.2s ease;
 }
 
-.slider-button:hover {
-  background: var(--accent-soft);
-}
-
-.slider-button--primary {
-  background: var(--primary);
+.slider-link:hover {
   color: var(--text);
-  border-color: var(--primary);
 }
 
-.slider-button--primary:hover {
-  background: var(--surface-soft-contrast);
-  border-color: var(--border);
+.slider-link--primary {
+  color: var(--text);
 }
 
 .slider-track {
@@ -895,7 +894,7 @@ h3 {
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: var(--weight-semibold);
   cursor: pointer;
   padding: 0;
@@ -903,10 +902,15 @@ h3 {
   text-decoration-color: var(--primary);
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.link-button:hover {
+  opacity: 0.7;
 }
 
 .link-button:disabled {
-  opacity: 0.6;
+  opacity: 0.2;
   cursor: default;
 }
 
@@ -1072,7 +1076,7 @@ input[type='file'] {
 }
 
 .status-text--error {
-  color: var(--text);
+  color: #E74C3C ;
   background: var(--accent-strong);
   padding: 6px 8px;
   border-radius: 8px;
@@ -1368,6 +1372,30 @@ input[type='file'] {
   background: var(--primary);
 }
 
+.admin-logout-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 16px;
+}
+
+.admin-logout-link:hover {
+  opacity: 0.75;
+}
+
+.admin-logout-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #d93025;
+}
+
+.admin-logout-icon svg {
+  display: block;
+}
+
 .admin-list-controls .admin-view-toggle {
   margin-bottom: 0;
 }
@@ -1627,7 +1655,7 @@ input[type='file'] {
 .slide .product-actions .primary-button,
 .slide .product-actions .ghost-button {
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 16px;
   white-space: nowrap;
 }
 
