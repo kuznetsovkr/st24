@@ -13,7 +13,6 @@ const CDEK_WIDGET_SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/@cdek-it/widget@3';
 const CDEK_WIDGET_ROOT_ID = 'checkout-cdek-map';
 const DEFAULT_CDEK_FROM = 'Красноярск, улица Калинина, 53а/1';
 const DEFAULT_CDEK_LOCATION = 'Красноярск';
-const DEFAULT_CDEK_OFFICE_TARIFF_CODES = [136];
 
 type CdekWidgetTariff = {
   tariff_code: number;
@@ -93,14 +92,6 @@ const CheckoutPage = () => {
   }, [cdekFromCodeRaw, cdekFromLocation]);
   const cdekDefaultLocation =
     (import.meta.env.VITE_CDEK_DEFAULT_LOCATION ?? '').trim() || DEFAULT_CDEK_LOCATION;
-  const cdekOfficeTariffCodesRaw = (import.meta.env.VITE_CDEK_OFFICE_TARIFF_CODES ?? '').trim();
-  const cdekOfficeTariffCodes = useMemo<number[]>(() => {
-    const parsed = cdekOfficeTariffCodesRaw
-      .split(',')
-      .map((value: string) => Number.parseInt(value.trim(), 10))
-      .filter((value: number) => Number.isFinite(value) && value > 0);
-    return parsed.length > 0 ? parsed : DEFAULT_CDEK_OFFICE_TARIFF_CODES;
-  }, [cdekOfficeTariffCodesRaw]);
   const shippingParcels = useMemo<CdekWidgetParcel[]>(
     () => buildShippingParcels(items, boxTypes),
     [items, boxTypes]
@@ -169,11 +160,6 @@ const CheckoutPage = () => {
           door: true,
           office: false
         },
-        tariffs: {
-          office: cdekOfficeTariffCodes,
-          door: [],
-          pickup: []
-        },
         goods: shippingParcels,
         onReady: () => {
           if (!disposed) {
@@ -236,7 +222,7 @@ const CheckoutPage = () => {
         widgetRef.current = null;
       }
     };
-  }, [yandexApiKey, cdekFrom, cdekDefaultLocation, cdekOfficeTariffCodes, shippingParcels]);
+  }, [yandexApiKey, cdekFrom, cdekDefaultLocation, shippingParcels]);
 
   useEffect(() => {
     const widget = widgetRef.current;
@@ -426,24 +412,33 @@ const CheckoutPage = () => {
 
           <div className="cdek-placeholder">
             <div className="cdek-placeholder-head">
-              <p className="eyebrow">Пункт выдачи СДЭК</p>
+              <p className="eyebrow">{'\u041f\u0443\u043d\u043a\u0442 \u0432\u044b\u0434\u0430\u0447\u0438 \u0421\u0414\u042d\u041a'}</p>
               <p className="muted">
-                Выберите удобный ПВЗ на карте СДЭК. Стоимость доставки рассчитается автоматически.
+                {
+                  '\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0443\u0434\u043e\u0431\u043d\u044b\u0439 \u041f\u0412\u0417 \u043d\u0430 \u043a\u0430\u0440\u0442\u0435 \u0421\u0414\u042d\u041a. \u0421\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c \u0434\u043e\u0441\u0442\u0430\u0432\u043a\u0438 \u043f\u043e\u0434\u0442\u044f\u043d\u0435\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.'
+                }
               </p>
               {pickupPoint ? (
                 <>
-                  <p className="chip">Выбрано: {pickupPoint}</p>
+                  <p className="chip">{'\u0412\u044b\u0431\u0440\u0430\u043d\u043e:'} {pickupPoint}</p>
                   <p className="cdek-meta">
                     {deliveryTariffName ? `${deliveryTariffName} \u00b7 ` : ''}
-                    Доставка: {deliveryLabel}
+                    {'\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430:'} {deliveryLabel}
                   </p>
                 </>
               ) : (
-                <p className="muted">Пункт выдачи не выбран.</p>
+                <p className="muted">{'\u041f\u0443\u043d\u043a\u0442 \u0432\u044b\u0434\u0430\u0447\u0438 \u043d\u0435 \u0432\u044b\u0431\u0440\u0430\u043d.'}</p>
               )}
             </div>
+            {!yandexApiKey ? (
+              <p className="status-text status-text--error">
+                {
+                  '\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 VITE_YANDEX_MAPS_API_KEY \u0432 client/.env \u0434\u043b\u044f \u0440\u0430\u0431\u043e\u0442\u044b \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u0421\u0414\u042d\u041a.'
+                }
+              </p>
+            ) : null}
             <div id={CDEK_WIDGET_ROOT_ID} className="cdek-widget-inline" />
-            {isWidgetLoading ? <p className="muted">Загружаем карту СДЭК...</p> : null}
+            {isWidgetLoading ? <p className="muted">{'\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c \u043a\u0430\u0440\u0442\u0443 \u0421\u0414\u042d\u041a...'}</p> : null}
           </div>
 
           <label className="checkbox-field">
@@ -482,16 +477,16 @@ const CheckoutPage = () => {
           </ul>
           <div className="checkout-summary-total">
             <p className="muted checkout-summary-row">
-              <span>Товары:</span>{' '}
+              <span>{'\u0422\u043e\u0432\u0430\u0440\u044b:'}</span>{' '}
               <span className="checkout-summary-value">{formatPrice(totalPriceCents)}</span>
             </p>
             <p className="muted checkout-summary-row">
-              <span>Доставка:</span>{' '}
+              <span>{'\u0414\u043e\u0441\u0442\u0430\u0432\u043a\u0430:'}</span>{' '}
               <span className={deliveryCostCents === null ? undefined : 'checkout-summary-value'}>
                 {deliveryLabel}
               </span>
             </p>
-            <p className="price">Сумма: {formatPrice(grandTotalCents)}</p>
+            <p className="price">{'\u0421\u0443\u043c\u043c\u0430:'} {formatPrice(grandTotalCents)}</p>
           </div>
           <button
             form="checkout-form"
