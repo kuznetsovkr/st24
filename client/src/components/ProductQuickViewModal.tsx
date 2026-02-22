@@ -146,9 +146,6 @@ const ProductQuickViewModal = () => {
               </button>
             </div>
           )}
-          <button className="ghost-button" onClick={closeProductModal}>
-            Закрыть
-          </button>
         </div>
 
         {isOutOfStock && (

@@ -1392,6 +1392,12 @@ input[type='file'] {
   color: #d93025;
 }
 
+.account-admin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .admin-logout-icon svg {
   display: block;
 }
