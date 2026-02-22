@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE, createOrder } from '../api.ts';
+import { API_BASE, createOrder, fetchBoxTypes, type BoxType } from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
@@ -74,6 +74,7 @@ const CheckoutPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWidgetLoading, setIsWidgetLoading] = useState(false);
+  const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
   const [expandedSummaryItemIds, setExpandedSummaryItemIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -92,8 +93,8 @@ const CheckoutPage = () => {
   const cdekDefaultLocation =
     (import.meta.env.VITE_CDEK_DEFAULT_LOCATION ?? '').trim() || DEFAULT_CDEK_LOCATION;
   const shippingParcels = useMemo<CdekWidgetParcel[]>(
-    () => buildShippingParcels(items),
-    [items]
+    () => buildShippingParcels(items, boxTypes),
+    [items, boxTypes]
   );
   const deliveryLabel =
     deliveryCostCents === null ? 'после выбора ПВЗ' : formatPrice(deliveryCostCents);
@@ -107,6 +108,24 @@ const CheckoutPage = () => {
     setPhone(formatPhone(user.phone ?? ''));
     setEmail(user.email ?? '');
   }, [user]);
+
+  useEffect(() => {
+    let disposed = false;
+    fetchBoxTypes()
+      .then((items) => {
+        if (!disposed) {
+          setBoxTypes(items);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setBoxTypes([]);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (status === 'guest' && !promptedRef.current) {

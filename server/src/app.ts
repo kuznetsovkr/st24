@@ -5,6 +5,13 @@ import path from 'path';
 import { signToken, verifyToken } from './auth';
 import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
 import { findAuthCode, saveAuthCode, deleteAuthCode } from './db/authCodes';
+import {
+  createBoxType,
+  deleteBoxType,
+  listBoxTypes,
+  updateBoxType,
+  type BoxTypeRow
+} from './db/boxTypes';
 import { findEmailCode, saveEmailCode, deleteEmailCode } from './db/emailCodes';
 import {
   filterValidCartItems,
@@ -166,6 +173,32 @@ const generateNumericCode = (length: number) => {
   return String(Math.floor(min + Math.random() * (max - min)));
 };
 
+const parseIntegerField = (value: unknown, min: number, max: number) => {
+  const parsed =
+    typeof value === 'number'
+      ? Math.round(value)
+      : typeof value === 'string'
+      ? Number.parseInt(value, 10)
+      : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return null;
+  }
+  return parsed;
+};
+
+const parseFillRatioField = (value: unknown) => {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+      ? Number.parseFloat(value.replace(',', '.'))
+      : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1) {
+    return null;
+  }
+  return Math.round(parsed * 100) / 100;
+};
+
 const b2bUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -201,6 +234,20 @@ const mapProduct = (row: ProductRow) => ({
   heightCm: row.height_cm,
   stock: row.stock,
   isHidden: row.is_hidden,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapBoxType = (row: BoxTypeRow) => ({
+  id: row.id,
+  name: row.name,
+  lengthCm: row.length_cm,
+  widthCm: row.width_cm,
+  heightCm: row.height_cm,
+  maxWeightGrams: row.max_weight_grams,
+  emptyWeightGrams: row.empty_weight_grams,
+  fillRatio: row.fill_ratio,
+  sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -381,6 +428,128 @@ export const createApp = () => {
     listCategories()
       .then((items) => res.json({ items }))
       .catch(() => res.status(500).json({ error: 'Failed to load categories' }));
+  });
+
+  app.get('/api/box-types', async (_req: Request, res: Response) => {
+    try {
+      const items = await listBoxTypes();
+      res.json({ items: items.map(mapBoxType) });
+    } catch {
+      res.status(500).json({ error: 'Failed to load box types' });
+    }
+  });
+
+  app.post('/api/box-types', authenticate, requireAdmin, async (req: Request, res: Response) => {
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    const lengthCm = parseIntegerField(req.body.lengthCm, 1, 500);
+    const widthCm = parseIntegerField(req.body.widthCm, 1, 500);
+    const heightCm = parseIntegerField(req.body.heightCm, 1, 500);
+    const maxWeightGrams = parseIntegerField(req.body.maxWeightGrams, 1, 100000);
+    const emptyWeightGrams = parseIntegerField(req.body.emptyWeightGrams, 0, 100000);
+    const fillRatio = parseFillRatioField(req.body.fillRatio);
+    const sortOrder = parseIntegerField(req.body.sortOrder, 0, 100000);
+
+    const errors: string[] = [];
+    if (!name) {
+      errors.push('Название коробки обязательно');
+    }
+    if (lengthCm === null || widthCm === null || heightCm === null) {
+      errors.push('Некорректные габариты коробки');
+    }
+    if (maxWeightGrams === null || emptyWeightGrams === null) {
+      errors.push('Некорректный вес коробки');
+    }
+    if (fillRatio === null) {
+      errors.push('Коэффициент заполнения должен быть от 0.01 до 1');
+    }
+    if (sortOrder === null) {
+      errors.push('Некорректный порядок сортировки');
+    }
+    if (errors.length > 0) {
+      res.status(400).json({ errors });
+      return;
+    }
+
+    try {
+      const item = await createBoxType({
+        name,
+        lengthCm: lengthCm ?? 0,
+        widthCm: widthCm ?? 0,
+        heightCm: heightCm ?? 0,
+        maxWeightGrams: maxWeightGrams ?? 0,
+        emptyWeightGrams: emptyWeightGrams ?? 0,
+        fillRatio: fillRatio ?? 0,
+        sortOrder: sortOrder ?? 0
+      });
+      res.status(201).json(mapBoxType(item));
+    } catch {
+      res.status(500).json({ error: 'Failed to create box type' });
+    }
+  });
+
+  app.put('/api/box-types/:id', authenticate, requireAdmin, async (req: Request, res: Response) => {
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    const lengthCm = parseIntegerField(req.body.lengthCm, 1, 500);
+    const widthCm = parseIntegerField(req.body.widthCm, 1, 500);
+    const heightCm = parseIntegerField(req.body.heightCm, 1, 500);
+    const maxWeightGrams = parseIntegerField(req.body.maxWeightGrams, 1, 100000);
+    const emptyWeightGrams = parseIntegerField(req.body.emptyWeightGrams, 0, 100000);
+    const fillRatio = parseFillRatioField(req.body.fillRatio);
+    const sortOrder = parseIntegerField(req.body.sortOrder, 0, 100000);
+
+    const errors: string[] = [];
+    if (!name) {
+      errors.push('Название коробки обязательно');
+    }
+    if (lengthCm === null || widthCm === null || heightCm === null) {
+      errors.push('Некорректные габариты коробки');
+    }
+    if (maxWeightGrams === null || emptyWeightGrams === null) {
+      errors.push('Некорректный вес коробки');
+    }
+    if (fillRatio === null) {
+      errors.push('Коэффициент заполнения должен быть от 0.01 до 1');
+    }
+    if (sortOrder === null) {
+      errors.push('Некорректный порядок сортировки');
+    }
+    if (errors.length > 0) {
+      res.status(400).json({ errors });
+      return;
+    }
+
+    try {
+      const item = await updateBoxType(req.params.id, {
+        name,
+        lengthCm: lengthCm ?? 0,
+        widthCm: widthCm ?? 0,
+        heightCm: heightCm ?? 0,
+        maxWeightGrams: maxWeightGrams ?? 0,
+        emptyWeightGrams: emptyWeightGrams ?? 0,
+        fillRatio: fillRatio ?? 0,
+        sortOrder: sortOrder ?? 0
+      });
+      if (!item) {
+        res.status(404).json({ error: 'Box type not found' });
+        return;
+      }
+      res.json(mapBoxType(item));
+    } catch {
+      res.status(500).json({ error: 'Failed to update box type' });
+    }
+  });
+
+  app.delete('/api/box-types/:id', authenticate, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const item = await deleteBoxType(req.params.id);
+      if (!item) {
+        res.status(404).json({ error: 'Box type not found' });
+        return;
+      }
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: 'Failed to delete box type' });
+    }
   });
 
   app.get('/api/products', (req: Request, res: Response) => {

@@ -1,11 +1,13 @@
 type BoxType = {
   id: string;
+  name: string;
   lengthCm: number;
   widthCm: number;
   heightCm: number;
   maxWeightGrams: number;
   emptyWeightGrams: number;
   fillRatio: number;
+  sortOrder: number;
 };
 
 type UnitItem = {
@@ -37,6 +39,18 @@ export type PackableCartItem = {
   heightCm?: number;
 };
 
+export type ShippingBoxType = {
+  id: string;
+  name: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  maxWeightGrams: number;
+  emptyWeightGrams: number;
+  fillRatio: number;
+  sortOrder?: number;
+};
+
 const DEFAULT_ITEM = {
   lengthCm: 10,
   widthCm: 10,
@@ -44,42 +58,50 @@ const DEFAULT_ITEM = {
   weightGrams: 500
 };
 
-const BOX_TYPES: BoxType[] = [
+const DEFAULT_BOX_TYPES: BoxType[] = [
   {
     id: 's',
+    name: 'S',
     lengthCm: 20,
     widthCm: 15,
     heightCm: 10,
     maxWeightGrams: 2000,
     emptyWeightGrams: 120,
-    fillRatio: 0.82
+    fillRatio: 0.82,
+    sortOrder: 0
   },
   {
     id: 'm',
+    name: 'M',
     lengthCm: 30,
     widthCm: 22,
     heightCm: 14,
     maxWeightGrams: 5000,
     emptyWeightGrams: 180,
-    fillRatio: 0.82
+    fillRatio: 0.82,
+    sortOrder: 1
   },
   {
     id: 'l',
+    name: 'L',
     lengthCm: 40,
     widthCm: 30,
     heightCm: 20,
     maxWeightGrams: 10000,
     emptyWeightGrams: 260,
-    fillRatio: 0.8
+    fillRatio: 0.8,
+    sortOrder: 2
   },
   {
     id: 'xl',
+    name: 'XL',
     lengthCm: 60,
     widthCm: 40,
     heightCm: 30,
     maxWeightGrams: 20000,
     emptyWeightGrams: 420,
-    fillRatio: 0.78
+    fillRatio: 0.78,
+    sortOrder: 3
   }
 ];
 
@@ -114,6 +136,64 @@ const normalizeUnit = (item: PackableCartItem): UnitItem => {
   };
 };
 
+const normalizeBoxTypes = (input?: ShippingBoxType[]): BoxType[] => {
+  if (!Array.isArray(input) || input.length === 0) {
+    return DEFAULT_BOX_TYPES;
+  }
+
+  const normalized = input
+    .map((item, index) => {
+      const lengthCm = normalizePositiveInt(item.lengthCm, 0);
+      const widthCm = normalizePositiveInt(item.widthCm, 0);
+      const heightCm = normalizePositiveInt(item.heightCm, 0);
+      const maxWeightGrams = normalizePositiveInt(item.maxWeightGrams, 0);
+      const emptyWeightGrams = normalizePositiveInt(item.emptyWeightGrams, 0);
+      const fillRatio =
+        typeof item.fillRatio === 'number' && Number.isFinite(item.fillRatio)
+          ? Math.round(item.fillRatio * 100) / 100
+          : 0;
+      const sortOrder =
+        typeof item.sortOrder === 'number' && Number.isFinite(item.sortOrder)
+          ? Math.round(item.sortOrder)
+          : index;
+
+      if (
+        !item.id ||
+        !item.name ||
+        lengthCm < 1 ||
+        widthCm < 1 ||
+        heightCm < 1 ||
+        maxWeightGrams < 1 ||
+        emptyWeightGrams < 0 ||
+        fillRatio <= 0 ||
+        fillRatio > 1
+      ) {
+        return null;
+      }
+
+      return {
+        id: item.id,
+        name: item.name,
+        lengthCm,
+        widthCm,
+        heightCm,
+        maxWeightGrams,
+        emptyWeightGrams,
+        fillRatio,
+        sortOrder
+      } satisfies BoxType;
+    })
+    .filter((item): item is BoxType => item !== null)
+    .sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      return calcVolume(a.lengthCm, a.widthCm, a.heightCm) - calcVolume(b.lengthCm, b.widthCm, b.heightCm);
+    });
+
+  return normalized.length > 0 ? normalized : DEFAULT_BOX_TYPES;
+};
+
 const fitsDimensions = (unit: UnitItem, box: BoxType) => {
   const itemDims = sortDimsDesc(unit.lengthCm, unit.widthCm, unit.heightCm);
   const boxDims = sortDimsDesc(box.lengthCm, box.widthCm, box.heightCm);
@@ -140,8 +220,8 @@ const canPlaceIntoBox = (boxState: BoxState, unit: UnitItem) => {
   return true;
 };
 
-const pickBoxForUnit = (unit: UnitItem) => {
-  const fit = BOX_TYPES.find(
+const pickBoxForUnit = (unit: UnitItem, boxTypes: BoxType[]) => {
+  const fit = boxTypes.find(
     (box) =>
       fitsDimensions(unit, box) &&
       unit.weightGrams <= box.maxWeightGrams &&
@@ -167,7 +247,11 @@ const toFallbackParcel = (unit: UnitItem): ShippingParcel => ({
   weight: Math.max(1, unit.weightGrams + 150)
 });
 
-export const buildShippingParcels = (items: PackableCartItem[]): ShippingParcel[] => {
+export const buildShippingParcels = (
+  items: PackableCartItem[],
+  boxTypes?: ShippingBoxType[]
+): ShippingParcel[] => {
+  const availableBoxTypes = normalizeBoxTypes(boxTypes);
   const units: UnitItem[] = [];
   for (const item of items) {
     const quantity = Math.max(0, Math.round(item.quantity));
@@ -219,7 +303,7 @@ export const buildShippingParcels = (items: PackableCartItem[]): ShippingParcel[
       continue;
     }
 
-    const newBoxType = pickBoxForUnit(unit);
+    const newBoxType = pickBoxForUnit(unit, availableBoxTypes);
     if (!newBoxType) {
       fallbackParcels.push(toFallbackParcel(unit));
       continue;

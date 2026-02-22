@@ -23,6 +23,20 @@ export type Product = {
   updatedAt: string;
 };
 
+export type BoxType = {
+  id: string;
+  name: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  maxWeightGrams: number;
+  emptyWeightGrams: number;
+  fillRatio: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AuthUser = {
   id: string;
   phone: string;
@@ -141,6 +155,45 @@ export const fetchProducts = async (options?: {
     headers: includeHidden ? authHeaders() : undefined
   });
   return data.items.map(normalizeProduct);
+};
+
+export const fetchBoxTypes = async () => {
+  const data = await fetchJson<{ items: BoxType[] }>(`${API_BASE}/api/box-types`);
+  return data.items;
+};
+
+type BoxTypePayload = {
+  name: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  maxWeightGrams: number;
+  emptyWeightGrams: number;
+  fillRatio: number;
+  sortOrder: number;
+};
+
+export const createBoxType = async (payload: BoxTypePayload) => {
+  return fetchJson<BoxType>(`${API_BASE}/api/box-types`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload)
+  });
+};
+
+export const updateBoxType = async (id: string, payload: BoxTypePayload) => {
+  return fetchJson<BoxType>(`${API_BASE}/api/box-types/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload)
+  });
+};
+
+export const deleteBoxType = async (id: string) => {
+  return fetchJson<{ ok: boolean }>(`${API_BASE}/api/box-types/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
 };
 
 export const createProduct = async (payload: FormData) => {

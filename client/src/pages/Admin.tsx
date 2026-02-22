@@ -1,19 +1,23 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import {
+  createBoxType,
   clearAuthToken,
   createProduct,
+  deleteBoxType,
   deleteProduct,
+  fetchBoxTypes,
   fetchCategories,
   fetchMe,
   fetchProducts,
   getAuthToken,
   requestAuthCode,
   setAuthToken,
+  updateBoxType,
   updateProduct,
   verifyAuthCode
 } from '../api';
-import type { AuthUser, Category, Product } from '../api';
+import type { AuthUser, BoxType, Category, Product } from '../api';
 import {
   applyFontTheme,
   getStoredFontTheme,
@@ -122,7 +126,9 @@ const AdminPage = () => {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockSort, setStockSort] = useState<'none' | 'desc' | 'asc'>('none');
@@ -149,6 +155,18 @@ const AdminPage = () => {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [boxName, setBoxName] = useState('');
+  const [boxLengthCm, setBoxLengthCm] = useState('20');
+  const [boxWidthCm, setBoxWidthCm] = useState('15');
+  const [boxHeightCm, setBoxHeightCm] = useState('10');
+  const [boxMaxWeightGrams, setBoxMaxWeightGrams] = useState('2000');
+  const [boxEmptyWeightGrams, setBoxEmptyWeightGrams] = useState('120');
+  const [boxFillRatio, setBoxFillRatio] = useState('0.82');
+  const [boxSortOrder, setBoxSortOrder] = useState('0');
+  const [editingBoxId, setEditingBoxId] = useState<string | null>(null);
+  const [boxStatus, setBoxStatus] = useState<string | null>(null);
+  const [boxError, setBoxError] = useState<string | null>(null);
+  const [isBoxSubmitting, setIsBoxSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -176,12 +194,14 @@ const AdminPage = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [categoryItems, productItems] = await Promise.all([
+      const [categoryItems, productItems, boxItems] = await Promise.all([
         fetchCategories(),
-        fetchProducts({ includeHidden: true })
+        fetchProducts({ includeHidden: true }),
+        fetchBoxTypes()
       ]);
       setCategories(categoryItems);
       setProducts(productItems);
+      setBoxTypes(boxItems);
       setCategory((prev) => prev || categoryItems[0]?.slug || '');
       setIsLoading(false);
     } catch {
@@ -216,6 +236,18 @@ const AdminPage = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const resetBoxForm = () => {
+    setEditingBoxId(null);
+    setBoxName('');
+    setBoxLengthCm('20');
+    setBoxWidthCm('15');
+    setBoxHeightCm('10');
+    setBoxMaxWeightGrams('2000');
+    setBoxEmptyWeightGrams('120');
+    setBoxFillRatio('0.82');
+    setBoxSortOrder('0');
   };
 
   const handleImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -444,6 +476,130 @@ const AdminPage = () => {
     }
   };
 
+  const handleBoxSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBoxStatus(null);
+    setBoxError(null);
+
+    const nameValue = boxName.trim();
+    const lengthValue = Number.parseInt(boxLengthCm, 10);
+    const widthValue = Number.parseInt(boxWidthCm, 10);
+    const heightValue = Number.parseInt(boxHeightCm, 10);
+    const maxWeightValue = Number.parseInt(boxMaxWeightGrams, 10);
+    const emptyWeightValue = Number.parseInt(boxEmptyWeightGrams, 10);
+    const fillRatioValue = Number.parseFloat(boxFillRatio.replace(',', '.'));
+    const sortOrderValue = Number.parseInt(boxSortOrder || '0', 10);
+
+    if (!nameValue) {
+      setBoxError('Укажите название коробки.');
+      return;
+    }
+
+    if (
+      !Number.isFinite(lengthValue) ||
+      !Number.isFinite(widthValue) ||
+      !Number.isFinite(heightValue) ||
+      lengthValue < 1 ||
+      widthValue < 1 ||
+      heightValue < 1
+    ) {
+      setBoxError('Габариты коробки должны быть целыми числами больше нуля.');
+      return;
+    }
+
+    if (
+      !Number.isFinite(maxWeightValue) ||
+      !Number.isFinite(emptyWeightValue) ||
+      maxWeightValue < 1 ||
+      emptyWeightValue < 0
+    ) {
+      setBoxError('Проверьте поля веса коробки.');
+      return;
+    }
+
+    if (!Number.isFinite(fillRatioValue) || fillRatioValue <= 0 || fillRatioValue > 1) {
+      setBoxError('Заполнение должно быть в диапазоне от 0.01 до 1.');
+      return;
+    }
+
+    if (!Number.isFinite(sortOrderValue) || sortOrderValue < 0) {
+      setBoxError('Порядок должен быть нулём или положительным числом.');
+      return;
+    }
+
+    setIsBoxSubmitting(true);
+    try {
+      const payload = {
+        name: nameValue,
+        lengthCm: lengthValue,
+        widthCm: widthValue,
+        heightCm: heightValue,
+        maxWeightGrams: maxWeightValue,
+        emptyWeightGrams: emptyWeightValue,
+        fillRatio: fillRatioValue,
+        sortOrder: sortOrderValue
+      };
+
+      if (editingBoxId) {
+        await updateBoxType(editingBoxId, payload);
+        setBoxStatus('Тип коробки обновлён.');
+      } else {
+        await createBoxType(payload);
+        setBoxStatus('Тип коробки добавлен.');
+      }
+
+      const items = await fetchBoxTypes();
+      setBoxTypes(items);
+      resetBoxForm();
+    } catch (submitError) {
+      if (submitError instanceof Error) {
+        setBoxError(submitError.message);
+      } else {
+        setBoxError('Не удалось сохранить тип коробки.');
+      }
+    } finally {
+      setIsBoxSubmitting(false);
+    }
+  };
+
+  const handleEditBox = (boxType: BoxType) => {
+    setEditingBoxId(boxType.id);
+    setBoxName(boxType.name);
+    setBoxLengthCm(String(boxType.lengthCm));
+    setBoxWidthCm(String(boxType.widthCm));
+    setBoxHeightCm(String(boxType.heightCm));
+    setBoxMaxWeightGrams(String(boxType.maxWeightGrams));
+    setBoxEmptyWeightGrams(String(boxType.emptyWeightGrams));
+    setBoxFillRatio(String(boxType.fillRatio));
+    setBoxSortOrder(String(boxType.sortOrder));
+    setBoxStatus(null);
+    setBoxError(null);
+  };
+
+  const handleDeleteBox = async (boxType: BoxType) => {
+    const confirmed = window.confirm(`Удалить тип коробки "${boxType.name}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setBoxStatus(null);
+    setBoxError(null);
+    try {
+      await deleteBoxType(boxType.id);
+      setBoxTypes((prev) => prev.filter((item) => item.id !== boxType.id));
+      if (editingBoxId === boxType.id) {
+        resetBoxForm();
+      }
+      setBoxStatus('Тип коробки удалён.');
+    } catch (deleteError) {
+      if (deleteError instanceof Error) {
+        setBoxError(deleteError.message);
+      } else {
+        setBoxError('Не удалось удалить тип коробки.');
+      }
+    }
+  };
+
   const handleRequestCode = async () => {
     setAuthMessage(null);
     setError(null);
@@ -552,6 +708,11 @@ const AdminPage = () => {
         });
 
   const stockSortLabel = stockSort === 'desc' ? '↓' : stockSort === 'asc' ? '↑' : '';
+  const activeTabTitle = activeTab === 'products' ? 'Товары' : 'Коробки';
+  const activeTabDescription =
+    activeTab === 'products'
+      ? 'Добавление, редактирование и удаление карточек.'
+      : 'Настройка типов коробок для расчёта доставки.';
 
   if (authStatus === 'checking') {
     return (
@@ -651,13 +812,37 @@ const AdminPage = () => {
       <header className="page-header">
         <div>
           <p className="eyebrow">Админ-панель</p>
-          <h1>Управление товарами</h1>
-          <p className="muted">Добавление, редактирование и удаление карточек.</p>
+          <nav className="admin-tabs-nav" aria-label="Разделы админки">
+            <a
+              href="#products"
+              className={`admin-tab-link${activeTab === 'products' ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveTab('products');
+              }}
+            >
+              Товары
+            </a>
+            <a
+              href="#boxes"
+              className={`admin-tab-link${activeTab === 'boxes' ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveTab('boxes');
+              }}
+            >
+              Коробки
+            </a>
+          </nav>
+          <h1>{activeTabTitle}</h1>
+          <p className="muted">{activeTabDescription}</p>
         </div>
         <button className="ghost-button" onClick={handleLogout}>
           Выйти
         </button>
       </header>
+      {activeTab === 'products' && (
+        <>
       <div className="card">
         <h3>Оформление шрифтов</h3>
         <div className="stacked-form">
@@ -1111,6 +1296,187 @@ const AdminPage = () => {
           </>
         )}
       </div>
+        </>
+      )}
+      {activeTab === 'boxes' && (
+        <>
+          <div className="card">
+            <h3>{editingBoxId ? 'Редактирование коробки' : 'Новый тип коробки'}</h3>
+            <form className="admin-form" onSubmit={handleBoxSubmit}>
+              <div className="form-grid">
+                <label className="field">
+                  <span>Название</span>
+                  <input
+                    type="text"
+                    placeholder="Например: M"
+                    value={boxName}
+                    onChange={(event) => setBoxName(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Длина (см)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={boxLengthCm}
+                    onChange={(event) => setBoxLengthCm(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Ширина (см)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={boxWidthCm}
+                    onChange={(event) => setBoxWidthCm(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Высота (см)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={boxHeightCm}
+                    onChange={(event) => setBoxHeightCm(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Макс. вес (г)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={boxMaxWeightGrams}
+                    onChange={(event) => setBoxMaxWeightGrams(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Вес коробки (г)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={boxEmptyWeightGrams}
+                    onChange={(event) => setBoxEmptyWeightGrams(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Коэф. заполнения</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    max="1"
+                    step="0.01"
+                    value={boxFillRatio}
+                    onChange={(event) => setBoxFillRatio(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Порядок</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={boxSortOrder}
+                    onChange={(event) => setBoxSortOrder(event.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+              {boxStatus && <p className="status-text">{boxStatus}</p>}
+              {boxError && <p className="status-text status-text--error">{boxError}</p>}
+              <div className="button-row">
+                <button className="primary-button" type="submit" disabled={isBoxSubmitting}>
+                  {isBoxSubmitting
+                    ? 'Сохраняем...'
+                    : editingBoxId
+                    ? 'Сохранить изменения'
+                    : 'Добавить тип коробки'}
+                </button>
+                {editingBoxId && (
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={resetBoxForm}
+                    disabled={isBoxSubmitting}
+                  >
+                    Отменить
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          <div className="card">
+            <h3>Настроенные типы коробок</h3>
+            {isLoading && <p className="muted">Загрузка списка...</p>}
+            {!isLoading && boxTypes.length === 0 && (
+              <p className="muted">Типы коробок пока не добавлены.</p>
+            )}
+            {!isLoading && boxTypes.length > 0 && (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Название</th>
+                      <th>Габариты</th>
+                      <th>Макс. вес</th>
+                      <th>Вес коробки</th>
+                      <th>Заполнение</th>
+                      <th>Порядок</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boxTypes.map((boxType) => (
+                      <tr key={boxType.id}>
+                        <td>{boxType.name}</td>
+                        <td className="muted">
+                          {boxType.lengthCm}x{boxType.widthCm}x{boxType.heightCm} см
+                        </td>
+                        <td>{boxType.maxWeightGrams} г</td>
+                        <td>{boxType.emptyWeightGrams} г</td>
+                        <td>{boxType.fillRatio}</td>
+                        <td>{boxType.sortOrder}</td>
+                        <td>
+                          <div className="admin-table-actions">
+                            <button
+                              type="button"
+                              className="admin-edit-button"
+                              aria-label="Редактировать тип коробки"
+                              onClick={() => handleEditBox(boxType)}
+                            >
+                              <EditPencilIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-delete-button"
+                              aria-label="Удалить тип коробки"
+                              onClick={() => handleDeleteBox(boxType)}
+                            >
+                              <DeleteCrossIcon />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };

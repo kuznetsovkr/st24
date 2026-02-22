@@ -1332,6 +1332,42 @@ input[type='file'] {
   margin-bottom: 12px;
 }
 
+.admin-tabs-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 8px;
+}
+
+.admin-tab-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 18px;
+  padding: 2px 14px;
+  font-weight: var(--weight-semibold);
+}
+
+.admin-tab-link::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  flex: 0 0 7px;
+}
+
+.admin-tab-link.is-active {
+  color: var(--text);
+  box-shadow: 0 0px 17px -10px rgba(0, 0, 0, 0.45);
+}
+
+.admin-tab-link.is-active::before {
+  background: var(--primary);
+}
+
 .admin-list-controls .admin-view-toggle {
   margin-bottom: 0;
 }

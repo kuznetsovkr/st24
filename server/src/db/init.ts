@@ -72,6 +72,27 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS box_types (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      length_cm INTEGER NOT NULL,
+      width_cm INTEGER NOT NULL,
+      height_cm INTEGER NOT NULL,
+      max_weight_grams INTEGER NOT NULL,
+      empty_weight_grams INTEGER NOT NULL,
+      fill_ratio REAL NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    ALTER TABLE box_types
+    ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY,
       phone TEXT NOT NULL UNIQUE,
@@ -204,6 +225,7 @@ export const initDb = async () => {
   `);
 
   await query(`CREATE INDEX IF NOT EXISTS products_category_idx ON products (category_slug);`);
+  await query(`CREATE INDEX IF NOT EXISTS box_types_sort_idx ON box_types (sort_order);`);
   await query(`CREATE INDEX IF NOT EXISTS cart_items_user_idx ON cart_items (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_user_idx ON orders (user_id);`);
   await query(`
@@ -220,6 +242,33 @@ export const initDb = async () => {
         ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name;
       `,
       [category.slug, category.name]
+    );
+  }
+
+  const boxTypesCountResult = await query(
+    `SELECT COUNT(*)::int AS count FROM box_types;`
+  );
+  const boxTypesCount = Number(boxTypesCountResult.rows[0]?.count ?? 0);
+  if (boxTypesCount === 0) {
+    await query(
+      `
+        INSERT INTO box_types (
+          id,
+          name,
+          length_cm,
+          width_cm,
+          height_cm,
+          max_weight_grams,
+          empty_weight_grams,
+          fill_ratio,
+          sort_order
+        )
+        VALUES
+          ('00000000-0000-0000-0000-000000000101', 'S', 20, 15, 10, 2000, 120, 0.82, 0),
+          ('00000000-0000-0000-0000-000000000102', 'M', 30, 22, 14, 5000, 180, 0.82, 1),
+          ('00000000-0000-0000-0000-000000000103', 'L', 40, 30, 20, 10000, 260, 0.80, 2),
+          ('00000000-0000-0000-0000-000000000104', 'XL', 60, 40, 30, 20000, 420, 0.78, 3);
+      `
     );
   }
 };
