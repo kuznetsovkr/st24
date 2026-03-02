@@ -64,6 +64,7 @@ export type PackingDebugBox = {
   usedWeightGrams: number;
   usedVolumeCm3: number;
   capacityVolumeCm3: number;
+  maxAllowedVolumeCm3: number;
   items: UnitItem[];
 };
 
@@ -87,6 +88,8 @@ const DEFAULT_ITEM = {
   heightCm: 10,
   weightGrams: 500
 };
+
+const BOX_VOLUME_OVERFLOW_RATIO = 0.1;
 
 const DEFAULT_BOX_TYPES: BoxType[] = [
   {
@@ -241,6 +244,9 @@ const fitsDimensions = (unit: UnitItem, box: BoxType) => {
 const boxCapacityVolume = (box: BoxType) =>
   Math.floor(calcVolume(box.lengthCm, box.widthCm, box.heightCm) * box.fillRatio);
 
+const boxMaxAllowedVolume = (box: BoxType) =>
+  Math.floor(boxCapacityVolume(box) * (1 + BOX_VOLUME_OVERFLOW_RATIO));
+
 const canPlaceIntoBox = (boxState: BoxState, unit: UnitItem) => {
   if (!fitsDimensions(unit, boxState.type)) {
     return false;
@@ -248,7 +254,7 @@ const canPlaceIntoBox = (boxState: BoxState, unit: UnitItem) => {
   if (boxState.totalWeightGrams + unit.weightGrams > boxState.type.maxWeightGrams) {
     return false;
   }
-  if (boxState.totalVolumeCm3 + unit.volumeCm3 > boxCapacityVolume(boxState.type)) {
+  if (boxState.totalVolumeCm3 + unit.volumeCm3 > boxMaxAllowedVolume(boxState.type)) {
     return false;
   }
   return true;
@@ -259,7 +265,7 @@ const pickBoxForUnit = (unit: UnitItem, boxTypes: BoxType[]) => {
     (box) =>
       fitsDimensions(unit, box) &&
       unit.weightGrams <= box.maxWeightGrams &&
-      unit.volumeCm3 <= boxCapacityVolume(box)
+      unit.volumeCm3 <= boxMaxAllowedVolume(box)
   );
   if (fit) {
     return fit;
@@ -329,7 +335,7 @@ export const buildShippingPackingDebug = (
         continue;
       }
       const remaining =
-        boxCapacityVolume(boxState.type) - (boxState.totalVolumeCm3 + unit.volumeCm3);
+        boxMaxAllowedVolume(boxState.type) - (boxState.totalVolumeCm3 + unit.volumeCm3);
       if (remaining < bestRemainingVolume) {
         selectedIndex = i;
         bestRemainingVolume = remaining;
@@ -367,6 +373,7 @@ export const buildShippingPackingDebug = (
     usedWeightGrams: boxState.totalWeightGrams,
     usedVolumeCm3: boxState.totalVolumeCm3,
     capacityVolumeCm3: boxCapacityVolume(boxState.type),
+    maxAllowedVolumeCm3: boxMaxAllowedVolume(boxState.type),
     items: boxState.items
   }));
 

@@ -115,6 +115,7 @@ const formatBoxForLog = (box: PackingDebugBox, index: number) => ({
   maxWeightGrams: box.boxType.maxWeightGrams,
   usedVolumeCm3: box.usedVolumeCm3,
   capacityVolumeCm3: box.capacityVolumeCm3,
+  maxAllowedVolumeCm3: box.maxAllowedVolumeCm3,
   parcelWeightGrams: box.parcel.weight
 });
 
