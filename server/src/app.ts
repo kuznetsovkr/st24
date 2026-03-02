@@ -100,7 +100,7 @@ const formatPhoneE164 = (value: string) => {
 const getAdminPhone = () => normalizePhone(process.env.ADMIN_PHONE ?? '79964292550');
 const getAdminPassword = () => process.env.ADMIN_PASSWORD ?? '';
 const getAdminAuthMode = () =>
-  process.env.ADMIN_AUTH_MODE === 'code' ? 'code' : 'password';
+  (process.env.ADMIN_AUTH_MODE ?? '').trim().toLowerCase() === 'code' ? 'code' : 'password';
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
