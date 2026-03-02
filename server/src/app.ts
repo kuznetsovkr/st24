@@ -50,6 +50,11 @@ import {
 } from './db/users';
 import { authenticate, requireAdmin } from './middleware/auth';
 import {
+  reportTelegramVerificationStatus,
+  sendPhoneVerificationCode,
+  verifyTelegramGatewaySignature
+} from './phoneVerification';
+import {
   handleTelegramB2BUpdate,
   handleTelegramOrderUpdate,
   handleTelegramUpdate,
@@ -73,6 +78,10 @@ const B2B_CARD_ALLOWED_MIME = new Set([
   'image/png'
 ]);
 
+type RawBodyRequest = Request & {
+  rawBody?: string;
+};
+
 const normalizePhone = (value: string) => value.replace(/\D/g, '');
 const formatPhoneE164 = (value: string) => {
   const digits = normalizePhone(value);
@@ -90,12 +99,25 @@ const formatPhoneE164 = (value: string) => {
 };
 const getAdminPhone = () => normalizePhone(process.env.ADMIN_PHONE ?? '79964292550');
 const getAdminPassword = () => process.env.ADMIN_PASSWORD ?? '';
+const getAdminAuthMode = () =>
+  process.env.ADMIN_AUTH_MODE === 'code' ? 'code' : 'password';
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
 const getTelegramOrdersWebhookSecret = () =>
   process.env.TELEGRAM_ORDERS_WEBHOOK_SECRET;
 const getTelegramB2BWebhookSecret = () => process.env.TELEGRAM_B2B_WEBHOOK_SECRET;
+
+const getRequestIp = (req: Request) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0]?.trim() || undefined;
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return forwarded[0]?.trim() || undefined;
+  }
+  return req.socket.remoteAddress || undefined;
+};
 
 const parsePriceCents = (value?: string) => {
   if (!value) {
@@ -387,11 +409,32 @@ export const createApp = () => {
   const app = express();
 
   app.use(cors());
-  app.use(express.json({ limit: '2mb' }));
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req, _res, buffer) => {
+        (req as RawBodyRequest).rawBody = buffer.toString('utf8');
+      }
+    })
+  );
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
+  });
+
+  app.post('/api/telegram-gateway/report', (req: Request, res: Response) => {
+    const rawBody = (req as RawBodyRequest).rawBody ?? '';
+    const timestamp = req.header('X-Telegram-Gateway-Timestamp') ?? '';
+    const signature = req.header('X-Telegram-Gateway-Signature') ?? '';
+
+    if (!verifyTelegramGatewaySignature(rawBody, timestamp, signature)) {
+      res.status(401).json({ error: 'Invalid Telegram Gateway signature' });
+      return;
+    }
+
+    console.log('[TELEGRAM GATEWAY] Delivery report', req.body);
+    res.json({ ok: true });
   });
 
   app.all('/api/cdek/widget', async (req: Request, res: Response) => {
@@ -1252,12 +1295,13 @@ export const createApp = () => {
   app.post('/api/auth/request-code', async (req: Request, res: Response) => {
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
+    const adminAuthMode = getAdminAuthMode();
     if (!phone) {
       res.status(400).json({ error: 'Некорректный телефон' });
       return;
     }
 
-    if (phone === getAdminPhone()) {
+    if (phone === getAdminPhone() && adminAuthMode === 'password') {
       const adminPassword = getAdminPassword();
       if (!adminPassword) {
         res.status(500).json({ error: 'ADMIN_PASSWORD is not configured' });
@@ -1270,7 +1314,33 @@ export const createApp = () => {
     const code = generateNumericCode(PHONE_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveAuthCode(phone, code, expiresAt);
-    res.json({ ok: true, expiresInMinutes: CODE_TTL_MINUTES, code });
+    try {
+      const delivery = await sendPhoneVerificationCode({
+        phone,
+        code,
+        ttlMinutes: CODE_TTL_MINUTES,
+        context: 'auth',
+        ip: getRequestIp(req)
+      });
+
+      await saveAuthCode(phone, code, expiresAt, {
+        deliveryChannel: delivery.channel,
+        providerRequestId: delivery.providerRequestId ?? null,
+        providerMessageId: delivery.providerMessageId ?? null
+      });
+
+      res.json({
+        ok: true,
+        expiresInMinutes: CODE_TTL_MINUTES,
+        deliveryChannel: delivery.channel,
+        ...(delivery.code ? { code: delivery.code } : {})
+      });
+    } catch (error) {
+      await deleteAuthCode(phone);
+      res.status(502).json({
+        error: error instanceof Error ? error.message : 'Не удалось отправить код'
+      });
+    }
   });
 
   app.post('/api/auth/verify', async (req: Request, res: Response) => {
@@ -1278,13 +1348,14 @@ export const createApp = () => {
     const phone = normalizePhone(rawPhone);
     const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
     const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const adminAuthMode = getAdminAuthMode();
 
     if (!phone) {
       res.status(400).json({ error: 'Телефон обязателен' });
       return;
     }
 
-    if (phone === getAdminPhone()) {
+    if (phone === getAdminPhone() && adminAuthMode === 'password') {
       const adminPassword = getAdminPassword();
       if (!adminPassword) {
         res.status(500).json({ error: 'ADMIN_PASSWORD is not configured' });
@@ -1310,6 +1381,9 @@ export const createApp = () => {
     }
 
     const stored = await findAuthCode(phone);
+    if (stored?.delivery_channel === 'telegram_gateway' && stored.provider_request_id) {
+      void reportTelegramVerificationStatus(stored.provider_request_id, code);
+    }
     if (!stored || stored.code !== code) {
       res.status(400).json({ error: 'Неверный код' });
       return;
@@ -1516,8 +1590,33 @@ export const createApp = () => {
     const code = generateNumericCode(PHONE_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveAuthCode(phone, code, expiresAt);
-    console.log(`Phone verification code for ${phone}: ${code}`);
-    res.json({ ok: true, expiresInMinutes: CODE_TTL_MINUTES });
+    try {
+      const delivery = await sendPhoneVerificationCode({
+        phone,
+        code,
+        ttlMinutes: CODE_TTL_MINUTES,
+        context: 'profile_phone',
+        ip: getRequestIp(req)
+      });
+
+      await saveAuthCode(phone, code, expiresAt, {
+        deliveryChannel: delivery.channel,
+        providerRequestId: delivery.providerRequestId ?? null,
+        providerMessageId: delivery.providerMessageId ?? null
+      });
+
+      res.json({
+        ok: true,
+        expiresInMinutes: CODE_TTL_MINUTES,
+        deliveryChannel: delivery.channel,
+        ...(delivery.code ? { code: delivery.code } : {})
+      });
+    } catch (error) {
+      await deleteAuthCode(phone);
+      res.status(502).json({
+        error: error instanceof Error ? error.message : 'Не удалось отправить код'
+      });
+    }
   });
 
   app.post('/api/profile/verify-phone-code', authenticate, async (req: Request, res: Response) => {
@@ -1548,6 +1647,9 @@ export const createApp = () => {
     }
 
     const stored = await findAuthCode(phone);
+    if (stored?.delivery_channel === 'telegram_gateway' && stored.provider_request_id) {
+      void reportTelegramVerificationStatus(stored.provider_request_id, code);
+    }
     if (!stored || stored.code !== code) {
       res.status(400).json({ error: 'Invalid code' });
       return;

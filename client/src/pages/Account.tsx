@@ -257,10 +257,13 @@ const AccountPage = () => {
 
     setIsRequestingCode(true);
     try {
-      await requestProfilePhoneCode(phone.trim());
+      const result = await requestProfilePhoneCode(phone.trim());
       setPhoneVerificationState('code-sent');
       setPhoneVerificationMessage('Код отправлен.');
       setPhoneResendCooldown(60);
+      if (result.code) {
+        window.alert(`Тестовый SMS-код: ${result.code}`);
+      }
     } catch (requestError) {
       if (requestError instanceof Error) {
         setPhoneVerificationError(requestError.message);

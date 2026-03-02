@@ -124,8 +124,26 @@ export const initDb = async () => {
       phone TEXT PRIMARY KEY,
       code TEXT NOT NULL,
       expires_at TIMESTAMPTZ NOT NULL,
+      delivery_channel TEXT,
+      provider_request_id TEXT,
+      provider_message_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await query(`
+    ALTER TABLE auth_codes
+    ADD COLUMN IF NOT EXISTS delivery_channel TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE auth_codes
+    ADD COLUMN IF NOT EXISTS provider_request_id TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE auth_codes
+    ADD COLUMN IF NOT EXISTS provider_message_id TEXT;
   `);
 
   await query(`

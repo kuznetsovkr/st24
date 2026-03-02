@@ -292,6 +292,7 @@ export const requestAuthCode = async (phone: string) => {
     ok: boolean;
     expiresInMinutes: number;
     requiresPassword?: boolean;
+    deliveryChannel?: 'telegram_gateway' | 'sms_ru' | 'debug';
     code?: string;
   }>(
     `${API_BASE}/api/auth/request-code`,
@@ -326,7 +327,12 @@ export const updateProfile = async (payload: { fullName: string; phone: string; 
 };
 
 export const requestProfilePhoneCode = async (phone: string) => {
-  return fetchJson<{ ok: boolean; expiresInMinutes: number }>(
+  return fetchJson<{
+    ok: boolean;
+    expiresInMinutes: number;
+    deliveryChannel?: 'telegram_gateway' | 'sms_ru' | 'debug';
+    code?: string;
+  }>(
     `${API_BASE}/api/profile/request-phone-code`,
     {
       method: 'POST',
