@@ -30,6 +30,43 @@ type CdekRequestOptions = {
 const TOKEN_LEEWAY_MS = 30_000;
 let tokenState: CdekTokenState | null = null;
 
+const isCdekDebugEnabled = () =>
+  process.env.CDEK_DEBUG_LOG === 'true' || process.env.NODE_ENV !== 'production';
+
+const logCdekDebug = (message: string, payload?: unknown) => {
+  if (!isCdekDebugEnabled()) {
+    return;
+  }
+  if (payload === undefined) {
+    console.log(`[CDEK DEBUG] ${message}`);
+    return;
+  }
+  console.log(`[CDEK DEBUG] ${message}`, payload);
+};
+
+const summarizeResponseBody = (path: string, body: unknown) => {
+  if (Array.isArray(body)) {
+    return {
+      type: 'array',
+      count: body.length,
+      sample: body.slice(0, 3)
+    };
+  }
+
+  if (isPlainObject(body) && path.includes('calculator')) {
+    return body;
+  }
+
+  if (isPlainObject(body)) {
+    return {
+      type: 'object',
+      keys: Object.keys(body)
+    };
+  }
+
+  return body;
+};
+
 export class CdekProxyError extends Error {
   status: number;
   details?: string;
@@ -111,6 +148,14 @@ const requestCdek = async (
     url.search = params.toString();
   }
 
+  logCdekDebug('Outgoing request to CDEK', {
+    path,
+    method: options.method,
+    url: url.toString(),
+    query: options.query,
+    json: options.json
+  });
+
   const response = await fetch(url.toString(), {
     method: options.method,
     headers: {
@@ -124,6 +169,12 @@ const requestCdek = async (
   });
 
   const body = await parseResponseBody(response);
+  logCdekDebug('Response from CDEK', {
+    path,
+    status: response.status,
+    ok: response.ok,
+    body: summarizeResponseBody(path, body)
+  });
   if (!response.ok) {
     const description =
       typeof body === 'string' ? body : JSON.stringify(body ?? {});
@@ -225,6 +276,11 @@ export const proxyCdekWidgetRequest = async (
   queryInput: unknown,
   bodyInput: unknown
 ): Promise<CdekProxyResult> => {
+  logCdekDebug('Incoming widget request', {
+    query: toProxyPayload(queryInput),
+    body: toProxyPayload(bodyInput)
+  });
+
   const payload = {
     ...toProxyPayload(queryInput),
     ...toProxyPayload(bodyInput)
@@ -237,6 +293,10 @@ export const proxyCdekWidgetRequest = async (
 
   const token = await fetchCdekAccessToken();
   const requestPayload = removeAction(payload);
+  logCdekDebug('Normalized widget payload', {
+    action,
+    payload: requestPayload
+  });
 
   if (action === 'offices') {
     return requestCdek('deliverypoints', token, {
