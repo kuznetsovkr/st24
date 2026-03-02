@@ -5,7 +5,11 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPhone } from '../utils/formatPhone.ts';
-import { buildShippingParcels } from '../utils/parcelPacking.ts';
+import {
+  buildShippingPackingDebug,
+  type PackingDebugBox,
+  type PackingDebugFallbackParcel
+} from '../utils/parcelPacking.ts';
 import { formatPrice } from '../utils/formatPrice.ts';
 
 const CDEK_WIDGET_SCRIPT_ID = 'cdek-widget-script';
@@ -58,6 +62,81 @@ const buildPickupPointLabel = (office: CdekWidgetOffice) => {
   return office.name || addressLine || 'ПВЗ СДЭК';
 };
 
+const formatDimensions = (lengthCm: number, widthCm: number, heightCm: number) =>
+  `${lengthCm}x${widthCm}x${heightCm} см`;
+
+const summarizePackedItems = (items: PackingDebugBox['items']) => {
+  const summary = new Map<
+    string,
+    {
+      productId: string;
+      productName: string;
+      quantity: number;
+      unitWeightGrams: number;
+      totalWeightGrams: number;
+      dimensions: string;
+      unitVolumeCm3: number;
+      totalVolumeCm3: number;
+    }
+  >();
+
+  for (const item of items) {
+    const key = `${item.sourceId ?? item.sourceName}::${item.lengthCm}::${item.widthCm}::${item.heightCm}::${item.weightGrams}`;
+    const existing = summary.get(key);
+    if (existing) {
+      existing.quantity += 1;
+      existing.totalWeightGrams += item.weightGrams;
+      existing.totalVolumeCm3 += item.volumeCm3;
+      continue;
+    }
+
+    summary.set(key, {
+      productId: item.sourceId ?? '-',
+      productName: item.sourceName,
+      quantity: 1,
+      unitWeightGrams: item.weightGrams,
+      totalWeightGrams: item.weightGrams,
+      dimensions: formatDimensions(item.lengthCm, item.widthCm, item.heightCm),
+      unitVolumeCm3: item.volumeCm3,
+      totalVolumeCm3: item.volumeCm3
+    });
+  }
+
+  return Array.from(summary.values());
+};
+
+const formatBoxForLog = (box: PackingDebugBox, index: number) => ({
+  box: index + 1,
+  boxType: box.boxType.name,
+  boxDimensions: formatDimensions(box.boxType.lengthCm, box.boxType.widthCm, box.boxType.heightCm),
+  parcelDimensions: formatDimensions(box.parcel.length, box.parcel.width, box.parcel.height),
+  fillRatio: box.boxType.fillRatio,
+  usedWeightGrams: box.usedWeightGrams,
+  maxWeightGrams: box.boxType.maxWeightGrams,
+  usedVolumeCm3: box.usedVolumeCm3,
+  capacityVolumeCm3: box.capacityVolumeCm3,
+  parcelWeightGrams: box.parcel.weight
+});
+
+const formatFallbackForLog = (fallback: PackingDebugFallbackParcel, index: number) => ({
+  parcel: index + 1,
+  reason: fallback.reason,
+  productId: fallback.item.sourceId ?? '-',
+  productName: fallback.item.sourceName,
+  itemDimensions: formatDimensions(
+    fallback.item.lengthCm,
+    fallback.item.widthCm,
+    fallback.item.heightCm
+  ),
+  itemWeightGrams: fallback.item.weightGrams,
+  parcelDimensions: formatDimensions(
+    fallback.parcel.length,
+    fallback.parcel.width,
+    fallback.parcel.height
+  ),
+  parcelWeightGrams: fallback.parcel.weight
+});
+
 const CheckoutPage = () => {
   const navigate = useNavigate();
   const { user, status } = useAuth();
@@ -92,10 +171,11 @@ const CheckoutPage = () => {
   }, [cdekFromCodeRaw, cdekFromLocation]);
   const cdekDefaultLocation =
     (import.meta.env.VITE_CDEK_DEFAULT_LOCATION ?? '').trim() || DEFAULT_CDEK_LOCATION;
-  const shippingParcels = useMemo<CdekWidgetParcel[]>(
-    () => buildShippingParcels(items, boxTypes),
+  const packingDebug = useMemo(
+    () => buildShippingPackingDebug(items, boxTypes),
     [items, boxTypes]
   );
+  const shippingParcels = packingDebug.parcels;
   const deliveryLabel =
     deliveryCostCents === null ? 'после выбора ПВЗ' : formatPrice(deliveryCostCents);
   const grandTotalCents = totalPriceCents + (deliveryCostCents ?? 0);
@@ -133,6 +213,56 @@ const CheckoutPage = () => {
       promptedRef.current = true;
     }
   }, [status, openAuthModal]);
+
+  useEffect(() => {
+    const cartItemsForLog = items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      weightGrams: item.weightGrams ?? null,
+      dimensions: formatDimensions(item.lengthCm ?? 0, item.widthCm ?? 0, item.heightCm ?? 0),
+      price: formatPrice(item.priceCents)
+    }));
+
+    console.groupCollapsed('[Checkout] Расчет доставки');
+    console.table(cartItemsForLog);
+    console.table(
+      packingDebug.boxTypes.map((boxType) => ({
+        id: boxType.id,
+        name: boxType.name,
+        dimensions: formatDimensions(boxType.lengthCm, boxType.widthCm, boxType.heightCm),
+        maxWeightGrams: boxType.maxWeightGrams,
+        emptyWeightGrams: boxType.emptyWeightGrams,
+        fillRatio: boxType.fillRatio,
+        sortOrder: boxType.sortOrder ?? null
+      }))
+    );
+
+    if (packingDebug.boxes.length > 0) {
+      console.table(packingDebug.boxes.map(formatBoxForLog));
+      packingDebug.boxes.forEach((box, index) => {
+        console.groupCollapsed(`[Checkout] Коробка ${index + 1}: ${box.boxType.name}`);
+        console.log('Параметры коробки:', formatBoxForLog(box, index));
+        console.table(summarizePackedItems(box.items));
+        console.groupEnd();
+      });
+    } else {
+      console.log('Под типовые коробки пока ничего не упаковано.');
+    }
+
+    if (packingDebug.fallbackParcels.length > 0) {
+      console.groupCollapsed('[Checkout] Индивидуальные посылки');
+      console.table(packingDebug.fallbackParcels.map(formatFallbackForLog));
+      console.groupEnd();
+    }
+
+    console.log('Данные для CDEK:', {
+      from: cdekFrom,
+      defaultLocation: cdekDefaultLocation,
+      goods: shippingParcels
+    });
+    console.groupEnd();
+  }, [items, packingDebug, cdekDefaultLocation, cdekFrom, shippingParcels]);
 
   useEffect(() => {
     if (!yandexApiKey) {
@@ -181,6 +311,11 @@ const CheckoutPage = () => {
               : 0
           );
           setError(null);
+          console.groupCollapsed('[Checkout] Выбран ПВЗ');
+          console.log('ПВЗ:', target);
+          console.log('Тариф:', tariff);
+          console.log('Текущие посылки для CDEK:', shippingParcels);
+          console.groupEnd();
         }
       });
     };

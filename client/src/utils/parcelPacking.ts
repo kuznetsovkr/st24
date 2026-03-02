@@ -11,6 +11,10 @@ type BoxType = {
 };
 
 type UnitItem = {
+  sourceId?: string;
+  sourceName: string;
+  sourceItemIndex: number;
+  unitIndex: number;
   lengthCm: number;
   widthCm: number;
   heightCm: number;
@@ -22,6 +26,7 @@ type BoxState = {
   type: BoxType;
   totalWeightGrams: number;
   totalVolumeCm3: number;
+  items: UnitItem[];
 };
 
 export type ShippingParcel = {
@@ -32,6 +37,8 @@ export type ShippingParcel = {
 };
 
 export type PackableCartItem = {
+  id?: string;
+  name?: string;
   quantity: number;
   weightGrams?: number;
   lengthCm?: number;
@@ -49,6 +56,29 @@ export type ShippingBoxType = {
   emptyWeightGrams: number;
   fillRatio: number;
   sortOrder?: number;
+};
+
+export type PackingDebugBox = {
+  boxType: ShippingBoxType;
+  parcel: ShippingParcel;
+  usedWeightGrams: number;
+  usedVolumeCm3: number;
+  capacityVolumeCm3: number;
+  items: UnitItem[];
+};
+
+export type PackingDebugFallbackParcel = {
+  parcel: ShippingParcel;
+  item: UnitItem;
+  reason: 'no_matching_box_type';
+};
+
+export type PackingDebugResult = {
+  boxTypes: ShippingBoxType[];
+  units: UnitItem[];
+  boxes: PackingDebugBox[];
+  fallbackParcels: PackingDebugFallbackParcel[];
+  parcels: ShippingParcel[];
 };
 
 const DEFAULT_ITEM = {
@@ -122,12 +152,16 @@ const normalizePositiveInt = (value: number | undefined, fallback: number) => {
   return rounded;
 };
 
-const normalizeUnit = (item: PackableCartItem): UnitItem => {
+const normalizeUnit = (item: PackableCartItem, sourceItemIndex: number, unitIndex: number): UnitItem => {
   const lengthCm = normalizePositiveInt(item.lengthCm, DEFAULT_ITEM.lengthCm);
   const widthCm = normalizePositiveInt(item.widthCm, DEFAULT_ITEM.widthCm);
   const heightCm = normalizePositiveInt(item.heightCm, DEFAULT_ITEM.heightCm);
   const weightGrams = normalizePositiveInt(item.weightGrams, DEFAULT_ITEM.weightGrams);
   return {
+    sourceId: item.id,
+    sourceName: item.name?.trim() || item.id || `Товар ${sourceItemIndex + 1}`,
+    sourceItemIndex,
+    unitIndex,
     lengthCm,
     widthCm,
     heightCm,
@@ -247,38 +281,43 @@ const toFallbackParcel = (unit: UnitItem): ShippingParcel => ({
   weight: Math.max(1, unit.weightGrams + 150)
 });
 
-export const buildShippingParcels = (
+export const buildShippingPackingDebug = (
   items: PackableCartItem[],
   boxTypes?: ShippingBoxType[]
-): ShippingParcel[] => {
+): PackingDebugResult => {
   const availableBoxTypes = normalizeBoxTypes(boxTypes);
   const units: UnitItem[] = [];
-  for (const item of items) {
+  for (let sourceItemIndex = 0; sourceItemIndex < items.length; sourceItemIndex += 1) {
+    const item = items[sourceItemIndex];
     const quantity = Math.max(0, Math.round(item.quantity));
     if (quantity === 0) {
       continue;
     }
-    const unit = normalizeUnit(item);
     for (let i = 0; i < quantity; i += 1) {
-      units.push(unit);
+      units.push(normalizeUnit(item, sourceItemIndex, i + 1));
     }
   }
 
   if (units.length === 0) {
-    return [
-      {
+    const defaultParcel = {
         length: 30,
         width: 20,
         height: 15,
         weight: 500
-      }
-    ];
+      };
+    return {
+      boxTypes: availableBoxTypes,
+      units: [],
+      boxes: [],
+      fallbackParcels: [],
+      parcels: [defaultParcel]
+    };
   }
 
   units.sort((a, b) => b.volumeCm3 - a.volumeCm3 || b.weightGrams - a.weightGrams);
 
   const boxStates: BoxState[] = [];
-  const fallbackParcels: ShippingParcel[] = [];
+  const fallbackParcels: PackingDebugFallbackParcel[] = [];
 
   for (const unit of units) {
     let selectedIndex = -1;
@@ -300,21 +339,47 @@ export const buildShippingParcels = (
     if (selectedIndex >= 0) {
       boxStates[selectedIndex].totalWeightGrams += unit.weightGrams;
       boxStates[selectedIndex].totalVolumeCm3 += unit.volumeCm3;
+      boxStates[selectedIndex].items.push(unit);
       continue;
     }
 
     const newBoxType = pickBoxForUnit(unit, availableBoxTypes);
     if (!newBoxType) {
-      fallbackParcels.push(toFallbackParcel(unit));
+      fallbackParcels.push({
+        parcel: toFallbackParcel(unit),
+        item: unit,
+        reason: 'no_matching_box_type'
+      });
       continue;
     }
 
     boxStates.push({
       type: newBoxType,
       totalWeightGrams: unit.weightGrams,
-      totalVolumeCm3: unit.volumeCm3
+      totalVolumeCm3: unit.volumeCm3,
+      items: [unit]
     });
   }
 
-  return [...boxStates.map(toParcel), ...fallbackParcels];
+  const boxes: PackingDebugBox[] = boxStates.map((boxState) => ({
+    boxType: boxState.type,
+    parcel: toParcel(boxState),
+    usedWeightGrams: boxState.totalWeightGrams,
+    usedVolumeCm3: boxState.totalVolumeCm3,
+    capacityVolumeCm3: boxCapacityVolume(boxState.type),
+    items: boxState.items
+  }));
+
+  return {
+    boxTypes: availableBoxTypes,
+    units,
+    boxes,
+    fallbackParcels,
+    parcels: [...boxes.map((box) => box.parcel), ...fallbackParcels.map((item) => item.parcel)]
+  };
 };
+
+export const buildShippingParcels = (
+  items: PackableCartItem[],
+  boxTypes?: ShippingBoxType[]
+): ShippingParcel[] => buildShippingPackingDebug(items, boxTypes).parcels;
