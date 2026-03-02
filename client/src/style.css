@@ -1075,6 +1075,12 @@ input[type='file'] {
   font-weight: var(--weight-regular);
 }
 
+.auth-code-link {
+  font-size: inherit;
+  font-weight: inherit;
+  vertical-align: baseline;
+}
+
 .status-text--error {
   color: #E74C3C ;
   background: var(--accent-strong);

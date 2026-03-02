@@ -11,12 +11,15 @@ export type PhoneVerificationDeliveryResult = {
   code?: string;
 };
 
+type PreferredPhoneVerificationChannel = Exclude<PhoneVerificationChannel, 'debug'>;
+
 type SendPhoneVerificationCodeInput = {
   phone: string;
   code: string;
   ttlMinutes: number;
   context: PhoneVerificationContext;
   ip?: string;
+  preferredChannel?: PreferredPhoneVerificationChannel;
 };
 
 type TelegramGatewayResponse<T> = {
@@ -276,8 +279,9 @@ export const sendPhoneVerificationCode = async (
   input: SendPhoneVerificationCodeInput
 ): Promise<PhoneVerificationDeliveryResult> => {
   const errors: string[] = [];
+  const preferredChannel = input.preferredChannel;
 
-  if (getTelegramGatewayToken()) {
+  if (preferredChannel !== 'sms_ru' && getTelegramGatewayToken()) {
     try {
       return await sendViaTelegramGateway(input);
     } catch (error) {

@@ -1296,6 +1296,7 @@ export const createApp = () => {
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
     const adminAuthMode = getAdminAuthMode();
+    const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
     if (!phone) {
       res.status(400).json({ error: 'Некорректный телефон' });
       return;
@@ -1320,7 +1321,8 @@ export const createApp = () => {
         code,
         ttlMinutes: CODE_TTL_MINUTES,
         context: 'auth',
-        ip: getRequestIp(req)
+        ip: getRequestIp(req),
+        preferredChannel
       });
 
       await saveAuthCode(phone, code, expiresAt, {
@@ -1571,6 +1573,7 @@ export const createApp = () => {
 
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
+    const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
     if (!phone) {
       res.status(400).json({ error: 'Phone is required' });
       return;
@@ -1596,7 +1599,8 @@ export const createApp = () => {
         code,
         ttlMinutes: CODE_TTL_MINUTES,
         context: 'profile_phone',
-        ip: getRequestIp(req)
+        ip: getRequestIp(req),
+        preferredChannel
       });
 
       await saveAuthCode(phone, code, expiresAt, {
