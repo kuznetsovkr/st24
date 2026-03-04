@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import {
   createBoxType,
@@ -18,6 +18,7 @@ import {
   verifyAuthCode
 } from '../api';
 import type { AuthUser, BoxType, Category, Product } from '../api';
+import TurnstileWidget from '../components/TurnstileWidget.tsx';
 import {
   applyFontTheme,
   getStoredFontTheme,
@@ -135,7 +136,13 @@ const AdminPage = () => {
   const [password, setPassword] = useState('');
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [authCaptchaToken, setAuthCaptchaToken] = useState<string | null>(null);
+  const [authCaptchaResetKey, setAuthCaptchaResetKey] = useState(0);
   const [fontTheme, setFontTheme] = useState<FontTheme>(() => getStoredFontTheme());
+  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+  const handleAuthCaptchaTokenChange = useCallback((token: string | null) => {
+    setAuthCaptchaToken(token);
+  }, []);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -621,9 +628,14 @@ const AdminPage = () => {
       return;
     }
 
+    if (turnstileSiteKey && !authCaptchaToken) {
+      setAuthMessage('Подтвердите, что вы не робот.');
+      return;
+    }
+
     setIsSendingCode(true);
     try {
-      const result = await requestAuthCode(phone.trim());
+      const result = await requestAuthCode(phone.trim(), undefined, authCaptchaToken ?? undefined);
       if (result.requiresPassword) {
         setAuthMode('password');
         setAuthMessage('Введите пароль администратора.');
@@ -638,6 +650,10 @@ const AdminPage = () => {
       setAuthMessage('Не удалось отправить код.');
     } finally {
       setIsSendingCode(false);
+      if (turnstileSiteKey) {
+        setAuthCaptchaToken(null);
+        setAuthCaptchaResetKey((prev) => prev + 1);
+      }
     }
   };
 
@@ -764,10 +780,20 @@ const AdminPage = () => {
                   setAuthMode('code');
                   setCode('');
                   setPassword('');
+                  setAuthCaptchaToken(null);
+                  setAuthCaptchaResetKey((prev) => prev + 1);
                 }}
                 required
               />
             </label>
+            {authMode === 'code' && turnstileSiteKey && (
+              <TurnstileWidget
+                siteKey={turnstileSiteKey}
+                action="request_phone_code"
+                resetKey={authCaptchaResetKey}
+                onTokenChange={handleAuthCaptchaTokenChange}
+              />
+            )}
             {authMode === 'code' && (
             <div className="button-row">
               <button

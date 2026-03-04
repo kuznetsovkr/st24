@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { requestAuthCode, setAuthToken, verifyAuthCode } from '../api';
+import TurnstileWidget from './TurnstileWidget.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
@@ -27,6 +28,13 @@ const AuthModal = () => {
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [deliveryChannel, setDeliveryChannel] = useState<AuthDeliveryChannel>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+
+  const handleCaptchaTokenChange = useCallback((token: string | null) => {
+    setCaptchaToken(token);
+  }, []);
 
   useEffect(() => {
     if (resendSeconds <= 0) {
@@ -73,6 +81,8 @@ const AuthModal = () => {
     setIsRequesting(false);
     setIsVerifying(false);
     setDeliveryChannel(null);
+    setCaptchaToken(null);
+    setCaptchaResetKey((prev) => prev + 1);
   }, [authModalOpen]);
 
   if (!authModalOpen) {
@@ -137,6 +147,8 @@ const AuthModal = () => {
     setResendSeconds(0);
     setRequestMessage(null);
     setVerifyMessage(null);
+    setCaptchaToken(null);
+    setCaptchaResetKey((prev) => prev + 1);
   };
 
   const handleRequestCode = async (preferredChannel?: 'sms_ru') => {
@@ -148,9 +160,18 @@ const AuthModal = () => {
       return;
     }
 
+    if (turnstileSiteKey && !captchaToken) {
+      setRequestMessage('Подтвердите, что вы не робот.');
+      return;
+    }
+
     setIsRequesting(true);
     try {
-      const result = await requestAuthCode(phone.trim(), preferredChannel);
+      const result = await requestAuthCode(
+        phone.trim(),
+        preferredChannel,
+        captchaToken ?? undefined
+      );
 
       if (result.requiresPassword) {
         setAuthMode('password');
@@ -183,6 +204,10 @@ const AuthModal = () => {
       setRequestMessage('Не удалось отправить код.');
     } finally {
       setIsRequesting(false);
+      if (turnstileSiteKey) {
+        setCaptchaToken(null);
+        setCaptchaResetKey((prev) => prev + 1);
+      }
     }
   };
 
@@ -230,6 +255,15 @@ const AuthModal = () => {
               required
             />
           </label>
+
+          {authMode === 'code' && turnstileSiteKey && (
+            <TurnstileWidget
+              siteKey={turnstileSiteKey}
+              action="request_phone_code"
+              resetKey={captchaResetKey}
+              onTokenChange={handleCaptchaTokenChange}
+            />
+          )}
 
           {authMode === 'code' && (
             <>

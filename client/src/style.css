@@ -872,6 +872,15 @@ h3 {
   gap: 12px;
 }
 
+.captcha-field {
+  width: 100%;
+}
+
+.captcha-field > div {
+  width: 100%;
+  min-height: 65px;
+}
+
 .stacked-form input{
   font-size: 16px;
 }

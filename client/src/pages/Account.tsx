@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -10,6 +10,7 @@ import {
   verifyProfileEmailCode,
   verifyProfilePhoneCode
 } from '../api.ts';
+import TurnstileWidget from '../components/TurnstileWidget.tsx';
 import type { Order, OrderItem } from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
@@ -51,6 +52,8 @@ const AccountPage = () => {
   const [phoneVerificationError, setPhoneVerificationError] = useState<string | null>(null);
   const [isRequestingCode, setIsRequestingCode] = useState(false);
   const [isVerifyingPhone, setIsVerifyingPhone] = useState(false);
+  const [phoneCaptchaToken, setPhoneCaptchaToken] = useState<string | null>(null);
+  const [phoneCaptchaResetKey, setPhoneCaptchaResetKey] = useState(0);
   const [emailCode, setEmailCode] = useState('');
   const [emailVerificationState, setEmailVerificationState] = useState<
     'verified' | 'idle' | 'code-sent'
@@ -72,6 +75,10 @@ const AccountPage = () => {
     'idle'
   );
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+  const handlePhoneCaptchaTokenChange = useCallback((token: string | null) => {
+    setPhoneCaptchaToken(token);
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -85,6 +92,8 @@ const AccountPage = () => {
     setPhoneVerificationState('verified');
     setPhoneVerificationMessage(null);
     setPhoneVerificationError(null);
+    setPhoneCaptchaToken(null);
+    setPhoneCaptchaResetKey((prev) => prev + 1);
     setEmailCode('');
     setEmailResendCooldown(0);
     setEmailVerificationState('verified');
@@ -188,6 +197,8 @@ const AccountPage = () => {
     setPhoneVerificationState('verified');
     setPhoneVerificationMessage(null);
     setPhoneVerificationError(null);
+    setPhoneCaptchaToken(null);
+    setPhoneCaptchaResetKey((prev) => prev + 1);
     setEmailCode('');
     setEmailResendCooldown(0);
     setEmailVerificationState('verified');
@@ -231,6 +242,8 @@ const AccountPage = () => {
     setPhoneResendCooldown(0);
     setPhoneVerificationMessage(null);
     setPhoneVerificationError(null);
+    setPhoneCaptchaToken(null);
+    setPhoneCaptchaResetKey((prev) => prev + 1);
 
     if (!user) {
       return;
@@ -255,9 +268,18 @@ const AccountPage = () => {
       return;
     }
 
+    if (turnstileSiteKey && !phoneCaptchaToken) {
+      setPhoneVerificationError('Подтвердите, что вы не робот.');
+      return;
+    }
+
     setIsRequestingCode(true);
     try {
-      const result = await requestProfilePhoneCode(phone.trim());
+      const result = await requestProfilePhoneCode(
+        phone.trim(),
+        undefined,
+        phoneCaptchaToken ?? undefined
+      );
       setPhoneVerificationState('code-sent');
       setPhoneVerificationMessage('Код отправлен.');
       setPhoneResendCooldown(60);
@@ -272,6 +294,10 @@ const AccountPage = () => {
       }
     } finally {
       setIsRequestingCode(false);
+      if (turnstileSiteKey) {
+        setPhoneCaptchaToken(null);
+        setPhoneCaptchaResetKey((prev) => prev + 1);
+      }
     }
   };
 
@@ -503,6 +529,14 @@ const AccountPage = () => {
                   onChange={(event) => handlePhoneChange(event.target.value)}
                   placeholder="+7"
                 />
+                {isPhoneChanged && turnstileSiteKey && (
+                  <TurnstileWidget
+                    siteKey={turnstileSiteKey}
+                    action="request_phone_code"
+                    resetKey={phoneCaptchaResetKey}
+                    onTokenChange={handlePhoneCaptchaTokenChange}
+                  />
+                )}
                 {phoneVerificationState === 'code-sent' && (
                   <>
                     <div className="verify-row">

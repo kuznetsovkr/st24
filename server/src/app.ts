@@ -62,6 +62,7 @@ import {
   sendOrderTelegramMessage,
   sendTelegramMessage
 } from './telegram';
+import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile';
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
 
 const CODE_TTL_MINUTES = 5;
@@ -1297,9 +1298,21 @@ export const createApp = () => {
     const phone = normalizePhone(rawPhone);
     const adminAuthMode = getAdminAuthMode();
     const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
+    const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
     if (!phone) {
       res.status(400).json({ error: 'Некорректный телефон' });
       return;
+    }
+
+    if (isTurnstileEnabled()) {
+      try {
+        await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'Не удалось подтвердить проверку'
+        });
+        return;
+      }
     }
 
     if (phone === getAdminPhone() && adminAuthMode === 'password') {
@@ -1574,9 +1587,21 @@ export const createApp = () => {
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
     const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
+    const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
     if (!phone) {
       res.status(400).json({ error: 'Phone is required' });
       return;
+    }
+
+    if (isTurnstileEnabled()) {
+      try {
+        await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'Не удалось подтвердить проверку'
+        });
+        return;
+      }
     }
 
     if (phone.length !== 11 || !phone.startsWith('7')) {

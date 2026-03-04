@@ -289,7 +289,8 @@ export const deleteProduct = async (id: string) => {
 
 export const requestAuthCode = async (
   phone: string,
-  preferredChannel?: 'sms_ru'
+  preferredChannel?: 'sms_ru',
+  captchaToken?: string
 ) => {
   return fetchJson<{
     ok: boolean;
@@ -302,7 +303,7 @@ export const requestAuthCode = async (
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, preferredChannel })
+      body: JSON.stringify({ phone, preferredChannel, captchaToken })
     }
   );
 };
@@ -331,7 +332,8 @@ export const updateProfile = async (payload: { fullName: string; phone: string; 
 
 export const requestProfilePhoneCode = async (
   phone: string,
-  preferredChannel?: 'sms_ru'
+  preferredChannel?: 'sms_ru',
+  captchaToken?: string
 ) => {
   return fetchJson<{
     ok: boolean;
@@ -343,7 +345,7 @@ export const requestProfilePhoneCode = async (
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ phone, preferredChannel })
+      body: JSON.stringify({ phone, preferredChannel, captchaToken })
     }
   );
 };
