@@ -11,6 +11,13 @@ const RESEND_TIMEOUT_SECONDS = 30;
 const SMS_FALLBACK_TIMEOUT_SECONDS = 60;
 type AuthDeliveryChannel = 'telegram_gateway' | 'sms_ru' | 'debug' | null;
 
+const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
+
+const isPhoneReadyForCaptcha = (value: string) => {
+  const digits = getPhoneDigits(value);
+  return digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'));
+};
+
 const AuthModal = () => {
   const { authModalOpen, closeAuthModal } = useUI();
   const { mergeWithServer } = useCart();
@@ -81,14 +88,19 @@ const AuthModal = () => {
     setIsRequesting(false);
     setIsVerifying(false);
     setDeliveryChannel(null);
-    setCaptchaToken(null);
-    setCaptchaResetKey((prev) => prev + 1);
+    if (captchaToken) {
+      setCaptchaToken(null);
+      setCaptchaResetKey((prev) => prev + 1);
+    }
   }, [authModalOpen]);
 
   if (!authModalOpen) {
     return null;
   }
 
+  const phoneReadyForCaptcha = isPhoneReadyForCaptcha(phone);
+  const shouldShowCaptcha =
+    authMode === 'code' && Boolean(turnstileSiteKey) && phoneReadyForCaptcha && !captchaToken;
   const showAuthFields = authMode === 'password' || isCodeRequested;
   const resendStatusText =
     isCodeRequested && authMode === 'code' && resendSeconds > 0
@@ -147,8 +159,10 @@ const AuthModal = () => {
     setResendSeconds(0);
     setRequestMessage(null);
     setVerifyMessage(null);
-    setCaptchaToken(null);
-    setCaptchaResetKey((prev) => prev + 1);
+    if (captchaToken) {
+      setCaptchaToken(null);
+      setCaptchaResetKey((prev) => prev + 1);
+    }
   };
 
   const handleRequestCode = async (preferredChannel?: 'sms_ru') => {
@@ -157,6 +171,11 @@ const AuthModal = () => {
 
     if (!phone.trim()) {
       setRequestMessage('Введите номер телефона.');
+      return;
+    }
+
+    if (!phoneReadyForCaptcha) {
+      setRequestMessage('\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043f\u043e\u043b\u043d\u044b\u0439 \u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430.');
       return;
     }
 
@@ -256,7 +275,7 @@ const AuthModal = () => {
             />
           </label>
 
-          {authMode === 'code' && turnstileSiteKey && (
+          {shouldShowCaptcha && (
             <TurnstileWidget
               siteKey={turnstileSiteKey}
               action="request_phone_code"

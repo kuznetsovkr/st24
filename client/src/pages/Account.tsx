@@ -18,6 +18,12 @@ import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
 import { formatPhone } from '../utils/formatPhone.ts';
 
+const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
+const isPhoneReadyForCaptcha = (value: string) => {
+  const digits = getPhoneDigits(value);
+  return digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'));
+};
+
 const LogoutIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -92,8 +98,10 @@ const AccountPage = () => {
     setPhoneVerificationState('verified');
     setPhoneVerificationMessage(null);
     setPhoneVerificationError(null);
-    setPhoneCaptchaToken(null);
-    setPhoneCaptchaResetKey((prev) => prev + 1);
+    if (phoneCaptchaToken) {
+      setPhoneCaptchaToken(null);
+      setPhoneCaptchaResetKey((prev) => prev + 1);
+    }
     setEmailCode('');
     setEmailResendCooldown(0);
     setEmailVerificationState('verified');
@@ -167,6 +175,7 @@ const AccountPage = () => {
   const normalizedPhone = phone.replace(/\D/g, '');
   const originalPhone = user?.phone ?? '';
   const isPhoneChanged = Boolean(originalPhone) && normalizedPhone !== originalPhone;
+  const phoneReadyForCaptcha = isPhoneReadyForCaptcha(phone);
   const phoneNeedsVerification = isEditing && isPhoneChanged && phoneVerificationState !== 'verified';
   const normalizedEmail = email.trim().toLowerCase();
   const originalEmail = (user?.email ?? '').trim().toLowerCase();
@@ -197,8 +206,10 @@ const AccountPage = () => {
     setPhoneVerificationState('verified');
     setPhoneVerificationMessage(null);
     setPhoneVerificationError(null);
-    setPhoneCaptchaToken(null);
-    setPhoneCaptchaResetKey((prev) => prev + 1);
+    if (phoneCaptchaToken) {
+      setPhoneCaptchaToken(null);
+      setPhoneCaptchaResetKey((prev) => prev + 1);
+    }
     setEmailCode('');
     setEmailResendCooldown(0);
     setEmailVerificationState('verified');
@@ -242,8 +253,10 @@ const AccountPage = () => {
     setPhoneResendCooldown(0);
     setPhoneVerificationMessage(null);
     setPhoneVerificationError(null);
-    setPhoneCaptchaToken(null);
-    setPhoneCaptchaResetKey((prev) => prev + 1);
+    if (phoneCaptchaToken) {
+      setPhoneCaptchaToken(null);
+      setPhoneCaptchaResetKey((prev) => prev + 1);
+    }
 
     if (!user) {
       return;
@@ -265,6 +278,11 @@ const AccountPage = () => {
     }
     if (!phone.trim()) {
       setPhoneVerificationError('Введите номер телефона.');
+      return;
+    }
+
+    if (!phoneReadyForCaptcha) {
+      setPhoneVerificationError('\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043f\u043e\u043b\u043d\u044b\u0439 \u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430.');
       return;
     }
 
@@ -529,7 +547,10 @@ const AccountPage = () => {
                   onChange={(event) => handlePhoneChange(event.target.value)}
                   placeholder="+7"
                 />
-                {isPhoneChanged && turnstileSiteKey && (
+                {isPhoneChanged &&
+                  turnstileSiteKey &&
+                  phoneReadyForCaptcha &&
+                  !phoneCaptchaToken && (
                   <TurnstileWidget
                     siteKey={turnstileSiteKey}
                     action="request_phone_code"

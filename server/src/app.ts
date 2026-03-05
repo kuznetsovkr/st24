@@ -120,6 +120,77 @@ const getRequestIp = (req: Request) => {
   return req.socket.remoteAddress || undefined;
 };
 
+const parsePositiveEnvInt = (value: string | undefined, fallback: number) => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return parsed;
+};
+
+const PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS,
+  600
+);
+const PHONE_CODE_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.PHONE_CODE_RATE_LIMIT_MAX,
+  5
+);
+
+type PhoneCodeRateLimitState = {
+  count: number;
+  resetAt: number;
+};
+
+const phoneCodeRateLimitStore = new Map<string, PhoneCodeRateLimitState>();
+let phoneCodeRateLimitLastCleanup = 0;
+
+const consumePhoneCodeRateLimit = (scope: string, ip: string | undefined, phone: string) => {
+  const now = Date.now();
+  const key = `${scope}:${ip ?? 'unknown'}:${phone}`;
+  const windowMs = PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS * 1000;
+  const limit = PHONE_CODE_RATE_LIMIT_MAX;
+
+  if (now - phoneCodeRateLimitLastCleanup > windowMs) {
+    for (const [storeKey, state] of phoneCodeRateLimitStore.entries()) {
+      if (state.resetAt <= now) {
+        phoneCodeRateLimitStore.delete(storeKey);
+      }
+    }
+    phoneCodeRateLimitLastCleanup = now;
+  }
+
+  const existing = phoneCodeRateLimitStore.get(key);
+  if (!existing || existing.resetAt <= now) {
+    phoneCodeRateLimitStore.set(key, {
+      count: 1,
+      resetAt: now + windowMs
+    });
+    return {
+      allowed: true,
+      retryAfterSeconds: 0
+    };
+  }
+
+  if (existing.count >= limit) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+    return {
+      allowed: false,
+      retryAfterSeconds
+    };
+  }
+
+  existing.count += 1;
+  phoneCodeRateLimitStore.set(key, existing);
+  return {
+    allowed: true,
+    retryAfterSeconds: 0
+  };
+};
+
 const parsePriceCents = (value?: string) => {
   if (!value) {
     return null;
@@ -1304,6 +1375,14 @@ export const createApp = () => {
       return;
     }
 
+    const authRateLimit = consumePhoneCodeRateLimit('auth', getRequestIp(req), phone);
+    if (!authRateLimit.allowed) {
+      res.setHeader('Retry-After', String(authRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many code requests. Try again in ${authRateLimit.retryAfterSeconds} sec.`
+      });
+      return;
+    }
     if (isTurnstileEnabled()) {
       try {
         await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
@@ -1593,6 +1672,14 @@ export const createApp = () => {
       return;
     }
 
+    const profilePhoneRateLimit = consumePhoneCodeRateLimit('profile_phone', getRequestIp(req), phone);
+    if (!profilePhoneRateLimit.allowed) {
+      res.setHeader('Retry-After', String(profilePhoneRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many code requests. Try again in ${profilePhoneRateLimit.retryAfterSeconds} sec.`
+      });
+      return;
+    }
     if (isTurnstileEnabled()) {
       try {
         await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');

@@ -27,6 +27,11 @@ import {
 } from '../utils/fontTheme';
 
 const MAX_IMAGES = 5;
+const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
+const isPhoneReadyForCaptcha = (value: string) => {
+  const digits = getPhoneDigits(value);
+  return digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'));
+};
 
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -140,6 +145,7 @@ const AdminPage = () => {
   const [authCaptchaResetKey, setAuthCaptchaResetKey] = useState(0);
   const [fontTheme, setFontTheme] = useState<FontTheme>(() => getStoredFontTheme());
   const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+  const authPhoneReadyForCaptcha = isPhoneReadyForCaptcha(phone);
   const handleAuthCaptchaTokenChange = useCallback((token: string | null) => {
     setAuthCaptchaToken(token);
   }, []);
@@ -628,6 +634,11 @@ const AdminPage = () => {
       return;
     }
 
+    if (!authPhoneReadyForCaptcha) {
+      setAuthMessage('\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043f\u043e\u043b\u043d\u044b\u0439 \u043d\u043e\u043c\u0435\u0440 \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0430.');
+      return;
+    }
+
     if (turnstileSiteKey && !authCaptchaToken) {
       setAuthMessage('Подтвердите, что вы не робот.');
       return;
@@ -780,13 +791,18 @@ const AdminPage = () => {
                   setAuthMode('code');
                   setCode('');
                   setPassword('');
-                  setAuthCaptchaToken(null);
-                  setAuthCaptchaResetKey((prev) => prev + 1);
+                  if (authCaptchaToken) {
+                    setAuthCaptchaToken(null);
+                    setAuthCaptchaResetKey((prev) => prev + 1);
+                  }
                 }}
                 required
               />
             </label>
-            {authMode === 'code' && turnstileSiteKey && (
+            {authMode === 'code' &&
+              turnstileSiteKey &&
+              authPhoneReadyForCaptcha &&
+              !authCaptchaToken && (
               <TurnstileWidget
                 siteKey={turnstileSiteKey}
                 action="request_phone_code"
