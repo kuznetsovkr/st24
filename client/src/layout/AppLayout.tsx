@@ -54,7 +54,7 @@ const AppLayout = ({ children }: Props) => {
     <div className="app-shell">
       <header className="app-header">
         <Link className="logo" to="/">
-          logo
+          CT-24
         </Link>
         <nav className="nav">
           <NavLink to="/catalog" className={navLinkClass}>
