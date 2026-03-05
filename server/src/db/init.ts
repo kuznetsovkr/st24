@@ -167,6 +167,10 @@ export const initDb = async () => {
       pickup_point TEXT,
       delivery_cost_cents INTEGER NOT NULL DEFAULT 0,
       total_cents INTEGER NOT NULL DEFAULT 0,
+      payment_provider TEXT,
+      payment_id TEXT,
+      payment_status TEXT,
+      payment_confirmed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -175,6 +179,26 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS delivery_cost_cents INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_provider TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_id TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_status TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ;
   `);
 
   await query(`
@@ -246,6 +270,7 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS box_types_sort_idx ON box_types (sort_order);`);
   await query(`CREATE INDEX IF NOT EXISTS cart_items_user_idx ON cart_items (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_user_idx ON orders (user_id);`);
+  await query(`CREATE INDEX IF NOT EXISTS orders_payment_id_idx ON orders (payment_id);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)

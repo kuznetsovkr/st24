@@ -24,11 +24,16 @@ import {
 import { isValidCategory, listCategories } from './db/categories';
 import {
   createOrder,
+  findOrderById,
   findOrderByIdForUser,
+  findOrderByPaymentId,
   InsufficientStockError,
   listOrderItemsForUser,
   listOrdersByUser,
   markOrderPaid,
+  markOrderPaidById,
+  updateOrderPayment,
+  updateOrderPaymentStatusById,
   type OrderItemRow,
   type OrderRow
 } from './db/orders';
@@ -64,6 +69,16 @@ import {
 } from './telegram';
 import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile';
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
+import {
+  createYooKassaPayment,
+  fetchYooKassaPayment,
+  getYooKassaFixedAmountCents,
+  getYooKassaReturnBaseUrl,
+  getYooKassaWebhookSecret,
+  isYooKassaUseOrderTotal,
+  isYooKassaConfigured,
+  type YooKassaPayment
+} from './yookassa';
 
 const CODE_TTL_MINUTES = 5;
 const PHONE_CODE_LENGTH = 4;
@@ -356,6 +371,9 @@ const mapOrder = (row: OrderRow) => ({
   pickupPoint: row.pickup_point ?? '',
   deliveryCostCents: row.delivery_cost_cents,
   totalCents: row.total_cents,
+  paymentProvider: row.payment_provider ?? '',
+  paymentId: row.payment_id ?? '',
+  paymentStatus: row.payment_status ?? '',
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -423,6 +441,78 @@ const isTelegramWebhookAllowed = (req: Request, secret?: string) => {
   }
   const header = req.headers['x-telegram-bot-api-secret-token'];
   return header === secret;
+};
+
+const getPublicOrigin = (req: Request) => {
+  const configured = getYooKassaReturnBaseUrl();
+  if (configured) {
+    return configured.replace(/\/+$/, '');
+  }
+
+  const originHeader = req.header('origin');
+  if (originHeader) {
+    return originHeader.replace(/\/+$/, '');
+  }
+
+  const forwardedProto = req.header('x-forwarded-proto')?.split(',')[0]?.trim();
+  const forwardedHost = req.header('x-forwarded-host')?.split(',')[0]?.trim();
+  const protocol = forwardedProto || req.protocol;
+  const host = forwardedHost || req.get('host');
+  return `${protocol}://${host}`;
+};
+
+const getYooKassaReturnUrl = (req: Request, orderId: string) =>
+  `${getPublicOrigin(req)}/payment/${orderId}?fromYooKassa=1`;
+
+const isYooKassaWebhookAllowed = (req: Request) => {
+  const expectedSecret = getYooKassaWebhookSecret();
+  if (!expectedSecret) {
+    return true;
+  }
+  const providedSecret =
+    typeof req.query.secret === 'string'
+      ? req.query.secret.trim()
+      : req.header('x-yookassa-webhook-secret')?.trim();
+  return providedSecret === expectedSecret;
+};
+
+const finalizePaidOrder = async (order: OrderRow) => {
+  await replaceCartItems(order.user_id, []);
+  try {
+    const orderItems = await listOrderItemsForUser(order.id, order.user_id);
+    const notification = buildPaidOrderNotification(order, orderItems);
+    await sendOrderTelegramMessage(notification);
+  } catch (error) {
+    console.error(`Failed to send paid order notification for order ${order.id}`, error);
+  }
+};
+
+const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPayment) => {
+  await updateOrderPayment(order.id, {
+    provider: 'yookassa',
+    paymentId: payment.id,
+    paymentStatus: payment.status
+  });
+
+  if (payment.status === 'succeeded' || payment.paid === true) {
+    if (order.status === 'paid') {
+      const paidOrder = await findOrderById(order.id);
+      return paidOrder ?? order;
+    }
+    const paidOrder = await markOrderPaidById(order.id);
+    if (paidOrder) {
+      await finalizePaidOrder(paidOrder);
+      return paidOrder;
+    }
+  }
+
+  if (payment.status === 'canceled') {
+    const canceledOrder = await updateOrderPaymentStatusById(order.id, 'canceled');
+    return canceledOrder ?? order;
+  }
+
+  const refreshed = await findOrderById(order.id);
+  return refreshed ?? order;
 };
 
 const normalizeCartItems = (input: unknown): CartSyncItem[] => {
@@ -1161,10 +1251,132 @@ export const createApp = () => {
     }
   });
 
+  app.post('/api/orders/:id/payment', authenticate, async (req: Request, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    if (!isYooKassaConfigured()) {
+      res.status(503).json({
+        error: 'YooKassa is not configured. Set YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY.'
+      });
+      return;
+    }
+
+    try {
+      const order = await findOrderByIdForUser(req.params.id, userId);
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      if (order.status === 'paid') {
+        res.json({
+          order: mapOrder(order),
+          alreadyPaid: true
+        });
+        return;
+      }
+
+      const amountCents = isYooKassaUseOrderTotal()
+        ? order.total_cents
+        : getYooKassaFixedAmountCents();
+      const payment = await createYooKassaPayment({
+        amountCents,
+        returnUrl: getYooKassaReturnUrl(req, order.id),
+        description: `Оплата заказа №${order.order_number}`,
+        metadata: {
+          orderId: order.id,
+          orderNumber: String(order.order_number),
+          userId: order.user_id
+        }
+      });
+
+      const confirmationUrl = payment.confirmation?.confirmation_url;
+      if (!confirmationUrl) {
+        res.status(502).json({ error: 'YooKassa did not return confirmation_url' });
+        return;
+      }
+
+      const updatedOrder = await updateOrderPayment(order.id, {
+        provider: 'yookassa',
+        paymentId: payment.id,
+        paymentStatus: payment.status
+      });
+
+      res.json({
+        order: mapOrder(updatedOrder ?? order),
+        confirmationUrl,
+        paymentId: payment.id,
+        paymentStatus: payment.status,
+        amountCents
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to create YooKassa payment';
+      console.error('Failed to create YooKassa payment', error);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.post('/api/orders/:id/payment/refresh', authenticate, async (req: Request, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    if (!isYooKassaConfigured()) {
+      res.status(503).json({
+        error: 'YooKassa is not configured. Set YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY.'
+      });
+      return;
+    }
+
+    try {
+      const order = await findOrderByIdForUser(req.params.id, userId);
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+
+      if (order.status === 'paid') {
+        res.json({ order: mapOrder(order) });
+        return;
+      }
+
+      if (!order.payment_id) {
+        res.status(400).json({ error: 'Payment is not initialized for this order' });
+        return;
+      }
+
+      const payment = await fetchYooKassaPayment(order.payment_id);
+      const updatedOrder = await syncOrderWithYooKassaPayment(order, payment);
+      res.json({
+        order: mapOrder(updatedOrder),
+        paymentStatus: payment.status
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to refresh payment status';
+      console.error('Failed to refresh YooKassa payment status', error);
+      res.status(502).json({ error: message });
+    }
+  });
+
   app.post('/api/orders/:id/pay', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
       res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    if (isYooKassaConfigured()) {
+      res.status(400).json({
+        error: 'Manual payment is disabled when YooKassa is enabled. Use /api/orders/:id/payment.'
+      });
       return;
     }
 
@@ -1179,30 +1391,70 @@ export const createApp = () => {
       if (existingOrder.status !== 'paid') {
         const paidOrder = await markOrderPaid(req.params.id, userId);
         if (!paidOrder) {
-          res.status(404).json({ error: 'Order not found' });
-          return;
+          const refreshedOrder = await findOrderByIdForUser(req.params.id, userId);
+          if (!refreshedOrder) {
+            res.status(404).json({ error: 'Order not found' });
+            return;
+          }
+          order = refreshedOrder;
+        } else {
+          order = paidOrder;
         }
-        order = paidOrder;
       }
 
-      await replaceCartItems(userId, []);
-
       if (existingOrder.status !== 'paid') {
-        try {
-          const orderItems = await listOrderItemsForUser(order.id, userId);
-          const notification = buildPaidOrderNotification(order, orderItems);
-          await sendOrderTelegramMessage(notification);
-        } catch (error) {
-          console.error(
-            `Failed to send paid order notification for order ${order.id}`,
-            error
-          );
-        }
+        await finalizePaidOrder(order);
       }
 
       res.json({ order: mapOrder(order) });
     } catch {
       res.status(500).json({ error: 'Failed to update order' });
+    }
+  });
+
+  app.post('/api/payments/yookassa/webhook', async (req: Request, res: Response) => {
+    if (!isYooKassaWebhookAllowed(req)) {
+      res.status(403).json({ ok: false });
+      return;
+    }
+
+    try {
+      const event = typeof req.body?.event === 'string' ? req.body.event : '';
+      const paymentObject =
+        req.body?.object && typeof req.body.object === 'object'
+          ? (req.body.object as YooKassaPayment)
+          : null;
+
+      if (!paymentObject?.id || !paymentObject.status) {
+        res.status(400).json({ error: 'Invalid YooKassa webhook payload' });
+        return;
+      }
+
+      const metadataOrderId =
+        paymentObject.metadata && typeof paymentObject.metadata.orderId === 'string'
+          ? paymentObject.metadata.orderId
+          : '';
+
+      const orderByMetadata = metadataOrderId ? await findOrderById(metadataOrderId) : null;
+      const order = orderByMetadata ?? (await findOrderByPaymentId(paymentObject.id));
+      if (!order) {
+        res.json({ ok: true });
+        return;
+      }
+
+      const updatedOrder = await syncOrderWithYooKassaPayment(order, paymentObject);
+
+      if (event === 'payment.succeeded' && updatedOrder.status !== 'paid') {
+        const paidOrder = await markOrderPaidById(updatedOrder.id);
+        if (paidOrder) {
+          await finalizePaidOrder(paidOrder);
+        }
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Failed to process YooKassa webhook', error);
+      res.status(500).json({ ok: false });
     }
   });
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { fetchOrder, payOrder } from '../api.ts';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { createOrderPayment, fetchOrder, refreshOrderPayment } from '../api.ts';
 import type { Order } from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
@@ -10,6 +10,7 @@ import { formatPrice } from '../utils/formatPrice.ts';
 const PaymentPage = () => {
   const { orderId } = useParams<{ orderId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { status } = useAuth();
   const { clear } = useCart();
   const { openAuthModal } = useUI();
@@ -17,7 +18,10 @@ const PaymentPage = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [paymentAmountCents, setPaymentAmountCents] = useState(100);
   const promptedRef = useRef(false);
+  const fromYooKassa = searchParams.get('fromYooKassa') === '1';
 
   useEffect(() => {
     if (status === 'guest' && !promptedRef.current) {
@@ -61,10 +65,22 @@ const PaymentPage = () => {
     setError(null);
     setIsPaying(true);
     try {
-      const updated = await payOrder(orderId);
-      setOrder(updated);
-      clear();
-      navigate(`/order-success/${orderId}`);
+      const payment = await createOrderPayment(orderId);
+      setOrder(payment.order);
+      if (typeof payment.amountCents === 'number' && payment.amountCents > 0) {
+        setPaymentAmountCents(payment.amountCents);
+      }
+
+      if (payment.alreadyPaid || payment.order.status === 'paid') {
+        clear();
+        navigate(`/order-success/${orderId}`);
+        return;
+      }
+
+      if (!payment.confirmationUrl) {
+        throw new Error('Не удалось получить ссылку на оплату');
+      }
+      window.location.href = payment.confirmationUrl;
     } catch (payError) {
       if (payError instanceof Error) {
         setError(payError.message);
@@ -75,6 +91,65 @@ const PaymentPage = () => {
       setIsPaying(false);
     }
   };
+
+  useEffect(() => {
+    if (!fromYooKassa || !orderId || status !== 'auth') {
+      return;
+    }
+
+    let active = true;
+    let timeoutId: number | undefined;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    const refreshStatus = async () => {
+      if (!active) {
+        return;
+      }
+
+      setIsRefreshingStatus(true);
+      try {
+        const data = await refreshOrderPayment(orderId);
+        if (!active) {
+          return;
+        }
+        setOrder(data.order);
+
+        if (data.order.status === 'paid') {
+          clear();
+          navigate(`/order-success/${orderId}`, { replace: true });
+          return;
+        }
+      } catch (refreshError) {
+        if (!active) {
+          return;
+        }
+        if (refreshError instanceof Error) {
+          setError(refreshError.message);
+        } else {
+          setError('Не удалось проверить статус оплаты.');
+        }
+      } finally {
+        if (active) {
+          setIsRefreshingStatus(false);
+        }
+      }
+
+      attempts += 1;
+      if (active && attempts < maxAttempts) {
+        timeoutId = window.setTimeout(refreshStatus, 2500);
+      }
+    };
+
+    void refreshStatus();
+
+    return () => {
+      active = false;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [fromYooKassa, orderId, status, clear, navigate]);
 
   if (status === 'loading') {
     return (
@@ -138,7 +213,7 @@ const PaymentPage = () => {
       <header className="page-header">
         <div>
           <p className="eyebrow">Оплата</p>
-          <h1>Онлайн-касса (демо)</h1>
+          <h1>Онлайн-оплата (ЮKassa)</h1>
           <p className="muted">
             Заказ №{order.orderNumber} · статус: {order.status}
           </p>
@@ -149,22 +224,25 @@ const PaymentPage = () => {
       </header>
       <div className="payment-layout">
         <div className="card payment-card">
-          <h3>Сумма к оплате</h3>
-          <p className="price">{formatPrice(order.totalCents)}</p>
+          <h3>Тестовая сумма к оплате</h3>
+          <p className="price">{formatPrice(paymentAmountCents)}</p>
           <p className="muted">
-            Имитация оплаты: нажмите кнопку, чтобы завершить заказ.
+            Сейчас включен тестовый режим: каждый заказ оплачивается на 1 ₽.
           </p>
+          {fromYooKassa && isRefreshingStatus && (
+            <p className="muted">Проверяем статус оплаты после возврата из ЮKassa...</p>
+          )}
           {error && <p className="status-text status-text--error">{error}</p>}
           <button
             className="primary-button"
             onClick={handlePay}
-            disabled={isPaying || order.status === 'paid'}
+            disabled={isPaying || isRefreshingStatus || order.status === 'paid'}
           >
             {order.status === 'paid'
               ? 'Заказ уже оплачен'
               : isPaying
-              ? 'Оплачиваем...'
-              : 'Оплачено'}
+              ? 'Переходим в ЮKassa...'
+              : 'Оплатить в ЮKassa'}
           </button>
           {order.status === 'paid' && (
             <Link to={`/order-success/${order.id}`} className="ghost-button">

@@ -55,8 +55,20 @@ export type Order = {
   pickupPoint: string;
   deliveryCostCents: number;
   totalCents: number;
+  paymentProvider?: string;
+  paymentId?: string;
+  paymentStatus?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type OrderPaymentSession = {
+  order: Order;
+  confirmationUrl?: string;
+  paymentId?: string;
+  paymentStatus?: string;
+  amountCents?: number;
+  alreadyPaid?: boolean;
 };
 
 export type OrderItem = {
@@ -259,6 +271,23 @@ export const payOrder = async (orderId: string) => {
     headers: authHeaders()
   });
   return data.order;
+};
+
+export const createOrderPayment = async (orderId: string) => {
+  return fetchJson<OrderPaymentSession>(`${API_BASE}/api/orders/${orderId}/payment`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+};
+
+export const refreshOrderPayment = async (orderId: string) => {
+  return fetchJson<{ order: Order; paymentStatus: string }>(
+    `${API_BASE}/api/orders/${orderId}/payment/refresh`,
+    {
+      method: 'POST',
+      headers: authHeaders()
+    }
+  );
 };
 
 export const requestNeedPart = async (payload: {

@@ -12,6 +12,10 @@ export type OrderRow = {
   pickup_point: string | null;
   delivery_cost_cents: number;
   total_cents: number;
+  payment_provider: string | null;
+  payment_id: string | null;
+  payment_status: string | null;
+  payment_confirmed_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -94,7 +98,7 @@ export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
         `
           INSERT INTO orders (id, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at;
+          RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
         `,
         [
           id,
@@ -155,7 +159,7 @@ export const findOrderByIdForUser = async (
 ): Promise<OrderRow | null> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at
+      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
       FROM orders
       WHERE id = $1 AND user_id = $2;
     `,
@@ -168,7 +172,7 @@ export const findOrderByIdForUser = async (
 export const listOrdersByUser = async (userId: string): Promise<OrderRow[]> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at
+      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
       FROM orders
       WHERE user_id = $1
       ORDER BY created_at DESC;
@@ -177,6 +181,34 @@ export const listOrdersByUser = async (userId: string): Promise<OrderRow[]> => {
   );
 
   return result.rows as OrderRow[];
+};
+
+export const findOrderById = async (id: string): Promise<OrderRow | null> => {
+  const result = await query(
+    `
+      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+      FROM orders
+      WHERE id = $1;
+    `,
+    [id]
+  );
+
+  return (result.rows[0] as OrderRow | undefined) ?? null;
+};
+
+export const findOrderByPaymentId = async (paymentId: string): Promise<OrderRow | null> => {
+  const result = await query(
+    `
+      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+      FROM orders
+      WHERE payment_id = $1
+      ORDER BY updated_at DESC
+      LIMIT 1;
+    `,
+    [paymentId]
+  );
+
+  return (result.rows[0] as OrderRow | undefined) ?? null;
 };
 
 export const listOrderItemsForUser = async (
@@ -211,11 +243,74 @@ export const markOrderPaid = async (
     `
       UPDATE orders
       SET status = 'paid',
+          payment_status = 'succeeded',
+          payment_confirmed_at = COALESCE(payment_confirmed_at, NOW()),
           updated_at = NOW()
-      WHERE id = $1 AND user_id = $2
-      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, created_at, updated_at;
+      WHERE id = $1 AND user_id = $2 AND status <> 'paid'
+      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
     `,
     [id, userId]
+  );
+
+  return (result.rows[0] as OrderRow | undefined) ?? null;
+};
+
+export const markOrderPaidById = async (id: string): Promise<OrderRow | null> => {
+  const result = await query(
+    `
+      UPDATE orders
+      SET status = 'paid',
+          payment_status = 'succeeded',
+          payment_confirmed_at = COALESCE(payment_confirmed_at, NOW()),
+          updated_at = NOW()
+      WHERE id = $1 AND status <> 'paid'
+      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
+    `,
+    [id]
+  );
+
+  return (result.rows[0] as OrderRow | undefined) ?? null;
+};
+
+type UpdateOrderPaymentInput = {
+  provider: string;
+  paymentId: string;
+  paymentStatus: string;
+};
+
+export const updateOrderPayment = async (
+  id: string,
+  input: UpdateOrderPaymentInput
+): Promise<OrderRow | null> => {
+  const result = await query(
+    `
+      UPDATE orders
+      SET payment_provider = $2,
+          payment_id = $3,
+          payment_status = $4,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
+    `,
+    [id, input.provider, input.paymentId, input.paymentStatus]
+  );
+
+  return (result.rows[0] as OrderRow | undefined) ?? null;
+};
+
+export const updateOrderPaymentStatusById = async (
+  id: string,
+  paymentStatus: string
+): Promise<OrderRow | null> => {
+  const result = await query(
+    `
+      UPDATE orders
+      SET payment_status = $2,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
+    `,
+    [id, paymentStatus]
   );
 
   return (result.rows[0] as OrderRow | undefined) ?? null;
