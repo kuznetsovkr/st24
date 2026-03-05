@@ -97,6 +97,20 @@ const HomePage = () => {
     };
   }, []);
 
+  const resolveSlideLeftByIndex = useCallback(
+    (track: HTMLDivElement, targetIndex: number, fallbackStep: number) => {
+      const slides = track.querySelectorAll<HTMLElement>('.slide');
+      const maxIndex = Math.max(0, slides.length - 1);
+      const clampedIndex = Math.max(0, Math.min(targetIndex, maxIndex));
+      const targetSlide = slides[clampedIndex];
+      if (targetSlide) {
+        return targetSlide.offsetLeft;
+      }
+      return clampedIndex * fallbackStep;
+    },
+    []
+  );
+
   const loopCloneCount = useMemo(() => {
     if (featuredProducts.length <= AUTO_SCROLL_BATCH_SIZE) {
       return 0;
@@ -156,8 +170,9 @@ const HomePage = () => {
 
     if (currentIndex >= lastStartIndex) {
       if (loopCloneCount > 0) {
+        const targetLeft = resolveSlideLeftByIndex(track, currentIndex + wrapStepCards, cardStep);
         track.scrollTo({
-          left: (currentIndex + wrapStepCards) * cardStep,
+          left: targetLeft,
           behavior: 'smooth'
         });
         scheduleLoopReset();
@@ -168,11 +183,16 @@ const HomePage = () => {
       return;
     }
 
+    const targetLeft = resolveSlideLeftByIndex(
+      track,
+      Math.min(currentIndex + visibleCards, lastStartIndex),
+      cardStep
+    );
     track.scrollTo({
-      left: Math.min(currentIndex + visibleCards, lastStartIndex) * cardStep,
+      left: targetLeft,
       behavior: 'smooth'
     });
-  }, [clearLoopResetTimeout, featuredProducts.length, getSlideMetrics, lockProgrammaticScroll, loopCloneCount, scheduleLoopReset]);
+  }, [clearLoopResetTimeout, featuredProducts.length, getSlideMetrics, lockProgrammaticScroll, loopCloneCount, resolveSlideLeftByIndex, scheduleLoopReset]);
 
   const scheduleAutoScroll = useCallback(() => {
     clearAutoScrollTimeout();
@@ -216,8 +236,13 @@ const HomePage = () => {
       if (direction === 'next') {
         if (currentIndex >= lastStartIndex) {
           if (loopCloneCount > 0) {
+            const targetLeft = resolveSlideLeftByIndex(
+              track,
+              currentIndex + wrapStepCards,
+              cardStep
+            );
             track.scrollTo({
-              left: (currentIndex + wrapStepCards) * cardStep,
+              left: targetLeft,
               behavior: 'smooth'
             });
             scheduleLoopReset();
@@ -225,25 +250,41 @@ const HomePage = () => {
             track.scrollTo({ left: 0, behavior: 'smooth' });
           }
         } else {
+          const targetLeft = resolveSlideLeftByIndex(
+            track,
+            Math.min(currentIndex + visibleCards, lastStartIndex),
+            cardStep
+          );
           track.scrollTo({
-            left: Math.min(currentIndex + visibleCards, lastStartIndex) * cardStep,
+            left: targetLeft,
             behavior: 'smooth'
           });
         }
       } else if (currentIndex <= 0) {
-        track.scrollTo({ left: lastStartIndex * cardStep, behavior: 'smooth' });
-      } else if (currentIndex > lastStartIndex) {
-        track.scrollTo({ left: lastStartIndex * cardStep, behavior: 'smooth' });
-      } else {
         track.scrollTo({
-          left: Math.max(0, currentIndex - visibleCards) * cardStep,
+          left: resolveSlideLeftByIndex(track, lastStartIndex, cardStep),
+          behavior: 'smooth'
+        });
+      } else if (currentIndex > lastStartIndex) {
+        track.scrollTo({
+          left: resolveSlideLeftByIndex(track, lastStartIndex, cardStep),
+          behavior: 'smooth'
+        });
+      } else {
+        const targetLeft = resolveSlideLeftByIndex(
+          track,
+          Math.max(0, currentIndex - visibleCards),
+          cardStep
+        );
+        track.scrollTo({
+          left: targetLeft,
           behavior: 'smooth'
         });
       }
 
       scheduleAutoScroll();
     },
-    [clearLoopResetTimeout, featuredProducts.length, getSlideMetrics, lockProgrammaticScroll, loopCloneCount, scheduleAutoScroll, scheduleLoopReset]
+    [clearLoopResetTimeout, featuredProducts.length, getSlideMetrics, lockProgrammaticScroll, loopCloneCount, resolveSlideLeftByIndex, scheduleAutoScroll, scheduleLoopReset]
   );
 
   useEffect(() => {
