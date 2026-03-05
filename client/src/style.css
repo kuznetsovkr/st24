@@ -515,7 +515,6 @@ a {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 16px;
 }
 
 .slider-controls {
@@ -690,6 +689,65 @@ a {
   color: var(--muted);
   font-size: 12px;
   font-weight: var(--weight-semibold);
+}
+
+.catalog-cart-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: var(--text);
+  text-decoration: none;
+  line-height: 1;
+  transition: opacity 0.2s ease;
+}
+
+.catalog-cart-fab:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.catalog-cart-fab::before {
+  content: 'Перейти в корзину';
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 10px);
+  transform: translate(8px, -50%);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  font-family: var(--font-heading);
+}
+
+.catalog-cart-fab:hover::before,
+.catalog-cart-fab:focus-visible::before {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.catalog-cart-fab-icon {
+  width: 24px;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.catalog-cart-fab-icon svg {
+  width: 24px;
+  height: 100%;
+  display: block;
 }
 
 .card {
@@ -2237,9 +2295,25 @@ input[type='file'] {
     height: 360px;
   }
 
+  .catalog-cart-fab {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .catalog-cart-fab::before {
+    display: none;
+  }
+
   .checkout-summary-item-name:hover::after,
   .cart-item-name:hover::after {
     display: none;
+  }
+}
+
+@media (min-width: 1240px) {
+  .catalog-cart-fab {
+    right: calc((100vw - 1200px) / 2);
+    transform: translateX(calc(100% + 8px));
   }
 }
 
@@ -2269,6 +2343,22 @@ input[type='file'] {
   .home-actions {
     grid-template-columns: 1fr;
     margin-top: 48px;
+  }
+}
+
+@media (max-width: 389px) {
+  .slider-track {
+    grid-auto-columns: 100%;
+  }
+
+  .products-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .slide .product-actions .primary-button,
+  .slide .product-actions .ghost-button {
+    white-space: normal;
+    font-size: 14px;
   }
 }
 
