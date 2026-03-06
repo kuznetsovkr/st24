@@ -5,9 +5,6 @@ const PrivacyPage = () => {
         <div>
           <p className="eyebrow">Юридическая информация</p>
           <h1>Политика конфиденциальности</h1>
-          <p className="muted">
-            Заготовка для политики. Добавьте текстовую версию или подключите из CMS.
-          </p>
         </div>
       </header>
       <div className="card">

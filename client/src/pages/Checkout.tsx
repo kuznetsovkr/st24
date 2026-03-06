@@ -849,10 +849,10 @@ const CheckoutPage = () => {
                   {showDeliveryDisclaimer ? (
                     <p className="muted">
                       Стоимость является приблизительной, итоговую стоимость можете уточнить у
-                      менеджера в
+                      менеджера в 
                       <a href={TELEGRAM_LINK} target="_blank" rel="noreferrer">
                         телеграмме
-                      </a>
+                      </a> 
                       или на почте
                       <a href={STORE_EMAIL_HREF}>{STORE_EMAIL_HREF}</a> после отправки.
                     </p>

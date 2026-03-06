@@ -10,7 +10,7 @@ const TermsPage = () => {
       </header>
       <div className="card">
         <p className="muted">
-          Добавим сюда текст оферты, условия доставки и оплаты, а также блок FAQ для клиентов.
+          Добавим сюда текст оферты
         </p>
       </div>
     </div>
