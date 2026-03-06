@@ -70,6 +70,15 @@ import {
 import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile';
 import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
 import {
+  PickupPointProxyError,
+  searchDellinPickupPoints,
+  searchRussianPostPickupPoints
+} from './pickupPoints';
+import {
+  estimateShippingCost,
+  type ShippingEstimateProvider
+} from './shippingEstimate';
+import {
   createYooKassaPayment,
   fetchYooKassaPayment,
   getYooKassaFixedAmountCents,
@@ -626,6 +635,108 @@ export const createApp = () => {
         error instanceof Error ? error.message : 'Failed to process CDEK request';
       console.error('CDEK proxy unexpected error', error);
       res.status(500).json({ message });
+    }
+  });
+
+  app.get('/api/pickup-points/dellin', async (req: Request, res: Response) => {
+    const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+    if (query.length < 2) {
+      res.status(400).json({ error: 'Query must contain at least 2 characters' });
+      return;
+    }
+
+    try {
+      const items = await searchDellinPickupPoints(query);
+      res.json({ items });
+    } catch (error) {
+      if (error instanceof PickupPointProxyError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to load Delovye Linii pickup points', error);
+      res.status(500).json({ error: 'Failed to load Delovye Linii pickup points' });
+    }
+  });
+
+  app.get('/api/pickup-points/russian_post', async (req: Request, res: Response) => {
+    const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+    if (query.length < 2) {
+      res.status(400).json({ error: 'Query must contain at least 2 characters' });
+      return;
+    }
+
+    try {
+      const items = await searchRussianPostPickupPoints(query);
+      res.json({ items });
+    } catch (error) {
+      if (error instanceof PickupPointProxyError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      console.error('Failed to load Russian Post pickup points', error);
+      res.status(500).json({ error: 'Failed to load Russian Post pickup points' });
+    }
+  });
+
+  app.post('/api/shipping/estimate', (req: Request, res: Response) => {
+    const providerRaw = typeof req.body?.provider === 'string' ? req.body.provider.trim() : '';
+    const provider: ShippingEstimateProvider | null =
+      providerRaw === 'dellin' || providerRaw === 'russian_post'
+        ? providerRaw
+        : null;
+    if (!provider) {
+      res.status(400).json({ error: 'Unsupported provider' });
+      return;
+    }
+
+    const rawParcels: unknown[] = Array.isArray(req.body?.parcels) ? req.body.parcels : [];
+    const parcels = rawParcels
+      .filter((parcel: unknown) => parcel && typeof parcel === 'object')
+      .map((parcel: unknown) => {
+        const p = parcel as {
+          length?: unknown;
+          width?: unknown;
+          height?: unknown;
+          weight?: unknown;
+        };
+        return {
+          length:
+            typeof p.length === 'number'
+              ? p.length
+              : Number.parseFloat(String(p.length ?? '0')),
+          width:
+            typeof p.width === 'number' ? p.width : Number.parseFloat(String(p.width ?? '0')),
+          height:
+            typeof p.height === 'number'
+              ? p.height
+              : Number.parseFloat(String(p.height ?? '0')),
+          weight:
+            typeof p.weight === 'number'
+              ? p.weight
+              : Number.parseFloat(String(p.weight ?? '0'))
+        };
+      });
+
+    const destinationCity =
+      typeof req.body?.destinationCity === 'string' ? req.body.destinationCity : '';
+    const destinationCode =
+      typeof req.body?.destinationCode === 'string' ? req.body.destinationCode : '';
+    const destinationAddress =
+      typeof req.body?.destinationAddress === 'string' ? req.body.destinationAddress : '';
+
+    try {
+      const estimate = estimateShippingCost({
+        provider,
+        parcels,
+        destinationCity,
+        destinationCode,
+        destinationAddress
+      });
+      res.json(estimate);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to estimate shipping cost';
+      res.status(500).json({ error: message });
     }
   });
 

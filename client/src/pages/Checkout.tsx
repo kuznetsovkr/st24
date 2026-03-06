@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE, createOrder, fetchBoxTypes, type BoxType } from '../api.ts';
+import {
+  API_BASE,
+  createOrder,
+  estimateShipping,
+  fetchBoxTypes,
+  searchDellinPickupPoints,
+  searchRussianPostPickupPoints,
+  type BoxType,
+  type PickupPointOption
+} from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
@@ -53,6 +62,14 @@ declare global {
     CDEKWidget?: CdekWidgetConstructor;
   }
 }
+
+type DeliveryProvider = 'cdek' | 'dellin' | 'russian_post';
+
+const DELIVERY_PROVIDER_LABELS: Record<DeliveryProvider, string> = {
+  cdek: 'СДЭК',
+  dellin: 'Деловые линии',
+  russian_post: 'Почта России'
+};
 
 const buildPickupPointLabel = (office: CdekWidgetOffice) => {
   const addressLine = [office.city, office.address].filter(Boolean).join(', ');
@@ -146,10 +163,16 @@ const CheckoutPage = () => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [deliveryProvider, setDeliveryProvider] = useState<DeliveryProvider>('cdek');
   const [pickupPoint, setPickupPoint] = useState('');
   const [pickupPointCode, setPickupPointCode] = useState('');
   const [deliveryCostCents, setDeliveryCostCents] = useState<number | null>(null);
   const [deliveryTariffName, setDeliveryTariffName] = useState('');
+  const [pickupSearchQuery, setPickupSearchQuery] = useState(DEFAULT_CDEK_LOCATION);
+  const [pickupOptions, setPickupOptions] = useState<PickupPointOption[]>([]);
+  const [isPickupOptionsLoading, setIsPickupOptionsLoading] = useState(false);
+  const [isEstimatingDelivery, setIsEstimatingDelivery] = useState(false);
+  const [pickupOptionsError, setPickupOptionsError] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -159,6 +182,7 @@ const CheckoutPage = () => {
     () => new Set()
   );
   const promptedRef = useRef(false);
+  const estimateRequestIdRef = useRef(0);
   const widgetRef = useRef<CdekWidgetInstance | null>(null);
   const yandexApiKey = (import.meta.env.VITE_YANDEX_MAPS_API_KEY ?? '').trim();
   const cdekFromLocation =
@@ -178,8 +202,21 @@ const CheckoutPage = () => {
   );
   const shippingParcels = packingDebug.parcels;
   const deliveryLabel =
-    deliveryCostCents === null ? 'после выбора ПВЗ' : formatPrice(deliveryCostCents);
-  const grandTotalCents = totalPriceCents + (deliveryCostCents ?? 0);
+    deliveryProvider === 'cdek'
+      ? deliveryCostCents === null
+        ? 'после выбора ПВЗ'
+        : formatPrice(deliveryCostCents)
+      : deliveryCostCents === null
+      ? 'после выбора ПВЗ'
+      : `≈ ${formatPrice(deliveryCostCents)}`;
+  const deliverySubLabel =
+    deliveryProvider === 'cdek'
+      ? ''
+      : deliveryCostCents === null
+      ? ''
+      : 'Ориентировочно, финальная стоимость уточняется оператором';
+  const grandTotalCents =
+    totalPriceCents + (deliveryProvider === 'cdek' ? (deliveryCostCents ?? 0) : 0);
 
   useEffect(() => {
     if (!user) {
@@ -214,6 +251,19 @@ const CheckoutPage = () => {
       promptedRef.current = true;
     }
   }, [status, openAuthModal]);
+
+  useEffect(() => {
+    estimateRequestIdRef.current += 1;
+    setPickupPoint('');
+    setPickupPointCode('');
+    setDeliveryTariffName('');
+    setPickupOptions([]);
+    setPickupOptionsError(null);
+    setIsEstimatingDelivery(false);
+    setError(null);
+    setDeliveryCostCents(null);
+    setPickupSearchQuery(cdekDefaultLocation);
+  }, [deliveryProvider, cdekDefaultLocation]);
 
   useEffect(() => {
     const cartItemsForLog = items.map((item) => ({
@@ -257,15 +307,40 @@ const CheckoutPage = () => {
       console.groupEnd();
     }
 
-    console.log('Данные для CDEK:', {
-      from: cdekFrom,
-      defaultLocation: cdekDefaultLocation,
-      goods: shippingParcels
-    });
+    console.log('Текущий перевозчик:', DELIVERY_PROVIDER_LABELS[deliveryProvider]);
+    if (deliveryProvider === 'cdek') {
+      console.log('Данные для CDEK:', {
+        from: cdekFrom,
+        defaultLocation: cdekDefaultLocation,
+        goods: shippingParcels
+      });
+    } else {
+      console.log('Запрос поиска ПВЗ:', {
+        provider: deliveryProvider,
+        query: pickupSearchQuery
+      });
+    }
     console.groupEnd();
-  }, [items, packingDebug, cdekDefaultLocation, cdekFrom, shippingParcels]);
+  }, [
+    items,
+    packingDebug,
+    cdekDefaultLocation,
+    cdekFrom,
+    deliveryProvider,
+    pickupSearchQuery,
+    shippingParcels
+  ]);
 
   useEffect(() => {
+    if (deliveryProvider !== 'cdek') {
+      if (widgetRef.current) {
+        widgetRef.current.destroy();
+        widgetRef.current = null;
+      }
+      setIsWidgetLoading(false);
+      return;
+    }
+
     if (!yandexApiKey) {
       return;
     }
@@ -302,6 +377,8 @@ const CheckoutPage = () => {
           tariff: CdekWidgetTariff | null,
           target: CdekWidgetOffice
         ) => {
+          estimateRequestIdRef.current += 1;
+          setIsEstimatingDelivery(false);
           const label = buildPickupPointLabel(target);
           setPickupPoint(label);
           setPickupPointCode(target.code ?? '');
@@ -358,16 +435,106 @@ const CheckoutPage = () => {
         widgetRef.current = null;
       }
     };
-  }, [yandexApiKey, cdekFrom, cdekDefaultLocation, shippingParcels]);
+  }, [deliveryProvider, yandexApiKey, cdekFrom, cdekDefaultLocation, shippingParcels]);
 
   useEffect(() => {
+    if (deliveryProvider !== 'cdek') {
+      return;
+    }
     const widget = widgetRef.current;
     if (!widget?.resetParcels || !widget?.addParcel) {
       return;
     }
     widget.resetParcels();
     widget.addParcel(shippingParcels);
-  }, [shippingParcels]);
+  }, [deliveryProvider, shippingParcels]);
+
+  const handleDeliveryProviderChange = (provider: DeliveryProvider) => {
+    if (provider === deliveryProvider) {
+      return;
+    }
+    setDeliveryProvider(provider);
+  };
+
+  const handlePickupPointSearch = async () => {
+    if (deliveryProvider === 'cdek') {
+      return;
+    }
+
+    const query = pickupSearchQuery.trim();
+    if (query.length < 2) {
+      setPickupOptions([]);
+      setPickupOptionsError('Введите минимум 2 символа для поиска ПВЗ.');
+      return;
+    }
+
+    setIsPickupOptionsLoading(true);
+    setPickupOptionsError(null);
+    setPickupOptions([]);
+
+    try {
+      const points =
+        deliveryProvider === 'dellin'
+          ? await searchDellinPickupPoints(query)
+          : await searchRussianPostPickupPoints(query);
+      setPickupOptions(points);
+      if (points.length === 0) {
+        setPickupOptionsError('Пункты выдачи не найдены. Уточните город или адрес.');
+      }
+    } catch (searchError) {
+      if (searchError instanceof Error) {
+        setPickupOptionsError(searchError.message);
+      } else {
+        setPickupOptionsError('Не удалось загрузить пункты выдачи.');
+      }
+    } finally {
+      setIsPickupOptionsLoading(false);
+    }
+  };
+
+  const requestNonCdekEstimate = async (point: PickupPointOption) => {
+    const requestId = estimateRequestIdRef.current + 1;
+    estimateRequestIdRef.current = requestId;
+    setIsEstimatingDelivery(true);
+    setDeliveryCostCents(null);
+
+    try {
+      const estimate = await estimateShipping({
+        provider: point.provider,
+        parcels: shippingParcels,
+        destinationCity: point.city,
+        destinationCode: point.code,
+        destinationAddress: point.address
+      });
+      if (estimateRequestIdRef.current !== requestId) {
+        return;
+      }
+      setDeliveryCostCents(estimate.estimatedCostCents);
+    } catch (estimateError) {
+      if (estimateRequestIdRef.current !== requestId) {
+        return;
+      }
+      if (estimateError instanceof Error) {
+        setPickupOptionsError(estimateError.message);
+      } else {
+        setPickupOptionsError('Не удалось рассчитать ориентировочную стоимость доставки.');
+      }
+      setDeliveryCostCents(null);
+    } finally {
+      if (estimateRequestIdRef.current === requestId) {
+        setIsEstimatingDelivery(false);
+      }
+    }
+  };
+
+  const handlePickupPointChoose = async (point: PickupPointOption) => {
+    setPickupPoint(point.label);
+    setPickupPointCode(point.code);
+    setDeliveryTariffName('');
+    setPickupOptionsError(null);
+    await requestNonCdekEstimate(point);
+    setError(null);
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -393,7 +560,7 @@ const CheckoutPage = () => {
       return;
     }
 
-    if (deliveryCostCents === null) {
+    if (deliveryProvider === 'cdek' && deliveryCostCents === null) {
       setError('Не удалось получить стоимость доставки. Выберите пункт выдачи ещё раз.');
       return;
     }
@@ -414,16 +581,17 @@ const CheckoutPage = () => {
         return;
       }
 
+      const providerLabel = DELIVERY_PROVIDER_LABELS[deliveryProvider];
       const pickupPointValue = pickupPointCode
-        ? `${pickupPoint} (код: ${pickupPointCode})`
-        : pickupPoint;
+        ? `${providerLabel}: ${pickupPoint} (код: ${pickupPointCode})`
+        : `${providerLabel}: ${pickupPoint}`;
 
       const order = await createOrder({
         fullName: fullName.trim(),
         phone: phone.trim(),
         email: email.trim(),
         pickupPoint: pickupPointValue,
-        deliveryCostCents
+        deliveryCostCents: deliveryProvider === 'cdek' ? deliveryCostCents ?? 0 : 0
       });
       navigate(`/payment/${order.id}`);
     } catch (submitError) {
@@ -548,24 +716,114 @@ const CheckoutPage = () => {
 
           <div className="cdek-placeholder">
             <div className="cdek-placeholder-head">
-              <p className="eyebrow">Пункт выдачи СДЭК</p>
-              <p className="muted">
-                Выберите удобный ПВЗ на карте СДЭК. Стоимость доставки рассчитается автоматически.
-              </p>
+              <div className="delivery-provider-switch">
+                {(
+                  [
+                    ['cdek', 'СДЭК'],
+                    ['dellin', 'Деловые линии'],
+                    ['russian_post', 'Почта России']
+                  ] as Array<[DeliveryProvider, string]>
+                ).map(([provider, label]) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    className={`delivery-provider-link${
+                      deliveryProvider === provider ? ' is-active' : ''
+                    }`}
+                    onClick={() => handleDeliveryProviderChange(provider)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {deliveryProvider === 'cdek' ? (
+                <>
+                  <p className="eyebrow">Пункт выдачи СДЭК</p>
+                  <p className="muted">
+                    Выберите удобный ПВЗ на карте СДЭК. Стоимость доставки рассчитается
+                    автоматически.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="eyebrow">
+                    Пункт выдачи {DELIVERY_PROVIDER_LABELS[deliveryProvider]}
+                  </p>
+                  <p className="muted">
+                    Введите город или адрес и выберите подходящий пункт выдачи из списка.
+                  </p>
+                </>
+              )}
+
               {pickupPoint ? (
                 <>
                   <p className="chip">Выбрано: {pickupPoint}</p>
                   <p className="cdek-meta">
-                    {deliveryTariffName ? `${deliveryTariffName} \u00b7 ` : ''}
+                    {deliveryProvider === 'cdek' && deliveryTariffName
+                      ? `${deliveryTariffName} · `
+                      : ''}
                     Доставка: {deliveryLabel}
                   </p>
+                  {deliverySubLabel ? <p className="muted">{deliverySubLabel}</p> : null}
+                  {isEstimatingDelivery ? (
+                    <p className="muted">Считаем ориентировочную стоимость доставки...</p>
+                  ) : null}
                 </>
               ) : (
                 <p className="muted">Пункт выдачи не выбран.</p>
               )}
             </div>
-            <div id={CDEK_WIDGET_ROOT_ID} className="cdek-widget-inline" />
-            {isWidgetLoading ? <p className="muted">Загружаем карту СДЭК...</p> : null}
+
+            {deliveryProvider === 'cdek' ? (
+              <>
+                <div id={CDEK_WIDGET_ROOT_ID} className="cdek-widget-inline" />
+                {isWidgetLoading ? <p className="muted">Загружаем карту СДЭК...</p> : null}
+              </>
+            ) : (
+              <div className="pickup-search-block">
+                <div className="pickup-search-row">
+                  <input
+                    type="text"
+                    value={pickupSearchQuery}
+                    onChange={(event) => setPickupSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void handlePickupPointSearch();
+                      }
+                    }}
+                    placeholder="Красноярск"
+                  />
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={handlePickupPointSearch}
+                    disabled={isPickupOptionsLoading}
+                  >
+                    {isPickupOptionsLoading ? 'Ищем...' : 'Найти ПВЗ'}
+                  </button>
+                </div>
+                {pickupOptionsError ? <p className="muted">{pickupOptionsError}</p> : null}
+                {pickupOptions.length > 0 ? (
+                  <div className="pickup-options-list">
+                    {pickupOptions.map((option) => (
+                      <button
+                        key={`${option.provider}:${option.code}:${option.address}`}
+                        type="button"
+                        className="pickup-option-button"
+                        onClick={() => {
+                          void handlePickupPointChoose(option);
+                        }}
+                      >
+                        <span>{option.name}</span>
+                        <span className="muted">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
 
           <label className="checkbox-field">

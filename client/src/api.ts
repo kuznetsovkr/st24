@@ -96,6 +96,33 @@ export type CartSyncItem = {
   quantity: number;
 };
 
+export type PickupPointOption = {
+  provider: 'dellin' | 'russian_post';
+  code: string;
+  name: string;
+  city: string;
+  address: string;
+  label: string;
+};
+
+export type ShippingEstimateProvider = 'dellin' | 'russian_post';
+
+export type ShippingEstimateParcel = {
+  length: number;
+  width: number;
+  height: number;
+  weight: number;
+};
+
+export type ShippingEstimate = {
+  provider: ShippingEstimateProvider;
+  estimatedCostCents: number;
+  currency: 'RUB';
+  billedWeightKg: number;
+  actualWeightKg: number;
+  volumetricWeightKg: number;
+};
+
 export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 const TOKEN_KEY = 'her_auth_token';
 
@@ -430,3 +457,29 @@ export const syncCart = async (items: CartSyncItem[]) => {
   });
   return data.items.map(normalizeCartItem);
 };
+
+const fetchPickupPoints = async (provider: 'dellin' | 'russian_post', query: string) => {
+  const url = new URL(`${API_BASE}/api/pickup-points/${provider}`);
+  url.searchParams.set('query', query);
+  const data = await fetchJson<{ items: PickupPointOption[] }>(url.toString());
+  return data.items;
+};
+
+export const searchDellinPickupPoints = async (query: string) =>
+  fetchPickupPoints('dellin', query);
+
+export const searchRussianPostPickupPoints = async (query: string) =>
+  fetchPickupPoints('russian_post', query);
+
+export const estimateShipping = async (payload: {
+  provider: ShippingEstimateProvider;
+  parcels: ShippingEstimateParcel[];
+  destinationCity?: string;
+  destinationCode?: string;
+  destinationAddress?: string;
+}) =>
+  fetchJson<ShippingEstimate>(`${API_BASE}/api/shipping/estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });

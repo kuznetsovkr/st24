@@ -236,7 +236,6 @@ const AuthModal = () => {
         <div className="modal-header">
           <div>
             <p className="eyebrow">Авторизация</p>
-            <h3>Вход по телефону</h3>
           </div>
           <button className="icon-button" aria-label="Закрыть" onClick={closeAuthModal}>
             <svg
