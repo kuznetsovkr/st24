@@ -824,7 +824,6 @@ const CheckoutPage = () => {
                 </>
               ) : deliveryProvider === 'cdek' ? (
                 <>
-                  <p className="eyebrow">Пункт выдачи СДЭК</p>
                   <p className="muted">
                     Выберите удобный ПВЗ на карте СДЭК. Стоимость доставки рассчитается
                     автоматически.
@@ -832,9 +831,6 @@ const CheckoutPage = () => {
                 </>
               ) : (
                 <>
-                  <p className="eyebrow">
-                    Пункт выдачи {DELIVERY_PROVIDER_LABELS[deliveryProvider]}
-                  </p>
                   <p className="muted">
                     Введите город или адрес и выберите подходящий пункт выдачи из списка.
                   </p>
