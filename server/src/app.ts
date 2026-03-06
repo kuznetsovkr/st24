@@ -82,9 +82,12 @@ import {
   searchRussianPostPickupPoints
 } from './pickupPoints';
 import {
-  estimateShippingCost,
   type ShippingEstimateProvider
 } from './shippingEstimate';
+import {
+  calculateShippingWithProviderApi,
+  getShippingProviderApiDebug
+} from './providerShipping';
 import {
   createYooKassaPayment,
   fetchYooKassaPayment,
@@ -866,18 +869,25 @@ export const createApp = () => {
         return;
       }
 
-      const estimate = estimateShippingCost({
+      const estimate = await calculateShippingWithProviderApi({
         provider,
         parcels,
         destinationCity,
         destinationCode,
         destinationAddress
       });
+      const debug = getShippingProviderApiDebug(estimate);
+      console.log('[SHIPPING]', {
+        provider,
+        source: debug.source,
+        destinationCode,
+        destinationCity
+      });
       res.json(estimate);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to estimate shipping cost';
-      res.status(500).json({ error: message });
+        error instanceof Error ? error.message : 'Failed to calculate shipping cost';
+      res.status(502).json({ error: message });
     }
   });
 
