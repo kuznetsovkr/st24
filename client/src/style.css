@@ -2069,7 +2069,7 @@ input[type='file'] {
   background: transparent;
   padding: 0;
   color: var(--muted);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: var(--weight-medium);
   text-decoration: underline;
   text-decoration-color: var(--primary);
@@ -2151,14 +2151,14 @@ input[type='file'] {
   border-radius: 999px;
   background: var(--accent-strong);
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: var(--weight-semibold);
 }
 
 .cdek-meta {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .checkout-summary {

@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import { STORE_EMAIL_HREF, TELEGRAM_LINK } from '../constants/contacts.ts';
 import { formatPhone } from '../utils/formatPhone.ts';
 import {
   buildShippingPackingDebug,
@@ -28,6 +29,10 @@ const CDEK_WIDGET_SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/@cdek-it/widget@3';
 const CDEK_WIDGET_ROOT_ID = 'checkout-cdek-map';
 const DEFAULT_CDEK_FROM = 'Красноярск, улица Калинина, 53а/1';
 const DEFAULT_CDEK_LOCATION = 'Красноярск';
+
+
+const getPickupSearchDefault = (provider: DeliveryProvider, cdekDefaultLocation: string) =>
+  provider === 'cdek' ? cdekDefaultLocation : '';
 
 type CdekWidgetTariff = {
   tariff_code: number;
@@ -197,7 +202,9 @@ const CheckoutPage = () => {
   const [pickupPointCode, setPickupPointCode] = useState('');
   const [deliveryCostCents, setDeliveryCostCents] = useState<number | null>(null);
   const [deliveryTariffName, setDeliveryTariffName] = useState('');
-  const [pickupSearchQuery, setPickupSearchQuery] = useState(DEFAULT_CDEK_LOCATION);
+  const [pickupSearchQuery, setPickupSearchQuery] = useState(
+    getPickupSearchDefault('cdek', DEFAULT_CDEK_LOCATION)
+  );
   const [pickupOptions, setPickupOptions] = useState<PickupPointOption[]>([]);
   const [isPickupOptionsLoading, setIsPickupOptionsLoading] = useState(false);
   const [isEstimatingDelivery, setIsEstimatingDelivery] = useState(false);
@@ -249,12 +256,7 @@ const CheckoutPage = () => {
       : deliveryCostCents === null
       ? 'после выбора ПВЗ'
       : `≈ ${formatPrice(deliveryCostCents)}`;
-  const deliverySubLabel =
-    deliveryProvider === 'cdek'
-      ? ''
-      : deliveryCostCents === null
-      ? ''
-      : 'Ориентировочно, финальная стоимость уточняется оператором';
+  const showDeliveryDisclaimer = deliveryProvider !== 'cdek' && deliveryCostCents !== null;
   const grandTotalCents =
     totalPriceCents + (deliveryProvider === 'cdek' ? (deliveryCostCents ?? 0) : 0);
 
@@ -329,7 +331,7 @@ const CheckoutPage = () => {
     setIsEstimatingDelivery(false);
     setError(null);
     setDeliveryCostCents(null);
-    setPickupSearchQuery(cdekDefaultLocation);
+    setPickupSearchQuery(getPickupSearchDefault(deliveryProvider, cdekDefaultLocation));
   }, [deliveryProvider, cdekDefaultLocation, hasEnabledDeliveryProviders]);
 
   useEffect(() => {
@@ -848,7 +850,17 @@ const CheckoutPage = () => {
                       : ''}
                     Доставка: {deliveryLabel}
                   </p>
-                  {deliverySubLabel ? <p className="muted">{deliverySubLabel}</p> : null}
+                  {showDeliveryDisclaimer ? (
+                    <p className="muted">
+                      Стоимость является приблизительной, итоговую стоимость можете уточнить у
+                      менеджера «
+                      <a href={TELEGRAM_LINK} target="_blank" rel="noreferrer">
+                        телеграмм
+                      </a>
+                      /
+                      <a href={STORE_EMAIL_HREF}>почта</a>» после отправки.
+                    </p>
+                  ) : null}
                   {isEstimatingDelivery ? (
                     <p className="muted">Считаем ориентировочную стоимость доставки...</p>
                   ) : null}
@@ -876,7 +888,7 @@ const CheckoutPage = () => {
                         void handlePickupPointSearch();
                       }
                     }}
-                    placeholder="Красноярск"
+                    placeholder="Введите город или адрес"
                   />
                   <button
                     type="button"

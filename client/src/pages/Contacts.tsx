@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { STORE_EMAIL, STORE_EMAIL_HREF, TELEGRAM_LINK } from '../constants/contacts.ts';
 
 const MAP_CONTAINER_ID = 'contacts-map';
 const MAP_SCRIPT_ID = 'yandex-maps-script';
@@ -6,9 +7,6 @@ const STORE_COORDS: [number, number] = [56.03685, 92.789874];
 const STORE_ADDRESS = 'Красноярск, улица Калинина, 53а';
 const STORE_PHONE_DISPLAY = '+7 995 908-95-97';
 const STORE_PHONE_HREF = 'tel:+79959089597';
-const STORE_EMAIL = 'st-karcher24@mail.ru';
-const STORE_EMAIL_HREF = `mailto:${STORE_EMAIL}`;
-const TELEGRAM_LINK = 'https://t.me/+79959089597';
 const TWO_GIS_REVIEWS_LINK = 'https://go.2gis.com/jyqVa';
 const MAP_ZOOM = 17;
 
