@@ -1746,7 +1746,17 @@ export const createApp = () => {
       });
       return;
     }
-    if (isTurnstileEnabled()) {
+
+    const existingAuthCode = await findAuthCode(phone);
+    const isSmsFallbackRequest = preferredChannel === 'sms_ru';
+    const canSkipCaptchaForSmsFallback = Boolean(
+      isSmsFallbackRequest &&
+        existingAuthCode &&
+        existingAuthCode.delivery_channel === 'telegram_gateway' &&
+        new Date(existingAuthCode.expires_at).getTime() > Date.now()
+    );
+
+    if (isTurnstileEnabled() && !canSkipCaptchaForSmsFallback) {
       try {
         await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
       } catch (error) {
@@ -2043,7 +2053,17 @@ export const createApp = () => {
       });
       return;
     }
-    if (isTurnstileEnabled()) {
+
+    const existingPhoneCode = await findAuthCode(phone);
+    const isSmsFallbackRequest = preferredChannel === 'sms_ru';
+    const canSkipCaptchaForSmsFallback = Boolean(
+      isSmsFallbackRequest &&
+        existingPhoneCode &&
+        existingPhoneCode.delivery_channel === 'telegram_gateway' &&
+        new Date(existingPhoneCode.expires_at).getTime() > Date.now()
+    );
+
+    if (isTurnstileEnabled() && !canSkipCaptchaForSmsFallback) {
       try {
         await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
       } catch (error) {

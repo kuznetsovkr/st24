@@ -13,6 +13,50 @@ type AuthDeliveryChannel = 'telegram_gateway' | 'sms_ru' | 'debug' | null;
 
 const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
 
+const extractApiErrorMessage = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return '';
+  }
+
+  const raw = error.message?.trim() ?? '';
+  if (!raw) {
+    return '';
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown; errors?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim();
+    }
+    if (Array.isArray(parsed.errors)) {
+      const first = parsed.errors.find(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0
+      );
+      if (first) {
+        return first.trim();
+      }
+    }
+  } catch {
+    return raw;
+  }
+
+  return raw;
+};
+
+const isExpiredCodeError = (value: string) => {
+  const normalized = value.toLowerCase();
+  return normalized.includes('истек') || normalized.includes('expired');
+};
+
+const isCaptchaValidationError = (value: string) => {
+  const normalized = value.toLowerCase();
+  return (
+    normalized.includes('капч') ||
+    normalized.includes('captcha') ||
+    normalized.includes('проверк')
+  );
+};
+
 const isPhoneReadyForCaptcha = (value: string) => {
   const digits = getPhoneDigits(value);
   return digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'));
@@ -27,9 +71,12 @@ const AuthModal = () => {
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'code' | 'password'>('code');
-  const [requestMessage, setRequestMessage] = useState<string | null>(null);
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  const [isVerifyError, setIsVerifyError] = useState(false);
   const [isCodeRequested, setIsCodeRequested] = useState(false);
+  const [isRequestButtonHidden, setIsRequestButtonHidden] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
   const [smsFallbackSeconds, setSmsFallbackSeconds] = useState(0);
   const [isRequesting, setIsRequesting] = useState(false);
@@ -41,6 +88,11 @@ const AuthModal = () => {
 
   const handleCaptchaTokenChange = useCallback((token: string | null) => {
     setCaptchaToken(token);
+    if (token) {
+      setRequestError((prev) =>
+        prev === 'Подтвердите, что вы не робот.' ? null : prev
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -80,9 +132,12 @@ const AuthModal = () => {
     setCode('');
     setPassword('');
     setAuthMode('code');
-    setRequestMessage(null);
+    setRequestStatus(null);
+    setRequestError(null);
     setVerifyMessage(null);
+    setIsVerifyError(false);
     setIsCodeRequested(false);
+    setIsRequestButtonHidden(false);
     setResendSeconds(0);
     setSmsFallbackSeconds(0);
     setIsRequesting(false);
@@ -102,8 +157,9 @@ const AuthModal = () => {
   const shouldShowCaptcha =
     authMode === 'code' && Boolean(turnstileSiteKey) && phoneReadyForCaptcha && !captchaToken;
   const showAuthFields = authMode === 'password' || isCodeRequested;
+  const showRequestCodeButton = authMode === 'code' && !isRequestButtonHidden;
   const resendStatusText =
-    isCodeRequested && authMode === 'code' && resendSeconds > 0
+    showRequestCodeButton && isCodeRequested && authMode === 'code' && resendSeconds > 0
       ? `Получить новый код можно через ${resendSeconds} сек.`
       : null;
   const showSmsFallbackLink = authMode === 'code' && deliveryChannel === 'telegram_gateway';
@@ -116,19 +172,23 @@ const AuthModal = () => {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setVerifyMessage(null);
+    setIsVerifyError(false);
 
     if (!phone.trim()) {
       setVerifyMessage('Введите номер телефона.');
+      setIsVerifyError(true);
       return;
     }
 
     if (authMode === 'password') {
       if (!password.trim()) {
         setVerifyMessage('Введите пароль.');
+        setIsVerifyError(true);
         return;
       }
     } else if (!code.trim()) {
       setVerifyMessage('Введите код.');
+      setIsVerifyError(true);
       return;
     }
 
@@ -143,8 +203,30 @@ const AuthModal = () => {
       setUser(result.user);
       await mergeWithServer();
       closeAuthModal();
-    } catch {
-      setVerifyMessage(authMode === 'password' ? 'Неверный пароль.' : 'Неверный код.');
+    } catch (error) {
+      const apiErrorMessage = extractApiErrorMessage(error);
+
+      if (authMode === 'password') {
+        setVerifyMessage(apiErrorMessage || 'Неверный пароль.');
+        setIsVerifyError(true);
+        return;
+      }
+
+      if (isExpiredCodeError(apiErrorMessage)) {
+        setVerifyMessage('Код истёк, запросите новый.');
+        setIsVerifyError(true);
+        setIsCodeRequested(false);
+        setIsRequestButtonHidden(false);
+        setRequestStatus(null);
+        setRequestError(null);
+        setResendSeconds(0);
+        setSmsFallbackSeconds(0);
+        setCode('');
+        return;
+      }
+
+      setVerifyMessage(apiErrorMessage || 'Неверный код.');
+      setIsVerifyError(true);
     } finally {
       setIsVerifying(false);
     }
@@ -156,9 +238,12 @@ const AuthModal = () => {
     setCode('');
     setPassword('');
     setIsCodeRequested(false);
+    setIsRequestButtonHidden(false);
     setResendSeconds(0);
-    setRequestMessage(null);
+    setRequestStatus(null);
+    setRequestError(null);
     setVerifyMessage(null);
+    setIsVerifyError(false);
     if (captchaToken) {
       setCaptchaToken(null);
       setCaptchaResetKey((prev) => prev + 1);
@@ -166,21 +251,23 @@ const AuthModal = () => {
   };
 
   const handleRequestCode = async (preferredChannel?: 'sms_ru') => {
-    setRequestMessage(null);
+    setRequestStatus(null);
+    setRequestError(null);
     setVerifyMessage(null);
+    setIsVerifyError(false);
 
     if (!phone.trim()) {
-      setRequestMessage('Введите номер телефона.');
+      setRequestError('Введите номер телефона.');
       return;
     }
 
     if (!phoneReadyForCaptcha) {
-      setRequestMessage('Введите полный номер телефона.');
+      setRequestError('Введите полный номер телефона.');
       return;
     }
 
     if (turnstileSiteKey && !captchaToken) {
-      setRequestMessage('Подтвердите, что вы не робот.');
+      setRequestError('Подтвердите, что вы не робот.');
       return;
     }
 
@@ -195,15 +282,18 @@ const AuthModal = () => {
       if (result.requiresPassword) {
         setAuthMode('password');
         setIsCodeRequested(true);
+        setIsRequestButtonHidden(true);
         setDeliveryChannel(null);
         setSmsFallbackSeconds(0);
         setVerifyMessage('Введите пароль администратора.');
+        setIsVerifyError(false);
         return;
       }
 
       setAuthMode('code');
       setCode('');
       setIsCodeRequested(true);
+      setIsRequestButtonHidden(true);
       setResendSeconds(RESEND_TIMEOUT_SECONDS);
       setDeliveryChannel(result.deliveryChannel ?? null);
       setSmsFallbackSeconds(result.deliveryChannel === 'telegram_gateway' ? SMS_FALLBACK_TIMEOUT_SECONDS : 0);
@@ -213,20 +303,21 @@ const AuthModal = () => {
       }
 
       if (preferredChannel === 'sms_ru' || result.deliveryChannel === 'sms_ru') {
-        setRequestMessage('Код отправлен по SMS.');
+        setRequestStatus('Код отправлен по SMS.');
       } else if (result.deliveryChannel === 'telegram_gateway') {
-        setRequestMessage('Код отправлен в Telegram.');
+        setRequestStatus('Код отправлен в Telegram.');
       } else {
-        setRequestMessage('Код отправлен.');
+        setRequestStatus('Код отправлен.');
       }
-    } catch {
-      setRequestMessage('Не удалось отправить код.');
-    } finally {
-      setIsRequesting(false);
-      if (turnstileSiteKey) {
+    } catch (error) {
+      const apiErrorMessage = extractApiErrorMessage(error);
+      setRequestError(apiErrorMessage || 'Не удалось отправить код.');
+      if (turnstileSiteKey && isCaptchaValidationError(apiErrorMessage)) {
         setCaptchaToken(null);
         setCaptchaResetKey((prev) => prev + 1);
       }
+    } finally {
+      setIsRequesting(false);
     }
   };
 
@@ -285,16 +376,21 @@ const AuthModal = () => {
 
           {authMode === 'code' && (
             <>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => void handleRequestCode()}
-                disabled={isRequesting || resendSeconds > 0}
-              >
-                {isRequesting ? 'Отправляем...' : 'Получить код'}
-              </button>
+              {showRequestCodeButton && (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => void handleRequestCode()}
+                  disabled={isRequesting || resendSeconds > 0}
+                >
+                  {isRequesting ? 'Отправляем...' : 'Получить код'}
+                </button>
+              )}
 
-              {requestMessage && <p className="status-text auth-code-status">{requestMessage}</p>}
+              {requestStatus && <p className="status-text auth-code-status">{requestStatus}</p>}
+              {requestError && (
+                <p className="status-text status-text--error auth-code-status">{requestError}</p>
+              )}
               {resendStatusText && <p className="status-text auth-code-status">{resendStatusText}</p>}
               {showSmsFallbackLink && (
                 <p className="status-text auth-code-status">
@@ -345,7 +441,11 @@ const AuthModal = () => {
             </>
           )}
 
-          {verifyMessage && <p className="status-text">{verifyMessage}</p>}
+          {verifyMessage && (
+            <p className={`status-text${isVerifyError ? ' status-text--error' : ''}`}>
+              {verifyMessage}
+            </p>
+          )}
         </form>
       </div>
     </div>
