@@ -88,6 +88,27 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS delivery_providers (
+      key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    ALTER TABLE delivery_providers
+    ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+  `);
+
+  await query(`
+    ALTER TABLE delivery_providers
+    ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
     ALTER TABLE box_types
     ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
   `);
@@ -268,6 +289,7 @@ export const initDb = async () => {
 
   await query(`CREATE INDEX IF NOT EXISTS products_category_idx ON products (category_slug);`);
   await query(`CREATE INDEX IF NOT EXISTS box_types_sort_idx ON box_types (sort_order);`);
+  await query(`CREATE INDEX IF NOT EXISTS delivery_providers_sort_idx ON delivery_providers (sort_order);`);
   await query(`CREATE INDEX IF NOT EXISTS cart_items_user_idx ON cart_items (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_user_idx ON orders (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_payment_id_idx ON orders (payment_id);`);
@@ -314,4 +336,15 @@ export const initDb = async () => {
       `
     );
   }
+
+  await query(`
+    INSERT INTO delivery_providers (key, name, is_enabled, sort_order)
+    VALUES
+      ('cdek', 'СДЭК', TRUE, 0),
+      ('dellin', 'Деловые линии', FALSE, 1),
+      ('russian_post', 'Почта России', FALSE, 2)
+    ON CONFLICT (key) DO UPDATE
+    SET name = EXCLUDED.name,
+        sort_order = EXCLUDED.sort_order;
+  `);
 };

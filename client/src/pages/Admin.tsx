@@ -8,16 +8,24 @@ import {
   deleteProduct,
   fetchBoxTypes,
   fetchCategories,
+  fetchDeliveryProviders,
   fetchMe,
   fetchProducts,
   getAuthToken,
   requestAuthCode,
   setAuthToken,
+  updateDeliveryProvider,
   updateBoxType,
   updateProduct,
   verifyAuthCode
 } from '../api';
-import type { AuthUser, BoxType, Category, Product } from '../api';
+import type {
+  AuthUser,
+  BoxType,
+  Category,
+  DeliveryProviderSetting,
+  Product
+} from '../api';
 import TurnstileWidget from '../components/TurnstileWidget.tsx';
 import {
   applyFontTheme,
@@ -153,8 +161,11 @@ const AdminPage = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
+  const [deliveryProviders, setDeliveryProviders] = useState<DeliveryProviderSetting[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'products' | 'boxes' | 'fonts'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'boxes' | 'deliveries' | 'fonts'>(
+    'products'
+  );
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockSort, setStockSort] = useState<'none' | 'desc' | 'asc'>('none');
@@ -193,6 +204,9 @@ const AdminPage = () => {
   const [boxStatus, setBoxStatus] = useState<string | null>(null);
   const [boxError, setBoxError] = useState<string | null>(null);
   const [isBoxSubmitting, setIsBoxSubmitting] = useState(false);
+  const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [deliveryUpdatingKey, setDeliveryUpdatingKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -220,14 +234,16 @@ const AdminPage = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [categoryItems, productItems, boxItems] = await Promise.all([
+      const [categoryItems, productItems, boxItems, deliveryItems] = await Promise.all([
         fetchCategories(),
         fetchProducts({ includeHidden: true }),
-        fetchBoxTypes()
+        fetchBoxTypes(),
+        fetchDeliveryProviders()
       ]);
       setCategories(categoryItems);
       setProducts(productItems);
       setBoxTypes(boxItems);
+      setDeliveryProviders(deliveryItems);
       setCategory((prev) => prev || categoryItems[0]?.slug || '');
       setIsLoading(false);
     } catch {
@@ -626,6 +642,35 @@ const AdminPage = () => {
     }
   };
 
+  const handleDeliveryProviderToggle = async (
+    provider: DeliveryProviderSetting,
+    isEnabled: boolean
+  ) => {
+    if (provider.isEnabled === isEnabled || deliveryUpdatingKey) {
+      return;
+    }
+
+    setDeliveryStatus(null);
+    setDeliveryError(null);
+    setDeliveryUpdatingKey(provider.key);
+
+    try {
+      const updated = await updateDeliveryProvider(provider.key, isEnabled);
+      setDeliveryProviders((prev) =>
+        prev.map((item) => (item.key === updated.key ? updated : item))
+      );
+      setDeliveryStatus('Настройки доставки сохранены.');
+    } catch (updateError) {
+      if (updateError instanceof Error) {
+        setDeliveryError(updateError.message);
+      } else {
+        setDeliveryError('Не удалось обновить настройки доставки.');
+      }
+    } finally {
+      setDeliveryUpdatingKey(null);
+    }
+  };
+
   const handleRequestCode = async () => {
     setAuthMessage(null);
     setError(null);
@@ -748,14 +793,19 @@ const AdminPage = () => {
         });
 
   const stockSortLabel = stockSort === 'desc' ? '↓' : stockSort === 'asc' ? '↑' : '';
-  const activeTabTitle =
-    activeTab === 'products' ? 'Товары' : activeTab === 'boxes' ? 'Коробки' : 'Шрифты';
-  const activeTabDescription =
-    activeTab === 'products'
-      ? 'Добавление, редактирование и удаление карточек.'
-      : activeTab === 'boxes'
-      ? 'Настройка типов коробок для расчёта доставки.'
-      : 'Настройка шрифтового оформления интерфейса.';
+  let activeTabTitle = 'Товары';
+  let activeTabDescription = 'Добавление, редактирование и удаление карточек.';
+
+  if (activeTab === 'boxes') {
+    activeTabTitle = 'Коробки';
+    activeTabDescription = 'Настройка типов коробок для расчёта доставки.';
+  } else if (activeTab === 'deliveries') {
+    activeTabTitle = 'Доставки';
+    activeTabDescription = 'Включение и отключение доступных способов доставки на сайте.';
+  } else if (activeTab === 'fonts') {
+    activeTabTitle = 'Шрифты';
+    activeTabDescription = 'Настройка шрифтового оформления интерфейса.';
+  }
 
   if (authStatus === 'checking') {
     return (
@@ -900,6 +950,16 @@ const AdminPage = () => {
               }}
             >
               Коробки
+            </a>
+            <a
+              href="#deliveries"
+              className={`admin-tab-link${activeTab === 'deliveries' ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveTab('deliveries');
+              }}
+            >
+              Доставки
             </a>
             <a
               href="#fonts"
@@ -1370,6 +1430,37 @@ const AdminPage = () => {
         )}
       </div>
         </>
+      )}
+      {activeTab === 'deliveries' && (
+        <div className="card">
+          <h3>Способы доставки</h3>
+          <p className="muted">
+            Включайте только те службы доставки, для которых уже настроены ключи и доступы.
+          </p>
+          {isLoading && <p className="muted">Загрузка списка...</p>}
+          {!isLoading && deliveryProviders.length === 0 && (
+            <p className="muted">Список служб доставки пока пуст.</p>
+          )}
+          {!isLoading && deliveryProviders.length > 0 && (
+            <div className="delivery-admin-list">
+              {deliveryProviders.map((provider) => (
+                <label key={provider.key} className="delivery-admin-item">
+                  <span className="delivery-admin-item-title">{provider.name}</span>
+                  <input
+                    type="checkbox"
+                    checked={provider.isEnabled}
+                    disabled={Boolean(deliveryUpdatingKey)}
+                    onChange={(event) => {
+                      void handleDeliveryProviderToggle(provider, event.target.checked);
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          {deliveryStatus && <p className="status-text">{deliveryStatus}</p>}
+          {deliveryError && <p className="status-text status-text--error">{deliveryError}</p>}
+        </div>
       )}
       {activeTab === 'fonts' && (
         <div className="card">

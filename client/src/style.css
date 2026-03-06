@@ -1516,6 +1516,34 @@ input[type='file'] {
   text-transform: uppercase;
 }
 
+.delivery-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.delivery-admin-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+
+.delivery-admin-item-title {
+  font-weight: var(--weight-medium);
+}
+
+.delivery-admin-item input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
 .ghost-button.is-active {
   border-color: var(--primary);
   color: var(--text);

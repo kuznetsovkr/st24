@@ -12,6 +12,13 @@ import {
   updateBoxType,
   type BoxTypeRow
 } from './db/boxTypes';
+import {
+  isDeliveryProviderEnabled,
+  isDeliveryProviderKey,
+  listDeliveryProviders,
+  updateDeliveryProviderEnabled,
+  type DeliveryProviderRow
+} from './db/deliveryProviders';
 import { findEmailCode, saveEmailCode, deleteEmailCode } from './db/emailCodes';
 import {
   filterValidCartItems,
@@ -373,6 +380,15 @@ const mapBoxType = (row: BoxTypeRow) => ({
   updatedAt: row.updated_at
 });
 
+const mapDeliveryProvider = (row: DeliveryProviderRow) => ({
+  key: row.key,
+  name: row.name,
+  isEnabled: row.is_enabled,
+  sortOrder: row.sort_order,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
 const mapOrder = (row: OrderRow) => ({
   id: row.id,
   orderNumber: row.order_number,
@@ -711,6 +727,12 @@ export const createApp = () => {
 
   app.all('/api/cdek/widget', async (req: Request, res: Response) => {
     try {
+      const cdekEnabled = await isDeliveryProviderEnabled('cdek');
+      if (!cdekEnabled) {
+        res.status(503).json({ message: 'CDEK delivery is disabled' });
+        return;
+      }
+
       const response = await proxyCdekWidgetRequest(req.query, req.body);
       for (const [key, value] of response.forwardedHeaders) {
         res.setHeader(key, value);
@@ -747,6 +769,12 @@ export const createApp = () => {
     }
 
     try {
+      const providerEnabled = await isDeliveryProviderEnabled('dellin');
+      if (!providerEnabled) {
+        res.status(503).json({ error: 'Delovye Linii delivery is disabled' });
+        return;
+      }
+
       const items = await searchDellinPickupPoints(query);
       res.json({ items });
     } catch (error) {
@@ -767,6 +795,12 @@ export const createApp = () => {
     }
 
     try {
+      const providerEnabled = await isDeliveryProviderEnabled('russian_post');
+      if (!providerEnabled) {
+        res.status(503).json({ error: 'Russian Post delivery is disabled' });
+        return;
+      }
+
       const items = await searchRussianPostPickupPoints(query);
       res.json({ items });
     } catch (error) {
@@ -779,7 +813,7 @@ export const createApp = () => {
     }
   });
 
-  app.post('/api/shipping/estimate', (req: Request, res: Response) => {
+  app.post('/api/shipping/estimate', async (req: Request, res: Response) => {
     const providerRaw = typeof req.body?.provider === 'string' ? req.body.provider.trim() : '';
     const provider: ShippingEstimateProvider | null =
       providerRaw === 'dellin' || providerRaw === 'russian_post'
@@ -826,6 +860,12 @@ export const createApp = () => {
       typeof req.body?.destinationAddress === 'string' ? req.body.destinationAddress : '';
 
     try {
+      const providerEnabled = await isDeliveryProviderEnabled(provider);
+      if (!providerEnabled) {
+        res.status(503).json({ error: 'Delivery provider is disabled' });
+        return;
+      }
+
       const estimate = estimateShippingCost({
         provider,
         parcels,
@@ -855,6 +895,44 @@ export const createApp = () => {
       res.status(500).json({ error: 'Failed to load box types' });
     }
   });
+
+  app.get('/api/delivery-providers', async (_req: Request, res: Response) => {
+    try {
+      const items = await listDeliveryProviders();
+      res.json({ items: items.map(mapDeliveryProvider) });
+    } catch {
+      res.status(500).json({ error: 'Failed to load delivery providers' });
+    }
+  });
+
+  app.put(
+    '/api/delivery-providers/:key',
+    authenticate,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      const keyRaw = typeof req.params.key === 'string' ? req.params.key.trim() : '';
+      if (!isDeliveryProviderKey(keyRaw)) {
+        res.status(400).json({ error: 'Unsupported delivery provider' });
+        return;
+      }
+
+      if (typeof req.body?.isEnabled !== 'boolean') {
+        res.status(400).json({ error: 'isEnabled must be boolean' });
+        return;
+      }
+
+      try {
+        const item = await updateDeliveryProviderEnabled(keyRaw, req.body.isEnabled);
+        if (!item) {
+          res.status(404).json({ error: 'Delivery provider not found' });
+          return;
+        }
+        res.json(mapDeliveryProvider(item));
+      } catch {
+        res.status(500).json({ error: 'Failed to update delivery provider' });
+      }
+    }
+  );
 
   app.post('/api/box-types', authenticate, requireAdmin, async (req: Request, res: Response) => {
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';

@@ -37,6 +37,17 @@ export type BoxType = {
   updatedAt: string;
 };
 
+export type DeliveryProviderKey = 'cdek' | 'dellin' | 'russian_post';
+
+export type DeliveryProviderSetting = {
+  key: DeliveryProviderKey;
+  name: string;
+  isEnabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AuthUser = {
   id: string;
   phone: string;
@@ -200,6 +211,24 @@ export const fetchProducts = async (options?: {
 export const fetchBoxTypes = async () => {
   const data = await fetchJson<{ items: BoxType[] }>(`${API_BASE}/api/box-types`);
   return data.items;
+};
+
+export const fetchDeliveryProviders = async () => {
+  const data = await fetchJson<{ items: DeliveryProviderSetting[] }>(
+    `${API_BASE}/api/delivery-providers`
+  );
+  return data.items;
+};
+
+export const updateDeliveryProvider = async (
+  key: DeliveryProviderKey,
+  isEnabled: boolean
+) => {
+  return fetchJson<DeliveryProviderSetting>(`${API_BASE}/api/delivery-providers/${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ isEnabled })
+  });
 };
 
 type BoxTypePayload = {

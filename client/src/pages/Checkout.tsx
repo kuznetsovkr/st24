@@ -5,9 +5,11 @@ import {
   createOrder,
   estimateShipping,
   fetchBoxTypes,
+  fetchDeliveryProviders,
   searchDellinPickupPoints,
   searchRussianPostPickupPoints,
   type BoxType,
+  type DeliveryProviderSetting,
   type PickupPointOption
 } from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -70,6 +72,33 @@ const DELIVERY_PROVIDER_LABELS: Record<DeliveryProvider, string> = {
   dellin: 'Деловые линии',
   russian_post: 'Почта России'
 };
+
+const DEFAULT_DELIVERY_PROVIDERS: DeliveryProviderSetting[] = [
+  {
+    key: 'cdek',
+    name: 'СДЭК',
+    isEnabled: true,
+    sortOrder: 0,
+    createdAt: '',
+    updatedAt: ''
+  },
+  {
+    key: 'dellin',
+    name: 'Деловые линии',
+    isEnabled: false,
+    sortOrder: 1,
+    createdAt: '',
+    updatedAt: ''
+  },
+  {
+    key: 'russian_post',
+    name: 'Почта России',
+    isEnabled: false,
+    sortOrder: 2,
+    createdAt: '',
+    updatedAt: ''
+  }
+];
 
 const buildPickupPointLabel = (office: CdekWidgetOffice) => {
   const addressLine = [office.city, office.address].filter(Boolean).join(', ');
@@ -178,6 +207,9 @@ const CheckoutPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWidgetLoading, setIsWidgetLoading] = useState(false);
   const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
+  const [deliveryProviders, setDeliveryProviders] = useState<DeliveryProviderSetting[]>(
+    DEFAULT_DELIVERY_PROVIDERS
+  );
   const [expandedSummaryItemIds, setExpandedSummaryItemIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -196,6 +228,14 @@ const CheckoutPage = () => {
   }, [cdekFromCodeRaw, cdekFromLocation]);
   const cdekDefaultLocation =
     (import.meta.env.VITE_CDEK_DEFAULT_LOCATION ?? '').trim() || DEFAULT_CDEK_LOCATION;
+  const enabledDeliveryProviders = useMemo(
+    () =>
+      deliveryProviders
+        .filter((provider) => provider.isEnabled)
+        .map((provider) => provider.key as DeliveryProvider),
+    [deliveryProviders]
+  );
+  const hasEnabledDeliveryProviders = enabledDeliveryProviders.length > 0;
   const packingDebug = useMemo(
     () => buildShippingPackingDebug(items, boxTypes),
     [items, boxTypes]
@@ -246,11 +286,38 @@ const CheckoutPage = () => {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    fetchDeliveryProviders()
+      .then((items) => {
+        if (!disposed && items.length > 0) {
+          setDeliveryProviders(items);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setDeliveryProviders(DEFAULT_DELIVERY_PROVIDERS);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (status === 'guest' && !promptedRef.current) {
       openAuthModal();
       promptedRef.current = true;
     }
   }, [status, openAuthModal]);
+
+  useEffect(() => {
+    if (!hasEnabledDeliveryProviders) {
+      return;
+    }
+    if (!enabledDeliveryProviders.includes(deliveryProvider)) {
+      setDeliveryProvider(enabledDeliveryProviders[0]);
+    }
+  }, [deliveryProvider, enabledDeliveryProviders, hasEnabledDeliveryProviders]);
 
   useEffect(() => {
     estimateRequestIdRef.current += 1;
@@ -263,7 +330,7 @@ const CheckoutPage = () => {
     setError(null);
     setDeliveryCostCents(null);
     setPickupSearchQuery(cdekDefaultLocation);
-  }, [deliveryProvider, cdekDefaultLocation]);
+  }, [deliveryProvider, cdekDefaultLocation, hasEnabledDeliveryProviders]);
 
   useEffect(() => {
     const cartItemsForLog = items.map((item) => ({
@@ -332,7 +399,7 @@ const CheckoutPage = () => {
   ]);
 
   useEffect(() => {
-    if (deliveryProvider !== 'cdek') {
+    if (deliveryProvider !== 'cdek' || !hasEnabledDeliveryProviders) {
       if (widgetRef.current) {
         widgetRef.current.destroy();
         widgetRef.current = null;
@@ -435,10 +502,17 @@ const CheckoutPage = () => {
         widgetRef.current = null;
       }
     };
-  }, [deliveryProvider, yandexApiKey, cdekFrom, cdekDefaultLocation, shippingParcels]);
+  }, [
+    deliveryProvider,
+    hasEnabledDeliveryProviders,
+    yandexApiKey,
+    cdekFrom,
+    cdekDefaultLocation,
+    shippingParcels
+  ]);
 
   useEffect(() => {
-    if (deliveryProvider !== 'cdek') {
+    if (deliveryProvider !== 'cdek' || !hasEnabledDeliveryProviders) {
       return;
     }
     const widget = widgetRef.current;
@@ -447,10 +521,13 @@ const CheckoutPage = () => {
     }
     widget.resetParcels();
     widget.addParcel(shippingParcels);
-  }, [deliveryProvider, shippingParcels]);
+  }, [deliveryProvider, hasEnabledDeliveryProviders, shippingParcels]);
 
   const handleDeliveryProviderChange = (provider: DeliveryProvider) => {
     if (provider === deliveryProvider) {
+      return;
+    }
+    if (!enabledDeliveryProviders.includes(provider)) {
       return;
     }
     setDeliveryProvider(provider);
@@ -547,6 +624,11 @@ const CheckoutPage = () => {
 
     if (items.length === 0) {
       setError('Корзина пуста. Добавьте товары, чтобы оформить заказ.');
+      return;
+    }
+
+    if (!hasEnabledDeliveryProviders) {
+      setError('Способы доставки временно недоступны. Попробуйте позже.');
       return;
     }
 
@@ -717,13 +799,7 @@ const CheckoutPage = () => {
           <div className="cdek-placeholder">
             <div className="cdek-placeholder-head">
               <div className="delivery-provider-switch">
-                {(
-                  [
-                    ['cdek', 'СДЭК'],
-                    ['dellin', 'Деловые линии'],
-                    ['russian_post', 'Почта России']
-                  ] as Array<[DeliveryProvider, string]>
-                ).map(([provider, label]) => (
+                {enabledDeliveryProviders.map((provider) => (
                   <button
                     key={provider}
                     type="button"
@@ -732,12 +808,19 @@ const CheckoutPage = () => {
                     }`}
                     onClick={() => handleDeliveryProviderChange(provider)}
                   >
-                    {label}
+                    {DELIVERY_PROVIDER_LABELS[provider]}
                   </button>
                 ))}
               </div>
 
-              {deliveryProvider === 'cdek' ? (
+              {!hasEnabledDeliveryProviders ? (
+                <>
+                  <p className="eyebrow">Способы доставки временно недоступны</p>
+                  <p className="muted">
+                    Администратор отключил все службы доставки. Повторите попытку позже.
+                  </p>
+                </>
+              ) : deliveryProvider === 'cdek' ? (
                 <>
                   <p className="eyebrow">Пункт выдачи СДЭК</p>
                   <p className="muted">
@@ -756,12 +839,12 @@ const CheckoutPage = () => {
                 </>
               )}
 
-              {pickupPoint ? (
+              {hasEnabledDeliveryProviders && pickupPoint ? (
                 <>
                   <p className="chip">Выбрано: {pickupPoint}</p>
                   <p className="cdek-meta">
                     {deliveryProvider === 'cdek' && deliveryTariffName
-                      ? `${deliveryTariffName} · `
+                      ? `${deliveryTariffName} - `
                       : ''}
                     Доставка: {deliveryLabel}
                   </p>
@@ -770,12 +853,12 @@ const CheckoutPage = () => {
                     <p className="muted">Считаем ориентировочную стоимость доставки...</p>
                   ) : null}
                 </>
-              ) : (
+              ) : hasEnabledDeliveryProviders ? (
                 <p className="muted">Пункт выдачи не выбран.</p>
-              )}
+              ) : null}
             </div>
 
-            {deliveryProvider === 'cdek' ? (
+            {!hasEnabledDeliveryProviders ? null : deliveryProvider === 'cdek' ? (
               <>
                 <div id={CDEK_WIDGET_ROOT_ID} className="cdek-widget-inline" />
                 {isWidgetLoading ? <p className="muted">Загружаем карту СДЭК...</p> : null}
