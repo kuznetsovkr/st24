@@ -18,6 +18,22 @@ const parsePositiveIntEnv = (value: string | undefined, fallback: number) => {
   return parsed;
 };
 
+const parseIntEnvInRange = (
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number
+) => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return fallback;
+  }
+  return parsed;
+};
+
 const getShopId = () => trimToUndefined(process.env.YOOKASSA_SHOP_ID);
 const getSecretKey = () => trimToUndefined(process.env.YOOKASSA_SECRET_KEY);
 const getApiBaseUrl = () => trimToUndefined(process.env.YOOKASSA_API_BASE_URL) ?? YOOKASSA_BASE_URL;
@@ -33,6 +49,12 @@ export const getYooKassaFixedAmountCents = () =>
 
 export const isYooKassaUseOrderTotal = () =>
   (process.env.YOOKASSA_USE_ORDER_TOTAL ?? '').trim().toLowerCase() === 'true';
+
+export const getYooKassaReceiptTaxSystemCode = () =>
+  parseIntEnvInRange(process.env.YOOKASSA_RECEIPT_TAX_SYSTEM_CODE, 2, 1, 6);
+
+export const getYooKassaReceiptVatCode = () =>
+  parseIntEnvInRange(process.env.YOOKASSA_RECEIPT_VAT_CODE, 1, 1, 6);
 
 export const isYooKassaConfigured = () => Boolean(getShopId() && getSecretKey());
 
@@ -112,11 +134,45 @@ export type YooKassaPayment = {
   metadata?: Record<string, string>;
 };
 
+export type YooKassaReceipt = {
+  customer: {
+    full_name?: string;
+    email?: string;
+    phone?: string;
+  };
+  items: Array<{
+    description: string;
+    quantity: string;
+    amount: {
+      value: string;
+      currency: 'RUB';
+    };
+    vat_code: number;
+    payment_mode?: 'full_prepayment' | 'prepayment' | 'advance' | 'full_payment' | 'partial_payment' | 'credit' | 'credit_payment';
+    payment_subject?:
+      | 'commodity'
+      | 'excise'
+      | 'job'
+      | 'service'
+      | 'gambling_bet'
+      | 'gambling_prize'
+      | 'lottery'
+      | 'lottery_prize'
+      | 'intellectual_activity'
+      | 'payment'
+      | 'agent_commission'
+      | 'composite'
+      | 'another';
+  }>;
+  tax_system_code?: number;
+};
+
 type CreateYooKassaPaymentInput = {
   amountCents: number;
   returnUrl: string;
   description: string;
   metadata: Record<string, string>;
+  receipt: YooKassaReceipt;
 };
 
 export const createYooKassaPayment = async (
@@ -133,7 +189,8 @@ export const createYooKassaPayment = async (
       return_url: input.returnUrl
     },
     description: input.description,
-    metadata: input.metadata
+    metadata: input.metadata,
+    receipt: input.receipt
   };
 
   return requestYooKassa<YooKassaPayment>(

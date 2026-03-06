@@ -82,11 +82,14 @@ import {
   createYooKassaPayment,
   fetchYooKassaPayment,
   getYooKassaFixedAmountCents,
+  getYooKassaReceiptTaxSystemCode,
+  getYooKassaReceiptVatCode,
   getYooKassaReturnBaseUrl,
   getYooKassaWebhookSecret,
   isYooKassaUseOrderTotal,
   isYooKassaConfigured,
-  type YooKassaPayment
+  type YooKassaPayment,
+  type YooKassaReceipt
 } from './yookassa';
 
 const CODE_TTL_MINUTES = 5;
@@ -399,6 +402,104 @@ const formatRubles = (cents: number) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(cents / 100)} ₽`;
+
+const toAmountValue = (cents: number) => (Math.max(0, cents) / 100).toFixed(2);
+
+const toReceiptQuantity = (quantity: number) => {
+  const normalized = Number.isFinite(quantity) ? quantity : 0;
+  return normalized <= 0 ? '1.000' : normalized.toFixed(3);
+};
+
+const normalizeReceiptDescription = (value: string, fallback: string) => {
+  const trimmed = value.trim();
+  const base = trimmed || fallback;
+  return base.length > 128 ? `${base.slice(0, 125)}...` : base;
+};
+
+const buildYooKassaTestReceipt = (order: OrderRow, amountCents: number): YooKassaReceipt => {
+  const customerEmail = order.email.trim();
+  const customerPhone = formatPhoneE164(order.phone);
+
+  return {
+    customer: {
+      full_name: order.full_name.trim() || undefined,
+      email: customerEmail || undefined,
+      phone: customerPhone || undefined
+    },
+    tax_system_code: getYooKassaReceiptTaxSystemCode(),
+    items: [
+      {
+        description: `Тестовая оплата заказа №${order.order_number}`,
+        quantity: '1.000',
+        amount: {
+          value: toAmountValue(amountCents),
+          currency: 'RUB'
+        },
+        vat_code: getYooKassaReceiptVatCode(),
+        payment_mode: 'full_payment',
+        payment_subject: 'service'
+      }
+    ]
+  };
+};
+
+const buildYooKassaOrderReceipt = (
+  order: OrderRow,
+  orderItems: OrderItemRow[],
+  amountCents: number
+): YooKassaReceipt => {
+  const vatCode = getYooKassaReceiptVatCode();
+  const items: YooKassaReceipt['items'] = orderItems
+    .filter((item) => item.quantity > 0 && item.price_cents >= 0)
+    .map((item) => ({
+      description: normalizeReceiptDescription(item.name, `Товар ${item.product_id}`),
+      quantity: toReceiptQuantity(item.quantity),
+      amount: {
+        value: toAmountValue(item.price_cents),
+        currency: 'RUB' as const
+      },
+      vat_code: vatCode,
+      payment_mode: 'full_payment',
+      payment_subject: 'commodity'
+    }));
+
+  if (order.delivery_cost_cents > 0) {
+    items.push({
+      description: 'Доставка',
+      quantity: '1.000',
+      amount: {
+        value: toAmountValue(order.delivery_cost_cents),
+        currency: 'RUB' as const
+      },
+      vat_code: vatCode,
+      payment_mode: 'full_payment',
+      payment_subject: 'service'
+    });
+  }
+
+  const receiptTotalCents =
+    orderItems.reduce((sum, item) => sum + item.price_cents * item.quantity, 0) +
+    order.delivery_cost_cents;
+
+  if (items.length === 0 || receiptTotalCents !== amountCents) {
+    throw new Error(
+      `Receipt total mismatch: expected ${amountCents} cents, got ${receiptTotalCents} cents`
+    );
+  }
+
+  const customerEmail = order.email.trim();
+  const customerPhone = formatPhoneE164(order.phone);
+
+  return {
+    customer: {
+      full_name: order.full_name.trim() || undefined,
+      email: customerEmail || undefined,
+      phone: customerPhone || undefined
+    },
+    tax_system_code: getYooKassaReceiptTaxSystemCode(),
+    items
+  };
+};
 
 const buildPaidOrderNotification = (order: OrderRow, items: OrderItemRow[]) => {
   const pickupPoint = order.pickup_point?.trim() ? order.pickup_point : 'не указан';
@@ -1394,6 +1495,12 @@ export const createApp = () => {
       const amountCents = isYooKassaUseOrderTotal()
         ? order.total_cents
         : getYooKassaFixedAmountCents();
+      const isTestMode = !isYooKassaUseOrderTotal();
+      const orderItems = await listOrderItemsForUser(order.id, userId);
+      const receipt = !isTestMode
+        ? buildYooKassaOrderReceipt(order, orderItems, amountCents)
+        : buildYooKassaTestReceipt(order, amountCents);
+
       const payment = await createYooKassaPayment({
         amountCents,
         returnUrl: getYooKassaReturnUrl(req, order.id),
@@ -1402,7 +1509,8 @@ export const createApp = () => {
           orderId: order.id,
           orderNumber: String(order.order_number),
           userId: order.user_id
-        }
+        },
+        receipt
       });
 
       const confirmationUrl = payment.confirmation?.confirmation_url;
@@ -1422,7 +1530,8 @@ export const createApp = () => {
         confirmationUrl,
         paymentId: payment.id,
         paymentStatus: payment.status,
-        amountCents
+        amountCents,
+        isTestMode
       });
     } catch (error) {
       const message =
