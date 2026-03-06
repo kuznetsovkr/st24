@@ -114,6 +114,10 @@ const mapToPickupOption = (
       record.street
   );
 
+  if (provider === 'dellin' && !address) {
+    return null;
+  }
+
   if (!name && !address) {
     return null;
   }
