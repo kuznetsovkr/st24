@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @font-face {
   font-family: 'Franklin Gothic Medium';
@@ -39,8 +39,8 @@
   --radius: 10px;
   --shadow: none;
   --hover: rgba(0, 0, 0, 0.06);
-  --font-body: 'Space Grotesk', 'Segoe UI', sans-serif;
-  --font-heading: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-body: 'Space Grotesk', 'Manrope', 'Segoe UI', sans-serif;
+  --font-heading: 'Space Grotesk', 'Manrope', 'Segoe UI', sans-serif;
   font-family: var(--font-body);
   font-weight: var(--weight-regular);
   color: var(--text);
@@ -49,8 +49,8 @@
 }
 
 :root[data-font='franklin'] {
-  --font-body: 'Franklin Gothic Medium', 'Space Grotesk', 'Segoe UI', sans-serif;
-  --font-heading: 'Franklin Gothic Heavy', 'Franklin Gothic Medium', 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-body: 'Franklin Gothic Medium', 'Manrope', 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-heading: 'Franklin Gothic Heavy', 'Franklin Gothic Medium', 'Manrope', 'Space Grotesk', 'Segoe UI', sans-serif;
   --weight-regular: 500;
   --weight-medium: 500;
   --weight-semibold: 500;
