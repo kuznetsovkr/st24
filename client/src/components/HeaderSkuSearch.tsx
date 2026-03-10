@@ -162,7 +162,7 @@ const HeaderSkuSearch = ({ className }: HeaderSkuSearchProps) => {
       {showDropdown && (
         <div className="header-search-dropdown" role="listbox" aria-label="Результаты поиска">
           {normalizedQuery.length < MIN_SEARCH_SYMBOLS && (
-            <p className="header-search-status">Введите минимум 2 символа артикула.</p>
+            <p className="header-search-status">Введите минимум 2 цифры артикула.</p>
           )}
           {status === 'loading' && <p className="header-search-status">Ищем товары...</p>}
           {status === 'error' && (
