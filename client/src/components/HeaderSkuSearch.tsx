@@ -31,6 +31,8 @@ const HeaderSkuSearch = ({ className }: HeaderSkuSearchProps) => {
 
   useEffect(() => {
     if (location.pathname !== '/search') {
+      setQuery('');
+      setIsOpen(false);
       return;
     }
     const params = new URLSearchParams(location.search);
