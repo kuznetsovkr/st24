@@ -99,6 +99,16 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS site_banners (
+      key TEXT PRIMARY KEY,
+      desktop_image TEXT,
+      mobile_image TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     ALTER TABLE delivery_providers
     ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
   `);
@@ -106,6 +116,16 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE delivery_providers
     ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
+    ALTER TABLE site_banners
+    ADD COLUMN IF NOT EXISTS desktop_image TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE site_banners
+    ADD COLUMN IF NOT EXISTS mobile_image TEXT;
   `);
 
   await query(`
@@ -346,5 +366,11 @@ export const initDb = async () => {
     ON CONFLICT (key) DO UPDATE
     SET name = EXCLUDED.name,
         sort_order = EXCLUDED.sort_order;
+  `);
+
+  await query(`
+    INSERT INTO site_banners (key)
+    VALUES ('home')
+    ON CONFLICT (key) DO NOTHING;
   `);
 };

@@ -53,6 +53,7 @@ import {
   updateProduct,
   type ProductRow
 } from './db/products';
+import { getHomeBanner, updateHomeBanner, type SiteBannerRow } from './db/siteBanners';
 import {
   findUserByEmail,
   findUserById,
@@ -388,6 +389,14 @@ const mapDeliveryProvider = (row: DeliveryProviderRow) => ({
   name: row.name,
   isEnabled: row.is_enabled,
   sortOrder: row.sort_order,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapSiteBanner = (row: SiteBannerRow) => ({
+  key: row.key,
+  desktopImage: row.desktop_image ? toPublicUrl(row.desktop_image) : null,
+  mobileImage: row.mobile_image ? toPublicUrl(row.mobile_image) : null,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -940,6 +949,87 @@ export const createApp = () => {
         res.json(mapDeliveryProvider(item));
       } catch {
         res.status(500).json({ error: 'Failed to update delivery provider' });
+      }
+    }
+  );
+
+  app.get('/api/banners/home', async (_req: Request, res: Response) => {
+    try {
+      const item = await getHomeBanner();
+      if (!item) {
+        res.json({
+          banner: {
+            key: 'home',
+            desktopImage: null,
+            mobileImage: null,
+            createdAt: '',
+            updatedAt: ''
+          }
+        });
+        return;
+      }
+      res.json({ banner: mapSiteBanner(item) });
+    } catch {
+      res.status(500).json({ error: 'Failed to load home banner' });
+    }
+  });
+
+  app.put(
+    '/api/banners/home',
+    authenticate,
+    requireAdmin,
+    upload.fields([
+      { name: 'desktopImage', maxCount: 1 },
+      { name: 'mobileImage', maxCount: 1 }
+    ]),
+    async (req: Request, res: Response) => {
+      const files =
+        ((req.files ?? {}) as {
+          [fieldname: string]: Express.Multer.File[];
+        }) ?? {};
+      const desktopFile = files.desktopImage?.[0];
+      const mobileFile = files.mobileImage?.[0];
+      const uploadedFilenames = [desktopFile?.filename, mobileFile?.filename].filter(
+        (value): value is string => Boolean(value)
+      );
+
+      if (!desktopFile && !mobileFile) {
+        res.status(400).json({ error: 'At least one banner image is required' });
+        return;
+      }
+
+      try {
+        const current = await getHomeBanner();
+        const updated = await updateHomeBanner({
+          desktopImage: desktopFile?.filename ?? null,
+          mobileImage: mobileFile?.filename ?? null
+        });
+
+        const oldFilenamesToDelete = new Set<string>();
+        if (
+          desktopFile &&
+          current?.desktop_image &&
+          current.desktop_image !== desktopFile.filename
+        ) {
+          oldFilenamesToDelete.add(current.desktop_image);
+        }
+        if (
+          mobileFile &&
+          current?.mobile_image &&
+          current.mobile_image !== mobileFile.filename
+        ) {
+          oldFilenamesToDelete.add(current.mobile_image);
+        }
+        if (oldFilenamesToDelete.size > 0) {
+          removeUploadedFiles(Array.from(oldFilenamesToDelete));
+        }
+
+        res.json({ banner: mapSiteBanner(updated) });
+      } catch {
+        if (uploadedFilenames.length > 0) {
+          removeUploadedFiles(uploadedFilenames);
+        }
+        res.status(500).json({ error: 'Failed to update home banner' });
       }
     }
   );

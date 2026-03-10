@@ -9,12 +9,14 @@ import {
   fetchBoxTypes,
   fetchCategories,
   fetchDeliveryProviders,
+  fetchHomeBanner,
   fetchMe,
   fetchProducts,
   getAuthToken,
   requestAuthCode,
   setAuthToken,
   updateDeliveryProvider,
+  updateHomeBanner,
   updateBoxType,
   updateProduct,
   verifyAuthCode
@@ -24,6 +26,7 @@ import type {
   BoxType,
   Category,
   DeliveryProviderSetting,
+  HomeBanner,
   Product
 } from '../api';
 import TurnstileWidget from '../components/TurnstileWidget.tsx';
@@ -162,10 +165,11 @@ const AdminPage = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
   const [deliveryProviders, setDeliveryProviders] = useState<DeliveryProviderSetting[]>([]);
+  const [homeBanner, setHomeBanner] = useState<HomeBanner | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'products' | 'boxes' | 'deliveries' | 'fonts'>(
-    'products'
-  );
+  const [activeTab, setActiveTab] = useState<
+    'products' | 'boxes' | 'deliveries' | 'banners' | 'fonts'
+  >('products');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockSort, setStockSort] = useState<'none' | 'desc' | 'asc'>('none');
@@ -207,7 +211,16 @@ const AdminPage = () => {
   const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null);
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [deliveryUpdatingKey, setDeliveryUpdatingKey] = useState<string | null>(null);
+  const [desktopBannerFile, setDesktopBannerFile] = useState<File | null>(null);
+  const [mobileBannerFile, setMobileBannerFile] = useState<File | null>(null);
+  const [desktopBannerPreview, setDesktopBannerPreview] = useState<string | null>(null);
+  const [mobileBannerPreview, setMobileBannerPreview] = useState<string | null>(null);
+  const [bannerStatus, setBannerStatus] = useState<string | null>(null);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [isBannerSubmitting, setIsBannerSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const desktopBannerInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileBannerInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     applyFontTheme(fontTheme);
@@ -234,16 +247,18 @@ const AdminPage = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [categoryItems, productItems, boxItems, deliveryItems] = await Promise.all([
+      const [categoryItems, productItems, boxItems, deliveryItems, banner] = await Promise.all([
         fetchCategories(),
         fetchProducts({ includeHidden: true }),
         fetchBoxTypes(),
-        fetchDeliveryProviders()
+        fetchDeliveryProviders(),
+        fetchHomeBanner()
       ]);
       setCategories(categoryItems);
       setProducts(productItems);
       setBoxTypes(boxItems);
       setDeliveryProviders(deliveryItems);
+      setHomeBanner(banner);
       setCategory((prev) => prev || categoryItems[0]?.slug || '');
       setIsLoading(false);
     } catch {
@@ -671,6 +686,90 @@ const AdminPage = () => {
     }
   };
 
+  const resetBannerForm = () => {
+    setDesktopBannerFile(null);
+    setMobileBannerFile(null);
+    setDesktopBannerPreview(null);
+    setMobileBannerPreview(null);
+    if (desktopBannerInputRef.current) {
+      desktopBannerInputRef.current.value = '';
+    }
+    if (mobileBannerInputRef.current) {
+      mobileBannerInputRef.current.value = '';
+    }
+  };
+
+  const handleDesktopBannerChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    setBannerStatus(null);
+    setBannerError(null);
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setDesktopBannerFile(null);
+      setDesktopBannerPreview(null);
+      return;
+    }
+    try {
+      const preview = await readFileAsDataUrl(file);
+      setDesktopBannerFile(file);
+      setDesktopBannerPreview(preview);
+    } catch {
+      setBannerError('Не удалось прочитать изображение desktop-баннера.');
+    }
+  };
+
+  const handleMobileBannerChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    setBannerStatus(null);
+    setBannerError(null);
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setMobileBannerFile(null);
+      setMobileBannerPreview(null);
+      return;
+    }
+    try {
+      const preview = await readFileAsDataUrl(file);
+      setMobileBannerFile(file);
+      setMobileBannerPreview(preview);
+    } catch {
+      setBannerError('Не удалось прочитать изображение mobile-баннера.');
+    }
+  };
+
+  const handleBannerSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBannerStatus(null);
+    setBannerError(null);
+
+    if (!desktopBannerFile && !mobileBannerFile) {
+      setBannerError('Выберите минимум одно изображение для обновления.');
+      return;
+    }
+
+    const payload = new FormData();
+    if (desktopBannerFile) {
+      payload.append('desktopImage', desktopBannerFile);
+    }
+    if (mobileBannerFile) {
+      payload.append('mobileImage', mobileBannerFile);
+    }
+
+    setIsBannerSubmitting(true);
+    try {
+      const updatedBanner = await updateHomeBanner(payload);
+      setHomeBanner(updatedBanner);
+      resetBannerForm();
+      setBannerStatus('Баннеры обновлены.');
+    } catch (submitError) {
+      if (submitError instanceof Error) {
+        setBannerError(submitError.message);
+      } else {
+        setBannerError('Не удалось обновить баннеры.');
+      }
+    } finally {
+      setIsBannerSubmitting(false);
+    }
+  };
+
   const handleRequestCode = async () => {
     setAuthMessage(null);
     setError(null);
@@ -802,6 +901,9 @@ const AdminPage = () => {
   } else if (activeTab === 'deliveries') {
     activeTabTitle = 'Доставки';
     activeTabDescription = 'Включение и отключение доступных способов доставки на сайте.';
+  } else if (activeTab === 'banners') {
+    activeTabTitle = 'Баннеры';
+    activeTabDescription = 'Загрузка баннеров главной страницы для desktop и mobile.';
   } else if (activeTab === 'fonts') {
     activeTabTitle = 'Шрифты';
     activeTabDescription = 'Настройка шрифтового оформления интерфейса.';
@@ -960,6 +1062,16 @@ const AdminPage = () => {
               }}
             >
               Доставки
+            </a>
+            <a
+              href="#banners"
+              className={`admin-tab-link${activeTab === 'banners' ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveTab('banners');
+              }}
+            >
+              Баннеры
             </a>
             <a
               href="#fonts"
@@ -1460,6 +1572,82 @@ const AdminPage = () => {
           )}
           {deliveryStatus && <p className="status-text">{deliveryStatus}</p>}
           {deliveryError && <p className="status-text status-text--error">{deliveryError}</p>}
+        </div>
+      )}
+      {activeTab === 'banners' && (
+        <div className="card">
+          <h3>Баннер главной страницы</h3>
+          <form className="admin-form" onSubmit={handleBannerSubmit}>
+            <div className="admin-banner-grid">
+              <div className="admin-banner-column">
+                <p className="muted">Desktop (16:9)</p>
+                <div className="admin-banner-preview admin-banner-preview--desktop">
+                  {desktopBannerPreview || homeBanner?.desktopImage ? (
+                    <img
+                      src={desktopBannerPreview ?? homeBanner?.desktopImage ?? ''}
+                      alt="Превью desktop-баннера"
+                    />
+                  ) : (
+                    <span>Изображение не загружено</span>
+                  )}
+                </div>
+                <label className="field">
+                  <span>Загрузить desktop-баннер</span>
+                  <input
+                    ref={desktopBannerInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleDesktopBannerChange}
+                  />
+                </label>
+              </div>
+
+              <div className="admin-banner-column">
+                <p className="muted">Mobile (4:3)</p>
+                <div className="admin-banner-preview admin-banner-preview--mobile">
+                  {mobileBannerPreview || homeBanner?.mobileImage ? (
+                    <img
+                      src={mobileBannerPreview ?? homeBanner?.mobileImage ?? ''}
+                      alt="Превью mobile-баннера"
+                    />
+                  ) : (
+                    <span>Изображение не загружено</span>
+                  )}
+                </div>
+                <label className="field">
+                  <span>Загрузить mobile-баннер</span>
+                  <input
+                    ref={mobileBannerInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleMobileBannerChange}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <p className="form-help">
+              Можно загрузить только desktop или только mobile баннер. Не загруженная сторона
+              останется без изменений.
+            </p>
+
+            {bannerStatus && <p className="status-text">{bannerStatus}</p>}
+            {bannerError && <p className="status-text status-text--error">{bannerError}</p>}
+
+            <div className="button-row">
+              <button className="primary-button" type="submit" disabled={isBannerSubmitting}>
+                {isBannerSubmitting ? 'Сохраняем...' : 'Сохранить баннеры'}
+              </button>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={resetBannerForm}
+                disabled={isBannerSubmitting}
+              >
+                Сбросить выбор
+              </button>
+            </div>
+          </form>
         </div>
       )}
       {activeTab === 'fonts' && (

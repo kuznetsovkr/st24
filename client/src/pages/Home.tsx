@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchProducts } from '../api';
-import type { Product } from '../api';
+import { fetchHomeBanner, fetchProducts } from '../api';
+import type { HomeBanner, Product } from '../api';
 import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
@@ -11,6 +11,8 @@ const AUTO_SCROLL_INTERVAL_MS = 10000;
 const AUTO_SCROLL_BATCH_SIZE = 5;
 const PROGRAMMATIC_SCROLL_LOCK_MS = 450;
 const LOOP_RESET_DELAY_MS = 520;
+const FALLBACK_DESKTOP_BANNER = '/banners/16_9.png';
+const FALLBACK_MOBILE_BANNER = '/banners/4_3.png';
 
 const HomePage = () => {
   const { openProductModal, openNeedPartModal } = useUI();
@@ -25,6 +27,7 @@ const HomePage = () => {
   const isProgrammaticScrollRef = useRef(false);
 
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [homeBanner, setHomeBanner] = useState<HomeBanner | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
@@ -46,6 +49,27 @@ const HomePage = () => {
     };
 
     load();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    fetchHomeBanner()
+      .then((banner) => {
+        if (!active) {
+          return;
+        }
+        setHomeBanner(banner);
+      })
+      .catch(() => {
+        if (active) {
+          setHomeBanner(null);
+        }
+      });
 
     return () => {
       active = false;
@@ -392,8 +416,15 @@ const HomePage = () => {
       </div>
 
       <picture className="home-banner">
-        <source media="(max-width: 700px)" srcSet="/banners/4_3.png" />
-        <img src="/banners/16_9.png" alt="" aria-hidden="true" />
+        <source
+          media="(max-width: 700px)"
+          srcSet={homeBanner?.mobileImage ?? FALLBACK_MOBILE_BANNER}
+        />
+        <img
+          src={homeBanner?.desktopImage ?? FALLBACK_DESKTOP_BANNER}
+          alt=""
+          aria-hidden="true"
+        />
       </picture>
 
       <div className="slider-controls home-slider-controls">

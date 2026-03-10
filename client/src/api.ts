@@ -48,6 +48,14 @@ export type DeliveryProviderSetting = {
   updatedAt: string;
 };
 
+export type HomeBanner = {
+  key: 'home';
+  desktopImage: string | null;
+  mobileImage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AuthUser = {
   id: string;
   phone: string;
@@ -170,6 +178,12 @@ const normalizeCartItem = (item: CartItem): CartItem => ({
   image: item.image ? normalizeImageUrl(item.image) : item.image
 });
 
+const normalizeHomeBanner = (banner: HomeBanner): HomeBanner => ({
+  ...banner,
+  desktopImage: banner.desktopImage ? normalizeImageUrl(banner.desktopImage) : null,
+  mobileImage: banner.mobileImage ? normalizeImageUrl(banner.mobileImage) : null
+});
+
 const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -218,6 +232,20 @@ export const fetchDeliveryProviders = async () => {
     `${API_BASE}/api/delivery-providers`
   );
   return data.items;
+};
+
+export const fetchHomeBanner = async () => {
+  const data = await fetchJson<{ banner: HomeBanner }>(`${API_BASE}/api/banners/home`);
+  return normalizeHomeBanner(data.banner);
+};
+
+export const updateHomeBanner = async (payload: FormData) => {
+  const data = await fetchJson<{ banner: HomeBanner }>(`${API_BASE}/api/banners/home`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: payload
+  });
+  return normalizeHomeBanner(data.banner);
 };
 
 export const updateDeliveryProvider = async (

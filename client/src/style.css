@@ -563,7 +563,7 @@ a {
 
 .home-banner {
   width: 100%;
-  aspect-ratio: 32 / 15;
+  aspect-ratio: 16 / 9;
   display: block;
   overflow: hidden;
   border-radius: 12px;
@@ -1550,6 +1550,48 @@ input[type='file'] {
   width: 18px;
   height: 18px;
   accent-color: var(--primary);
+}
+
+.admin-banner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.admin-banner-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-banner-preview {
+  width: 100%;
+  border: 1px dashed rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 10px;
+}
+
+.admin-banner-preview--desktop {
+  aspect-ratio: 16 / 9;
+}
+
+.admin-banner-preview--mobile {
+  aspect-ratio: 4 / 3;
+}
+
+.admin-banner-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .ghost-button.is-active {
