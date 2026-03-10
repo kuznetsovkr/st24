@@ -219,7 +219,7 @@ a {
   background: transparent;
   padding: 6px 8px;
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   text-decoration: underline;
   text-decoration-color: var(--primary);
   text-decoration-thickness: 1px;
