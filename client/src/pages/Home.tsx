@@ -391,7 +391,10 @@ const HomePage = () => {
         </div>
       </div>
 
-      <div className="home-banner-placeholder" aria-hidden="true" />
+      <picture className="home-banner">
+        <source media="(max-width: 700px)" srcSet="/banners/4_3.png" />
+        <img src="/banners/16_9.png" alt="" aria-hidden="true" />
+      </picture>
 
       <div className="slider-controls home-slider-controls">
         <a
