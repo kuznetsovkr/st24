@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
+import HeaderSkuSearch from '../components/HeaderSkuSearch.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
@@ -73,6 +74,7 @@ const AppLayout = ({ children }: Props) => {
             Контакты
           </NavLink>
         </nav>
+        <HeaderSkuSearch className="header-search" />
         <div className="header-actions">
           <button
             type="button"

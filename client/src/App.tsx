@@ -12,6 +12,7 @@ import CheckoutPage from './pages/Checkout.tsx';
 import NotFoundPage from './pages/NotFound.tsx';
 import OrderSuccessPage from './pages/OrderSuccess.tsx';
 import PaymentPage from './pages/Payment.tsx';
+import SearchPage from './pages/Search.tsx';
 import PrivacyPage from './pages/Privacy.tsx';
 import TermsPage from './pages/Terms.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="/catalog/:slug" element={<CategoryPage />} />
               <Route path="/cart" element={<CartPage />} />
               <Route path="/checkout" element={<CheckoutPage />} />
+              <Route path="/search" element={<SearchPage />} />
               <Route path="/payment/:orderId" element={<PaymentPage />} />
               <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
               <Route path="/contacts" element={<ContactsPage />} />

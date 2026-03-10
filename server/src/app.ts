@@ -50,6 +50,7 @@ import {
   findProductById,
   findProductBySku,
   listProducts,
+  searchProductsBySku,
   updateProduct,
   type ProductRow
 } from './db/products';
@@ -1173,6 +1174,35 @@ export const createApp = () => {
     listProducts(category, featured, includeHidden)
       .then((items) => res.json({ items: items.map(mapProduct) }))
       .catch(() => res.status(500).json({ error: 'Failed to load products' }));
+  });
+
+  app.get('/api/products/search', async (req: Request, res: Response) => {
+    const sku = typeof req.query.sku === 'string' ? req.query.sku.trim() : '';
+    const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
+    const limitParsed = Number.parseInt(limitRaw, 10);
+    const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? limitParsed : undefined;
+
+    if (!sku) {
+      res.json({
+        items: [],
+        total: 0,
+        usedFallback: false,
+        fallbackPrefix: null
+      });
+      return;
+    }
+
+    try {
+      const result = await searchProductsBySku(sku, limit);
+      res.json({
+        items: result.items.map(mapProduct),
+        total: result.total,
+        usedFallback: result.usedFallback,
+        fallbackPrefix: result.fallbackPrefix
+      });
+    } catch {
+      res.status(500).json({ error: 'Failed to search products' });
+    }
   });
 
   app.post('/api/products', authenticate, requireAdmin, upload.array('images', 5), async (req, res) => {

@@ -23,6 +23,13 @@ export type Product = {
   updatedAt: string;
 };
 
+export type ProductSkuSearchResult = {
+  items: Product[];
+  total: number;
+  usedFallback: boolean;
+  fallbackPrefix: string | null;
+};
+
 export type BoxType = {
   id: string;
   name: string;
@@ -220,6 +227,38 @@ export const fetchProducts = async (options?: {
     headers: includeHidden ? authHeaders() : undefined
   });
   return data.items.map(normalizeProduct);
+};
+
+export const searchProductsBySku = async (sku: string, limit?: number) => {
+  const normalizedSku = sku.trim();
+  if (!normalizedSku) {
+    return {
+      items: [],
+      total: 0,
+      usedFallback: false,
+      fallbackPrefix: null
+    } satisfies ProductSkuSearchResult;
+  }
+
+  const url = new URL(`${API_BASE}/api/products/search`);
+  url.searchParams.set('sku', normalizedSku);
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) {
+    url.searchParams.set('limit', String(Math.trunc(limit)));
+  }
+
+  const data = await fetchJson<{
+    items: Product[];
+    total: number;
+    usedFallback: boolean;
+    fallbackPrefix: string | null;
+  }>(url.toString());
+
+  return {
+    items: data.items.map(normalizeProduct),
+    total: data.total,
+    usedFallback: data.usedFallback,
+    fallbackPrefix: data.fallbackPrefix
+  } satisfies ProductSkuSearchResult;
 };
 
 export const fetchBoxTypes = async () => {

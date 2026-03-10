@@ -21,6 +21,13 @@ export type ProductRow = {
   updated_at: string;
 };
 
+export type ProductSkuSearchResult = {
+  items: ProductRow[];
+  total: number;
+  usedFallback: boolean;
+  fallbackPrefix: string | null;
+};
+
 type ProductInput = {
   name: string;
   sku: string;
@@ -193,4 +200,118 @@ export const deleteProduct = async (id: string): Promise<ProductRow | null> => {
   );
 
   return (result.rows[0] as ProductRow | undefined) ?? null;
+};
+
+const SKU_NORMALIZED_SQL = `regexp_replace(lower(sku), '[^[:alnum:]]+', '', 'g')`;
+const SKU_DIGITS_SQL = `regexp_replace(sku, '\\D+', '', 'g')`;
+
+const buildLimitClause = (limit?: number) => {
+  if (typeof limit !== 'number' || !Number.isFinite(limit)) {
+    return '';
+  }
+  const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
+  return `LIMIT ${safeLimit}`;
+};
+
+export const searchProductsBySku = async (
+  skuQuery: string,
+  limit?: number
+): Promise<ProductSkuSearchResult> => {
+  const normalizedQuery = skuQuery
+    .toLowerCase()
+    .replace(/[^0-9a-zа-яё]/giu, '');
+  if (!normalizedQuery) {
+    return {
+      items: [],
+      total: 0,
+      usedFallback: false,
+      fallbackPrefix: null
+    };
+  }
+
+  const limitClause = buildLimitClause(limit);
+  const digitsPrefix = skuQuery.replace(/\D/g, '').slice(0, 4);
+
+  const exactCountResult = await query(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM products
+      WHERE ${SKU_NORMALIZED_SQL} LIKE $1 || '%'
+        AND is_hidden = FALSE;
+    `,
+    [normalizedQuery]
+  );
+  const exactTotal = Number(exactCountResult.rows[0]?.count ?? 0);
+
+  if (exactTotal > 0) {
+    const exactItemsResult = await query(
+      `
+        SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
+        FROM products
+        WHERE ${SKU_NORMALIZED_SQL} LIKE $1 || '%'
+          AND is_hidden = FALSE
+        ORDER BY
+          CASE WHEN ${SKU_NORMALIZED_SQL} = $1 THEN 0 ELSE 1 END,
+          LENGTH(${SKU_NORMALIZED_SQL}) ASC,
+          created_at DESC
+        ${limitClause};
+      `,
+      [normalizedQuery]
+    );
+
+    return {
+      items: exactItemsResult.rows as ProductRow[],
+      total: exactTotal,
+      usedFallback: false,
+      fallbackPrefix: null
+    };
+  }
+
+  if (digitsPrefix.length < 4) {
+    return {
+      items: [],
+      total: 0,
+      usedFallback: false,
+      fallbackPrefix: null
+    };
+  }
+
+  const fallbackCountResult = await query(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM products
+      WHERE ${SKU_DIGITS_SQL} LIKE $1 || '%'
+        AND is_hidden = FALSE;
+    `,
+    [digitsPrefix]
+  );
+  const fallbackTotal = Number(fallbackCountResult.rows[0]?.count ?? 0);
+
+  if (fallbackTotal === 0) {
+    return {
+      items: [],
+      total: 0,
+      usedFallback: true,
+      fallbackPrefix: digitsPrefix
+    };
+  }
+
+  const fallbackItemsResult = await query(
+    `
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
+      FROM products
+      WHERE ${SKU_DIGITS_SQL} LIKE $1 || '%'
+        AND is_hidden = FALSE
+      ORDER BY created_at DESC
+      ${limitClause};
+    `,
+    [digitsPrefix]
+  );
+
+  return {
+    items: fallbackItemsResult.rows as ProductRow[],
+    total: fallbackTotal,
+    usedFallback: true,
+    fallbackPrefix: digitsPrefix
+  };
 };
