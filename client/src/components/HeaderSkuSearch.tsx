@@ -181,8 +181,13 @@ const HeaderSkuSearch = ({ className }: HeaderSkuSearchProps) => {
                         className="header-search-item"
                         onClick={() => openSearchPage(item.sku)}
                       >
-                        <span className="header-search-item-title">{item.name}</span>
-                        <span className="header-search-item-sku">{item.sku}</span>
+                        <span className="header-search-item-text">
+                          <span className="header-search-item-title">{item.name}</span>
+                          <span className="header-search-item-sku">{item.sku}</span>
+                        </span>
+                        <span className="header-search-item-thumb" aria-hidden="true">
+                          {item.images[0] ? <img src={item.images[0]} alt="" /> : null}
+                        </span>
                       </button>
                     </li>
                   ))}
