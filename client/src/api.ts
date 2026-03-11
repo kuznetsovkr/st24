@@ -235,6 +235,13 @@ export const updateCategorySection = async (slug: string, payload: FormData) => 
   return normalizeCategory(data.item);
 };
 
+export const deleteCategorySection = async (slug: string) => {
+  return fetchJson<{ ok: boolean }>(`${API_BASE}/api/categories/${slug}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+};
+
 export const fetchProducts = async (options?: {
   category?: string;
   featured?: boolean;

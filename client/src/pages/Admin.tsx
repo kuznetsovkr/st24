@@ -4,6 +4,7 @@ import {
   createBoxType,
   clearAuthToken,
   createProduct,
+  deleteCategorySection,
   deleteBoxType,
   deleteProduct,
   fetchBoxTypes,
@@ -130,23 +131,46 @@ const toCategorySlug = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .replace(/-{2,}/g, '-');
 
-const toFriendlyCategorySectionError = (message: string) => {
+const getApiErrorMessage = (message: string) => {
   if (!message) {
-    return '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.';
+    return '';
   }
-  if (message.includes('File is too large')) {
-    return '\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c 5 \u041c\u0411.';
+  const trimmed = message.trim();
+  if (!(trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+    return message;
   }
-  if (message.includes('Only images allowed')) {
-    return '\u041c\u043e\u0436\u043d\u043e \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f.';
-  }
-  if (message.includes('Category URL already exists')) {
-    return '\u0422\u0430\u043a\u043e\u0439 URL \u0443\u0436\u0435 \u0437\u0430\u043d\u044f\u0442. \u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u043e\u0439.';
-  }
-  if (message.includes('Category slug must contain only latin letters')) {
-    return 'URL \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0443, \u0446\u0438\u0444\u0440\u044b \u0438 \u0434\u0435\u0444\u0438\u0441.';
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: string; message?: string };
+    if (typeof parsed.error === 'string' && parsed.error.trim()) {
+      return parsed.error;
+    }
+    if (typeof parsed.message === 'string' && parsed.message.trim()) {
+      return parsed.message;
+    }
+  } catch {
+    return message;
   }
   return message;
+};
+
+const toFriendlyCategorySectionError = (message: string) => {
+  const normalizedMessage = getApiErrorMessage(message);
+  if (!normalizedMessage) {
+    return '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.';
+  }
+  if (normalizedMessage.includes('File is too large')) {
+    return '\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c 5 \u041c\u0411.';
+  }
+  if (normalizedMessage.includes('Only images allowed')) {
+    return '\u041c\u043e\u0436\u043d\u043e \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f.';
+  }
+  if (normalizedMessage.includes('Category URL already exists')) {
+    return '\u0422\u0430\u043a\u043e\u0439 URL \u0443\u0436\u0435 \u0437\u0430\u043d\u044f\u0442. \u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u043e\u0439.';
+  }
+  if (normalizedMessage.includes('Category slug must contain only latin letters')) {
+    return 'URL \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0443, \u0446\u0438\u0444\u0440\u044b \u0438 \u0434\u0435\u0444\u0438\u0441.';
+  }
+  return normalizedMessage;
 };
 
 const createCategorySectionEditorState = (
@@ -313,6 +337,8 @@ const AdminPage = () => {
   const [bannerStatus, setBannerStatus] = useState<string | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [isBannerSubmitting, setIsBannerSubmitting] = useState(false);
+  const [pendingDeleteCategory, setPendingDeleteCategory] = useState<Category | null>(null);
+  const [isCategoryDeleting, setIsCategoryDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const desktopBannerInputRef = useRef<HTMLInputElement | null>(null);
   const mobileBannerInputRef = useRef<HTMLInputElement | null>(null);
@@ -1086,6 +1112,57 @@ const AdminPage = () => {
               : '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.'
         }
       }));
+    }
+  };
+
+  const openDeleteCategoryModal = (categoryItem: Category) => {
+    setPendingDeleteCategory(categoryItem);
+  };
+
+  const closeDeleteCategoryModal = () => {
+    if (isCategoryDeleting) {
+      return;
+    }
+    setPendingDeleteCategory(null);
+  };
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!pendingDeleteCategory) {
+      return;
+    }
+
+    const categoryToDelete = pendingDeleteCategory;
+    setIsCategoryDeleting(true);
+    try {
+      await deleteCategorySection(categoryToDelete.slug);
+      setCategories((prev) => {
+        const next = prev.filter((item) => item.slug !== categoryToDelete.slug);
+        setCategory((current) => (current === categoryToDelete.slug ? (next[0]?.slug ?? '') : current));
+        return next;
+      });
+      setCategorySectionEditors((prev) => {
+        const next = { ...prev };
+        delete next[categoryToDelete.slug];
+        return next;
+      });
+      setPendingDeleteCategory(null);
+    } catch (deleteError) {
+      const errorMessage =
+        deleteError instanceof Error
+          ? toFriendlyCategorySectionError(deleteError.message)
+          : 'Не удалось удалить категорию.';
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [categoryToDelete.slug]: {
+          ...(prev[categoryToDelete.slug] ?? createCategorySectionEditorState(categoryToDelete)),
+          isSubmitting: false,
+          status: null,
+          error: errorMessage
+        }
+      }));
+      setPendingDeleteCategory(null);
+    } finally {
+      setIsCategoryDeleting(false);
     }
   };
 
@@ -1898,6 +1975,15 @@ const AdminPage = () => {
                     void handleCategorySectionSubmit(event, categoryItem);
                   }}
                 >
+                  <button
+                    type="button"
+                    className="admin-section-delete-button"
+                    aria-label="Удалить категорию"
+                    onClick={() => openDeleteCategoryModal(categoryItem)}
+                    disabled={editor.isSubmitting}
+                  >
+                    <DeleteCrossIcon />
+                  </button>
                   <p className="muted">/catalog/{categoryItem.slug}</p>
                   <div className="form-grid">
                     <label className="field">
@@ -1956,8 +2042,8 @@ const AdminPage = () => {
                       onClick={() => handleCategorySectionImageRemove(categoryItem.slug)}
                       disabled={editor.isSubmitting}
                     >
-                      <span className="link-button">Удалить</span>
                       <DeleteCrossIcon />
+                      <span>Удалить фото</span>
                     </button>
                   )}
 
@@ -2289,6 +2375,48 @@ const AdminPage = () => {
             )}
           </div>
         </>
+      )}
+      {pendingDeleteCategory && (
+        <div className="modal-backdrop" onClick={closeDeleteCategoryModal}>
+          <div className="modal-card admin-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Удалить раздел?</h3>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Закрыть"
+                onClick={closeDeleteCategoryModal}
+                disabled={isCategoryDeleting}
+              >
+                <DeleteCrossIcon />
+              </button>
+            </div>
+            <p className="muted">
+              Вы действительно хотите удалить раздел «{pendingDeleteCategory.name}»?
+            </p>
+            <p className="muted">
+              Если в разделе есть товары, удаление будет заблокировано.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={closeDeleteCategoryModal}
+                disabled={isCategoryDeleting}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="primary-button admin-danger-button"
+                onClick={() => void handleConfirmDeleteCategory()}
+                disabled={isCategoryDeleting}
+              >
+                {isCategoryDeleting ? 'Удаляем...' : 'Удалить'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

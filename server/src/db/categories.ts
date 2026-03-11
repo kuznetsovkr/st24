@@ -57,6 +57,32 @@ export const updateCategory = async (
   return (result.rows[0] as CategoryRow | undefined) ?? null;
 };
 
+export const countCategoryProducts = async (slug: string): Promise<number> => {
+  const result = await query(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM products
+      WHERE category_slug = $1;
+    `,
+    [slug]
+  );
+
+  return Number(result.rows[0]?.count ?? 0);
+};
+
+export const deleteCategory = async (slug: string): Promise<CategoryRow | null> => {
+  const result = await query(
+    `
+      DELETE FROM categories
+      WHERE slug = $1
+      RETURNING slug, name, image, created_at, updated_at;
+    `,
+    [slug]
+  );
+
+  return (result.rows[0] as CategoryRow | undefined) ?? null;
+};
+
 export const isValidCategory = async (slug: string) => {
   const result = await query(`SELECT slug FROM categories WHERE slug = $1;`, [slug]);
   return Boolean(result.rows[0]);

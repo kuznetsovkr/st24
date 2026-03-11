@@ -1801,6 +1801,7 @@ input[type='file'] {
 .admin-section-remove-image {
   border: none;
   background: transparent;
+  color: #d93025;
   padding: 0;
   width: fit-content;
   display: inline-flex;
@@ -1842,6 +1843,48 @@ input[type='file'] {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+}
+
+.admin-section-delete-button {
+  border: none;
+  background: transparent;
+  color: #d93025;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.admin-section-delete-button:hover {
+  opacity: 0.7;
+}
+
+.admin-section-delete-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-confirm-modal {
+  width: min(460px, 100%);
+}
+
+.admin-danger-button {
+  background: #d93025;
+  color: #ffffff;
+  border-color: #d93025;
+}
+
+.admin-danger-button:hover {
+  background: #be2a20;
+  border-color: #be2a20;
 }
 
 .ghost-button.is-active {

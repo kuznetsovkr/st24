@@ -393,15 +393,21 @@ export const initDb = async () => {
     WHERE email IS NOT NULL;
   `);
 
-  for (const category of categories) {
-    await query(
-      `
-        INSERT INTO categories (slug, name, image)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (slug) DO NOTHING;
-      `,
-      [category.slug, category.name, category.image ?? null]
-    );
+  const categoriesCountResult = await query(
+    `SELECT COUNT(*)::int AS count FROM categories;`
+  );
+  const categoriesCount = Number(categoriesCountResult.rows[0]?.count ?? 0);
+  if (categoriesCount === 0) {
+    for (const category of categories) {
+      await query(
+        `
+          INSERT INTO categories (slug, name, image)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (slug) DO NOTHING;
+        `,
+        [category.slug, category.name, category.image ?? null]
+      );
+    }
   }
 
   const boxTypesCountResult = await query(
