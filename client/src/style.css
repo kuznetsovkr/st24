@@ -2720,20 +2720,13 @@ input[type='file'] {
 
 /* iPad / tablet Safari hardening for product cards */
 @media (min-width: 768px) and (max-width: 1180px) and (hover: none) and (pointer: coarse) {
-  .products-grid {
-    align-items: start;
-  }
-
   .products-grid .slide {
     min-width: 0;
-    align-self: start;
     overflow: visible;
-    height: auto;
   }
 
   .products-grid .product-info {
     min-width: 0;
-    flex: 0 0 auto;
   }
 
   .products-grid .product-info h3 {
