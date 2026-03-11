@@ -1983,6 +1983,12 @@ input[type='file'] {
   padding: 6px 8px;
 }
 
+@media (max-width: 520px) {
+  .qty-control{
+    gap:0;
+  }
+}
+
 .qty-button {
   width: 28px;
   height: 28px;
