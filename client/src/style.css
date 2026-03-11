@@ -815,10 +815,10 @@ a {
 }
 
 .category-card {
-  height: clamp(220px, 30vw, 320px);
+  height: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   align-items: stretch;
   justify-content: flex-start;
   text-align: center;
@@ -836,16 +836,41 @@ a {
 
 .category-image {
   width: 100%;
-  flex: 1;
+  flex: 0 0 auto;
+  aspect-ratio: 4 / 3;
   border-radius: 16px;
   background: var(--accent-soft);
   border: 1px dashed rgba(0, 0, 0, 0.2);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--muted);
   font-size: 12px;
   font-weight: var(--weight-semibold);
+}
+
+.category-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.catalog-page-cover {
+  width: 100%;
+  aspect-ratio: 16 / 6;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.catalog-page-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .catalog-cart-fab {
@@ -1743,6 +1768,52 @@ input[type='file'] {
   display: block;
 }
 
+.admin-section-preview {
+  width: 100%;
+  border: 1px dashed rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 10px;
+}
+
+.admin-section-preview--catalog {
+  aspect-ratio: 16 / 6;
+}
+
+.admin-section-preview--category {
+  aspect-ratio: 4 / 3;
+}
+
+.admin-section-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.catalog-sections-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.catalog-section-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .ghost-button.is-active {
   border-color: var(--primary);
   color: var(--text);
@@ -2513,6 +2584,10 @@ input[type='file'] {
     grid-template-columns: 1fr;
   }
 
+  .catalog-sections-list {
+    grid-template-columns: 1fr;
+  }
+
   .cart-item {
     grid-template-columns: 90px minmax(0, 1fr);
   }
@@ -2525,6 +2600,14 @@ input[type='file'] {
 
 @media (max-width: 700px) {
   .home-banner {
+    aspect-ratio: 4 / 3;
+  }
+
+  .catalog-page-cover {
+    aspect-ratio: 4 / 3;
+  }
+
+  .admin-section-preview--catalog {
     aspect-ratio: 4 / 3;
   }
 

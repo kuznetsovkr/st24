@@ -15,6 +15,7 @@ import {
   getAuthToken,
   requestAuthCode,
   setAuthToken,
+  updateCategorySection,
   updateDeliveryProvider,
   updateHomeBanner,
   updateBoxType,
@@ -69,6 +70,95 @@ const getImageName = (value: string) => {
   const parts = trimmed.split('/');
   return parts[parts.length - 1] || trimmed;
 };
+
+type CategorySectionEditorState = {
+  name: string;
+  slug: string;
+  imageFile: File | null;
+  imagePreview: string | null;
+  isSubmitting: boolean;
+  status: string | null;
+  error: string | null;
+};
+
+const CYRILLIC_TO_LATIN_MAP: Record<string, string> = {
+  а: 'a',
+  б: 'b',
+  в: 'v',
+  г: 'g',
+  д: 'd',
+  е: 'e',
+  ё: 'e',
+  ж: 'zh',
+  з: 'z',
+  и: 'i',
+  й: 'i',
+  к: 'k',
+  л: 'l',
+  м: 'm',
+  н: 'n',
+  о: 'o',
+  п: 'p',
+  р: 'r',
+  с: 's',
+  т: 't',
+  у: 'u',
+  ф: 'f',
+  х: 'h',
+  ц: 'c',
+  ч: 'ch',
+  ш: 'sh',
+  щ: 'sch',
+  ъ: '',
+  ы: 'y',
+  ь: '',
+  э: 'e',
+  ю: 'yu',
+  я: 'ya'
+};
+
+const transliterateToLatin = (value: string) =>
+  value
+    .split('')
+    .map((char) => CYRILLIC_TO_LATIN_MAP[char] ?? char)
+    .join('');
+
+const toCategorySlug = (value: string) =>
+  transliterateToLatin(value.toLowerCase())
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+
+const toFriendlyCategorySectionError = (message: string) => {
+  if (!message) {
+    return '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.';
+  }
+  if (message.includes('File is too large')) {
+    return '\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c 5 \u041c\u0411.';
+  }
+  if (message.includes('Only images allowed')) {
+    return '\u041c\u043e\u0436\u043d\u043e \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f.';
+  }
+  if (message.includes('Category URL already exists')) {
+    return '\u0422\u0430\u043a\u043e\u0439 URL \u0443\u0436\u0435 \u0437\u0430\u043d\u044f\u0442. \u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u043e\u0439.';
+  }
+  if (message.includes('Category slug must contain only latin letters')) {
+    return 'URL \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0443, \u0446\u0438\u0444\u0440\u044b \u0438 \u0434\u0435\u0444\u0438\u0441.';
+  }
+  return message;
+};
+
+const createCategorySectionEditorState = (
+  category: Category
+): CategorySectionEditorState => ({
+  name: category.name,
+  slug: category.slug,
+  imageFile: null,
+  imagePreview: null,
+  isSubmitting: false,
+  status: null,
+  error: null
+});
 
 
 
@@ -166,9 +256,12 @@ const AdminPage = () => {
   const [boxTypes, setBoxTypes] = useState<BoxType[]>([]);
   const [deliveryProviders, setDeliveryProviders] = useState<DeliveryProviderSetting[]>([]);
   const [homeBanner, setHomeBanner] = useState<HomeBanner | null>(null);
+  const [categorySectionEditors, setCategorySectionEditors] = useState<
+    Record<string, CategorySectionEditorState>
+  >({});
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    'products' | 'boxes' | 'deliveries' | 'banners' | 'fonts'
+    'products' | 'sections' | 'boxes' | 'deliveries' | 'banners' | 'fonts'
   >('products');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -259,7 +352,23 @@ const AdminPage = () => {
       setBoxTypes(boxItems);
       setDeliveryProviders(deliveryItems);
       setHomeBanner(banner);
-      setCategory((prev) => prev || categoryItems[0]?.slug || '');
+      setCategory((prev) =>
+        prev && categoryItems.some((item) => item.slug === prev)
+          ? prev
+          : categoryItems[0]?.slug || ''
+      );
+      setCategorySectionEditors((prev) => {
+        const next: Record<string, CategorySectionEditorState> = {};
+        categoryItems.forEach((item) => {
+          const existing = prev[item.slug];
+          next[item.slug] = {
+            ...createCategorySectionEditorState(item),
+            status: existing?.status ?? null,
+            error: existing?.error ?? null
+          };
+        });
+        return next;
+      });
       setIsLoading(false);
     } catch {
       setError('Не удалось загрузить данные.');
@@ -770,6 +879,207 @@ const AdminPage = () => {
     }
   };
 
+  const handleCategorySectionNameChange = (slug: string, value: string) => {
+    setCategorySectionEditors((prev) => ({
+      ...prev,
+      [slug]: {
+        ...(prev[slug] ??
+          createCategorySectionEditorState({
+            slug,
+            name: value,
+            image: null,
+            createdAt: '',
+            updatedAt: ''
+          })),
+        name: value,
+        slug: toCategorySlug(value),
+        status: null,
+        error: null
+      }
+    }));
+  };
+
+  const handleCategorySectionSlugChange = (slug: string, value: string) => {
+    const normalized = toCategorySlug(value);
+    setCategorySectionEditors((prev) => ({
+      ...prev,
+      [slug]: {
+        ...(prev[slug] ??
+          createCategorySectionEditorState({
+            slug,
+            name: '',
+            image: null,
+            createdAt: '',
+            updatedAt: ''
+          })),
+        slug: normalized,
+        status: null,
+        error: null
+      }
+    }));
+  };
+
+  const handleCategorySectionImageChange = async (
+    slug: string,
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [slug]: {
+          ...(prev[slug] ??
+            createCategorySectionEditorState({
+              slug,
+              name: '',
+              image: null,
+              createdAt: '',
+              updatedAt: ''
+            })),
+          imageFile: null,
+          imagePreview: null,
+          status: null,
+          error: null
+        }
+      }));
+      return;
+    }
+
+    try {
+      const preview = await readFileAsDataUrl(file);
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [slug]: {
+          ...(prev[slug] ??
+            createCategorySectionEditorState({
+              slug,
+              name: '',
+              image: null,
+              createdAt: '',
+              updatedAt: ''
+            })),
+          imageFile: file,
+          imagePreview: preview,
+          status: null,
+          error: null
+        }
+      }));
+    } catch {
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [slug]: {
+          ...(prev[slug] ??
+            createCategorySectionEditorState({
+              slug,
+              name: '',
+              image: null,
+              createdAt: '',
+              updatedAt: ''
+            })),
+          status: null,
+          error: '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.'
+        }
+      }));
+    }
+  };
+
+  const resetCategorySectionDraft = (categoryItem: Category) => {
+    setCategorySectionEditors((prev) => ({
+      ...prev,
+      [categoryItem.slug]: createCategorySectionEditorState(categoryItem)
+    }));
+  };
+
+  const handleCategorySectionSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+    categoryItem: Category
+  ) => {
+    event.preventDefault();
+    const editor =
+      categorySectionEditors[categoryItem.slug] ??
+      createCategorySectionEditorState(categoryItem);
+    const nextName = editor.name.trim();
+    const nextSlug = editor.slug.trim();
+    const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+    if (!nextName) {
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [categoryItem.slug]: {
+          ...editor,
+          status: null,
+          error: '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.'
+        }
+      }));
+      return;
+    }
+
+    if (!nextSlug || !slugPattern.test(nextSlug)) {
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [categoryItem.slug]: {
+          ...editor,
+          status: null,
+          error: 'URL \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0443, \u0446\u0438\u0444\u0440\u044b \u0438 \u0434\u0435\u0444\u0438\u0441.'
+        }
+      }));
+      return;
+    }
+
+    setCategorySectionEditors((prev) => ({
+      ...prev,
+      [categoryItem.slug]: {
+        ...editor,
+        isSubmitting: true,
+        status: null,
+        error: null
+      }
+    }));
+
+    const payload = new FormData();
+    payload.append('name', nextName);
+    payload.append('slug', nextSlug);
+    if (editor.imageFile) {
+      payload.append('image', editor.imageFile);
+    }
+
+    try {
+      const updated = await updateCategorySection(categoryItem.slug, payload);
+      setCategories((prev) =>
+        prev.map((item) => (item.slug === categoryItem.slug ? updated : item))
+      );
+      if (updated.slug !== categoryItem.slug) {
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.category === categoryItem.slug ? { ...item, category: updated.slug } : item
+          )
+        );
+      }
+      setCategorySectionEditors((prev) => {
+        const next = { ...prev };
+        delete next[categoryItem.slug];
+        next[updated.slug] = {
+          ...createCategorySectionEditorState(updated),
+          status: '\u0420\u0430\u0437\u0434\u0435\u043b \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d.'
+        };
+        return next;
+      });
+    } catch (submitError) {
+      setCategorySectionEditors((prev) => ({
+        ...prev,
+        [categoryItem.slug]: {
+          ...(prev[categoryItem.slug] ?? editor),
+          isSubmitting: false,
+          status: null,
+          error:
+            submitError instanceof Error
+              ? toFriendlyCategorySectionError(submitError.message)
+              : '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.'
+        }
+      }));
+    }
+  };
+
   const handleRequestCode = async () => {
     setAuthMessage(null);
     setError(null);
@@ -898,6 +1208,9 @@ const AdminPage = () => {
   if (activeTab === 'boxes') {
     activeTabTitle = 'Коробки';
     activeTabDescription = 'Настройка типов коробок для расчёта доставки.';
+  } else if (activeTab === 'sections') {
+    activeTabTitle = 'Разделы каталога';
+    activeTabDescription = 'Редактирование названий и фотографий 4 категорий.';
   } else if (activeTab === 'deliveries') {
     activeTabTitle = 'Доставки';
     activeTabDescription = 'Включение и отключение доступных способов доставки на сайте.';
@@ -1042,6 +1355,16 @@ const AdminPage = () => {
               }}
             >
               Товары
+            </a>
+            <a
+              href="#sections"
+              className={`admin-tab-link${activeTab === 'sections' ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveTab('sections');
+              }}
+            >
+              Разделы каталога
             </a>
             <a
               href="#boxes"
@@ -1542,6 +1865,105 @@ const AdminPage = () => {
         )}
       </div>
         </>
+      )}
+      {activeTab === 'sections' && (
+        <div className="card">
+          <h3>Категории</h3>
+          <p className="form-help">
+            Рекомендуется единый стиль: 4:3 (минимум 1200x900), JPG/PNG/WebP, до 5 МБ.
+          </p>
+          <div className="catalog-sections-list">
+            {categories.map((categoryItem) => {
+              const editor =
+                categorySectionEditors[categoryItem.slug] ??
+                createCategorySectionEditorState(categoryItem);
+              const previewSrc = editor.imagePreview ?? categoryItem.image;
+
+              return (
+                <form
+                  key={categoryItem.slug}
+                  className="catalog-section-card"
+                  onSubmit={(event) => {
+                    void handleCategorySectionSubmit(event, categoryItem);
+                  }}
+                >
+                  <p className="muted">/catalog/{categoryItem.slug}</p>
+                  <div className="form-grid">
+                    <label className="field">
+                      <span>Название</span>
+                      <input
+                        type="text"
+                        value={editor.name}
+                        onChange={(event) =>
+                          handleCategorySectionNameChange(
+                            categoryItem.slug,
+                            event.target.value
+                          )
+                        }
+                        required
+                      />
+                    </label>
+                    <label className="field">
+                      <span>URL</span>
+                      <input
+                        type="text"
+                        value={editor.slug}
+                        onChange={(event) =>
+                          handleCategorySectionSlugChange(
+                            categoryItem.slug,
+                            event.target.value
+                          )
+                        }
+                        placeholder="kategoriya"
+                        required
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Фото категории</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) =>
+                          void handleCategorySectionImageChange(categoryItem.slug, event)
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="muted">Итоговый URL: /catalog/{editor.slug || '...'}</p>
+
+                  <div className="admin-section-preview admin-section-preview--category">
+                    {previewSrc ? (
+                      <img src={previewSrc} alt={`Превью ${editor.name || categoryItem.slug}`} />
+                    ) : (
+                      <span>Изображение не загружено</span>
+                    )}
+                  </div>
+
+                  {editor.status && <p className="status-text">{editor.status}</p>}
+                  {editor.error && <p className="status-text status-text--error">{editor.error}</p>}
+
+                  <div className="button-row">
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={editor.isSubmitting}
+                    >
+                      {editor.isSubmitting ? 'Сохраняем...' : 'Сохранить'}
+                    </button>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => resetCategorySectionDraft(categoryItem)}
+                      disabled={editor.isSubmitting}
+                    >
+                      Сбросить
+                    </button>
+                  </div>
+                </form>
+              );
+            })}
+          </div>
+        </div>
       )}
       {activeTab === 'deliveries' && (
         <div className="card">

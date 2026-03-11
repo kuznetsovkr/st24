@@ -1,5 +1,5 @@
 import cors from 'cors';
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { signToken, verifyToken } from './auth';
@@ -28,7 +28,14 @@ import {
   type CartItemRow,
   type CartSyncItem
 } from './db/cart';
-import { isValidCategory, listCategories } from './db/categories';
+import {
+  findCategoryBySlug,
+  isValidCategory,
+  listCategories,
+  updateCategory,
+  type CategoryRow
+} from './db/categories';
+import { getCatalogPage, updateCatalogPage, type CatalogPageRow } from './db/catalogPage';
 import {
   createOrder,
   findOrderById,
@@ -390,6 +397,22 @@ const mapDeliveryProvider = (row: DeliveryProviderRow) => ({
   name: row.name,
   isEnabled: row.is_enabled,
   sortOrder: row.sort_order,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapCategory = (row: CategoryRow) => ({
+  slug: row.slug,
+  name: row.name,
+  image: row.image ? toPublicUrl(row.image) : null,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+
+const mapCatalogPage = (row: CatalogPageRow) => ({
+  key: row.key,
+  name: row.name,
+  image: row.image ? toPublicUrl(row.image) : null,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -903,9 +926,150 @@ export const createApp = () => {
 
   app.get('/api/categories', (_req: Request, res: Response) => {
     listCategories()
-      .then((items) => res.json({ items }))
+      .then((items) => res.json({ items: items.map(mapCategory) }))
       .catch(() => res.status(500).json({ error: 'Failed to load categories' }));
   });
+
+  app.get('/api/catalog-page', async (_req: Request, res: Response) => {
+    try {
+      const item = await getCatalogPage();
+      if (!item) {
+        res.json({
+          page: {
+            key: 'catalog',
+            name: 'Разделы каталога',
+            image: null,
+            createdAt: '',
+            updatedAt: ''
+          }
+        });
+        return;
+      }
+
+      res.json({ page: mapCatalogPage(item) });
+    } catch {
+      res.status(500).json({ error: 'Failed to load catalog page settings' });
+    }
+  });
+
+  app.put(
+    '/api/catalog-page',
+    authenticate,
+    requireAdmin,
+    upload.single('image'),
+    async (req: Request, res: Response) => {
+      const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+      const uploadedFilename = req.file?.filename;
+
+      if (!name) {
+        if (uploadedFilename) {
+          removeUploadedFiles([uploadedFilename]);
+        }
+        res.status(400).json({ error: 'Catalog page name is required' });
+        return;
+      }
+
+      try {
+        const current = await getCatalogPage();
+        const updated = await updateCatalogPage({
+          name,
+          image: uploadedFilename ?? null
+        });
+
+        if (
+          uploadedFilename &&
+          current?.image &&
+          current.image !== uploadedFilename
+        ) {
+          removeUploadedFiles([current.image]);
+        }
+
+        res.json({ page: mapCatalogPage(updated) });
+      } catch {
+        if (uploadedFilename) {
+          removeUploadedFiles([uploadedFilename]);
+        }
+        res.status(500).json({ error: 'Failed to update catalog page settings' });
+      }
+    }
+  );
+
+  app.put(
+    '/api/categories/:slug',
+    authenticate,
+    requireAdmin,
+    upload.single('image'),
+    async (req: Request, res: Response) => {
+      const slug = typeof req.params.slug === 'string' ? req.params.slug.trim() : '';
+      const nextSlug =
+        typeof req.body?.slug === 'string' ? req.body.slug.trim().toLowerCase() : slug;
+      const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+      const uploadedFilename = req.file?.filename;
+      const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+      if (!slug || !name || !nextSlug) {
+        if (uploadedFilename) {
+          removeUploadedFiles([uploadedFilename]);
+        }
+        res.status(400).json({ error: 'Название и URL категории обязательны' });
+        return;
+      }
+      if (!slugPattern.test(nextSlug)) {
+        if (uploadedFilename) {
+          removeUploadedFiles([uploadedFilename]);
+        }
+        res
+          .status(400)
+          .json({ error: 'URL категории должен содержать только латиницу, цифры и дефис' });
+        return;
+      }
+
+      try {
+        const current = await findCategoryBySlug(slug);
+        if (!current) {
+          if (uploadedFilename) {
+            removeUploadedFiles([uploadedFilename]);
+          }
+          res.status(404).json({ error: 'Category not found' });
+          return;
+        }
+
+        const updated = await updateCategory(slug, {
+          slug: nextSlug,
+          name,
+          image: uploadedFilename ?? null
+        });
+
+        if (!updated) {
+          if (uploadedFilename) {
+            removeUploadedFiles([uploadedFilename]);
+          }
+          res.status(404).json({ error: 'Category not found' });
+          return;
+        }
+
+        if (
+          uploadedFilename &&
+          current.image &&
+          current.image !== uploadedFilename
+        ) {
+          removeUploadedFiles([current.image]);
+        }
+
+        res.json({ item: mapCategory(updated) });
+      } catch (error) {
+        if (uploadedFilename) {
+          removeUploadedFiles([uploadedFilename]);
+        }
+        const maybePg = error as { code?: string };
+        if (maybePg.code === '23505') {
+          res.status(409).json({ error: 'Такой URL категории уже используется' });
+          return;
+        }
+        res.status(500).json({ error: 'Failed to update category' });
+      }
+    }
+  );
 
   app.get('/api/box-types', async (_req: Request, res: Response) => {
     try {
@@ -2483,6 +2647,32 @@ export const createApp = () => {
 
   app.get('/', (_req: Request, res: Response) => {
     res.json({ message: 'E-commerce API' });
+  });
+
+  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        res.status(400).json({ error: 'Файл слишком большой. Максимальный размер — 5 МБ.' });
+        return;
+      }
+      if (error.code === 'LIMIT_FILE_COUNT') {
+        res.status(400).json({ error: 'Загружено слишком много файлов.' });
+        return;
+      }
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
+    if (error instanceof Error) {
+      const message = error.message || 'Internal server error';
+      const isClientUploadError =
+        message === 'Only images allowed' ||
+        message.includes('Допустимы только');
+      res.status(isClientUploadError ? 400 : 500).json({ error: message });
+      return;
+    }
+
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;

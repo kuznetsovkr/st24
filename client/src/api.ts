@@ -1,6 +1,9 @@
 export type Category = {
   slug: string;
   name: string;
+  image: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type Product = {
@@ -59,6 +62,14 @@ export type HomeBanner = {
   key: 'home';
   desktopImage: string | null;
   mobileImage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CatalogPageSettings = {
+  key: 'catalog';
+  name: string;
+  image: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -185,10 +196,20 @@ const normalizeCartItem = (item: CartItem): CartItem => ({
   image: item.image ? normalizeImageUrl(item.image) : item.image
 });
 
+const normalizeCategory = (category: Category): Category => ({
+  ...category,
+  image: category.image ? normalizeImageUrl(category.image) : null
+});
+
 const normalizeHomeBanner = (banner: HomeBanner): HomeBanner => ({
   ...banner,
   desktopImage: banner.desktopImage ? normalizeImageUrl(banner.desktopImage) : null,
   mobileImage: banner.mobileImage ? normalizeImageUrl(banner.mobileImage) : null
+});
+
+const normalizeCatalogPage = (page: CatalogPageSettings): CatalogPageSettings => ({
+  ...page,
+  image: page.image ? normalizeImageUrl(page.image) : null
 });
 
 const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
@@ -202,7 +223,16 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
 
 export const fetchCategories = async () => {
   const data = await fetchJson<{ items: Category[] }>(`${API_BASE}/api/categories`);
-  return data.items;
+  return data.items.map(normalizeCategory);
+};
+
+export const updateCategorySection = async (slug: string, payload: FormData) => {
+  const data = await fetchJson<{ item: Category }>(`${API_BASE}/api/categories/${slug}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: payload
+  });
+  return normalizeCategory(data.item);
 };
 
 export const fetchProducts = async (options?: {
@@ -276,6 +306,20 @@ export const fetchDeliveryProviders = async () => {
 export const fetchHomeBanner = async () => {
   const data = await fetchJson<{ banner: HomeBanner }>(`${API_BASE}/api/banners/home`);
   return normalizeHomeBanner(data.banner);
+};
+
+export const fetchCatalogPageSettings = async () => {
+  const data = await fetchJson<{ page: CatalogPageSettings }>(`${API_BASE}/api/catalog-page`);
+  return normalizeCatalogPage(data.page);
+};
+
+export const updateCatalogPageSettings = async (payload: FormData) => {
+  const data = await fetchJson<{ page: CatalogPageSettings }>(`${API_BASE}/api/catalog-page`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: payload
+  });
+  return normalizeCatalogPage(data.page);
 };
 
 export const updateHomeBanner = async (payload: FormData) => {

@@ -5,8 +5,26 @@ export const initDb = async () => {
   await query(`
     CREATE TABLE IF NOT EXISTS categories (
       slug TEXT PRIMARY KEY,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      image TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await query(`
+    ALTER TABLE categories
+    ADD COLUMN IF NOT EXISTS image TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE categories
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  `);
+
+  await query(`
+    ALTER TABLE categories
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
   `);
 
   await query(`
@@ -72,6 +90,52 @@ export const initDb = async () => {
   `);
 
   await query(`
+    DO $$
+    DECLARE
+      has_cascade_fk BOOLEAN := FALSE;
+      rec RECORD;
+    BEGIN
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'public'
+          AND t.relname = 'products'
+          AND c.contype = 'f'
+          AND c.conname = 'products_category_slug_fkey'
+          AND c.confupdtype = 'c'
+      )
+      INTO has_cascade_fk;
+
+      IF has_cascade_fk THEN
+        RETURN;
+      END IF;
+
+      FOR rec IN
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        JOIN unnest(c.conkey) AS colnum(attnum) ON true
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = colnum.attnum
+        WHERE n.nspname = 'public'
+          AND t.relname = 'products'
+          AND c.contype = 'f'
+          AND a.attname = 'category_slug'
+      LOOP
+        EXECUTE format('ALTER TABLE public.products DROP CONSTRAINT %I', rec.conname);
+      END LOOP;
+
+      ALTER TABLE public.products
+      ADD CONSTRAINT products_category_slug_fkey
+      FOREIGN KEY (category_slug) REFERENCES public.categories(slug)
+      ON UPDATE CASCADE
+      ON DELETE RESTRICT;
+    END $$;
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS box_types (
       id UUID PRIMARY KEY,
       name TEXT NOT NULL,
@@ -103,6 +167,16 @@ export const initDb = async () => {
       key TEXT PRIMARY KEY,
       desktop_image TEXT,
       mobile_image TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS catalog_page_settings (
+      key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      image TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -322,11 +396,11 @@ export const initDb = async () => {
   for (const category of categories) {
     await query(
       `
-        INSERT INTO categories (slug, name)
-        VALUES ($1, $2)
-        ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name;
+        INSERT INTO categories (slug, name, image)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (slug) DO NOTHING;
       `,
-      [category.slug, category.name]
+      [category.slug, category.name, category.image ?? null]
     );
   }
 
@@ -371,6 +445,12 @@ export const initDb = async () => {
   await query(`
     INSERT INTO site_banners (key)
     VALUES ('home')
+    ON CONFLICT (key) DO NOTHING;
+  `);
+
+  await query(`
+    INSERT INTO catalog_page_settings (key, name)
+    VALUES ('catalog', 'Разделы каталога')
     ON CONFLICT (key) DO NOTHING;
   `);
 };
