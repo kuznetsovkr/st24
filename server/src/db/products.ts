@@ -203,7 +203,6 @@ export const deleteProduct = async (id: string): Promise<ProductRow | null> => {
 };
 
 const SKU_NORMALIZED_SQL = `regexp_replace(lower(sku), '[^[:alnum:]]+', '', 'g')`;
-const SKU_DIGITS_SQL = `regexp_replace(sku, '\\D+', '', 'g')`;
 
 const buildLimitClause = (limit?: number) => {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) {
@@ -219,7 +218,7 @@ export const searchProductsBySku = async (
 ): Promise<ProductSkuSearchResult> => {
   const normalizedQuery = skuQuery
     .toLowerCase()
-    .replace(/[^0-9a-zа-яё]/giu, '');
+    .replace(/[^\p{L}\p{N}]/gu, '');
   if (!normalizedQuery) {
     return {
       items: [],
@@ -230,7 +229,7 @@ export const searchProductsBySku = async (
   }
 
   const limitClause = buildLimitClause(limit);
-  const digitsPrefix = skuQuery.replace(/\D/g, '').slice(0, 4);
+  const fallbackPrefix = normalizedQuery.slice(0, 4);
 
   const exactCountResult = await query(
     `
@@ -267,7 +266,7 @@ export const searchProductsBySku = async (
     };
   }
 
-  if (digitsPrefix.length < 4) {
+  if (fallbackPrefix.length < 4) {
     return {
       items: [],
       total: 0,
@@ -280,10 +279,10 @@ export const searchProductsBySku = async (
     `
       SELECT COUNT(*)::int AS count
       FROM products
-      WHERE ${SKU_DIGITS_SQL} LIKE $1 || '%'
+      WHERE ${SKU_NORMALIZED_SQL} LIKE $1 || '%'
         AND is_hidden = FALSE;
     `,
-    [digitsPrefix]
+    [fallbackPrefix]
   );
   const fallbackTotal = Number(fallbackCountResult.rows[0]?.count ?? 0);
 
@@ -292,7 +291,7 @@ export const searchProductsBySku = async (
       items: [],
       total: 0,
       usedFallback: true,
-      fallbackPrefix: digitsPrefix
+      fallbackPrefix
     };
   }
 
@@ -300,18 +299,18 @@ export const searchProductsBySku = async (
     `
       SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
       FROM products
-      WHERE ${SKU_DIGITS_SQL} LIKE $1 || '%'
+      WHERE ${SKU_NORMALIZED_SQL} LIKE $1 || '%'
         AND is_hidden = FALSE
       ORDER BY created_at DESC
       ${limitClause};
     `,
-    [digitsPrefix]
+    [fallbackPrefix]
   );
 
   return {
     items: fallbackItemsResult.rows as ProductRow[],
     total: fallbackTotal,
     usedFallback: true,
-    fallbackPrefix: digitsPrefix
+    fallbackPrefix
   };
 };

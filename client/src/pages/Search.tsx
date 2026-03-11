@@ -137,7 +137,7 @@ const SearchPage = () => {
           <p className="muted">Найдено: {total}</p>
           {usedFallback && (
             <p className="muted">
-              По точному запросу совпадений не найдено. Показаны товары по первым 4 цифрам
+              По точному запросу совпадений не найдено. Показаны товары по первым 4 символам
               артикула{fallbackPrefix ? `: ${fallbackPrefix}` : ''}.
             </p>
           )}

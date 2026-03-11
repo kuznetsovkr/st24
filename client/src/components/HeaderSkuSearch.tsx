@@ -8,7 +8,7 @@ const SEARCH_PREVIEW_VISIBLE = 7;
 const SEARCH_DEBOUNCE_MS = 250;
 const MIN_SEARCH_SYMBOLS = 2;
 
-const normalizeSkuQuery = (value: string) => value.replace(/[^0-9a-zа-яё]/giu, '');
+const normalizeSkuQuery = (value: string) => value.replace(/[^\p{L}\p{N}]/gu, '');
 
 type HeaderSkuSearchProps = {
   className?: string;
@@ -197,7 +197,7 @@ const HeaderSkuSearch = ({ className }: HeaderSkuSearchProps) => {
               )}
               {usedFallback && (
                 <p className="header-search-note">
-                  Точных совпадений нет. Показаны товары по первым 4 цифрам
+                  Точных совпадений нет. Показаны товары по первым 4 символам
                   {fallbackPrefix ? `: ${fallbackPrefix}` : ''}.
                 </p>
               )}
