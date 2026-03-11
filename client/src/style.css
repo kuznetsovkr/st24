@@ -1798,6 +1798,36 @@ input[type='file'] {
   display: block;
 }
 
+.admin-section-remove-image {
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.admin-section-remove-image:hover {
+  opacity: 0.7;
+}
+
+.admin-section-remove-image:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-section-remove-image svg {
+  display: block;
+  color: #e74c3c;
+  width: 15px;
+  height: 15px;
+}
+
 .catalog-sections-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

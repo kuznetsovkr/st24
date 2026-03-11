@@ -37,7 +37,8 @@ export const updateCategory = async (
   input: {
     slug: string;
     name: string;
-    image?: string | null;
+    image: string | null;
+    hasImageUpdate: boolean;
   }
 ): Promise<CategoryRow | null> => {
   const result = await query(
@@ -45,12 +46,12 @@ export const updateCategory = async (
       UPDATE categories
       SET slug = $2,
           name = $3,
-          image = COALESCE($4, image),
+          image = CASE WHEN $4 THEN $5 ELSE image END,
           updated_at = NOW()
       WHERE slug = $1
       RETURNING slug, name, image, created_at, updated_at;
     `,
-    [slug, input.slug, input.name, input.image ?? null]
+    [slug, input.slug, input.name, input.hasImageUpdate, input.image]
   );
 
   return (result.rows[0] as CategoryRow | undefined) ?? null;

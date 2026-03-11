@@ -1005,6 +1005,11 @@ export const createApp = () => {
         typeof req.body?.slug === 'string' ? req.body.slug.trim().toLowerCase() : slug;
       const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
       const uploadedFilename = req.file?.filename;
+      const removeImage =
+        req.body?.removeImage === 'true' ||
+        req.body?.removeImage === '1' ||
+        req.body?.removeImage === true;
+      const hasImageUpdate = Boolean(uploadedFilename) || removeImage;
       const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
       if (!slug || !name || !nextSlug) {
@@ -1037,7 +1042,8 @@ export const createApp = () => {
         const updated = await updateCategory(slug, {
           slug: nextSlug,
           name,
-          image: uploadedFilename ?? null
+          image: uploadedFilename ?? null,
+          hasImageUpdate
         });
 
         if (!updated) {
@@ -1048,11 +1054,7 @@ export const createApp = () => {
           return;
         }
 
-        if (
-          uploadedFilename &&
-          current.image &&
-          current.image !== uploadedFilename
-        ) {
+        if (current.image && current.image !== updated.image) {
           removeUploadedFiles([current.image]);
         }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import {
   createBoxType,
@@ -76,6 +76,7 @@ type CategorySectionEditorState = {
   slug: string;
   imageFile: File | null;
   imagePreview: string | null;
+  removeImage: boolean;
   isSubmitting: boolean;
   status: string | null;
   error: string | null;
@@ -155,6 +156,7 @@ const createCategorySectionEditorState = (
   slug: category.slug,
   imageFile: null,
   imagePreview: null,
+  removeImage: false,
   isSubmitting: false,
   status: null,
   error: null
@@ -925,23 +927,6 @@ const AdminPage = () => {
   ) => {
     const file = event.target.files?.[0] ?? null;
     if (!file) {
-      setCategorySectionEditors((prev) => ({
-        ...prev,
-        [slug]: {
-          ...(prev[slug] ??
-            createCategorySectionEditorState({
-              slug,
-              name: '',
-              image: null,
-              createdAt: '',
-              updatedAt: ''
-            })),
-          imageFile: null,
-          imagePreview: null,
-          status: null,
-          error: null
-        }
-      }));
       return;
     }
 
@@ -960,6 +945,7 @@ const AdminPage = () => {
             })),
           imageFile: file,
           imagePreview: preview,
+          removeImage: false,
           status: null,
           error: null
         }
@@ -981,6 +967,27 @@ const AdminPage = () => {
         }
       }));
     }
+  };
+
+  const handleCategorySectionImageRemove = (slug: string) => {
+    setCategorySectionEditors((prev) => ({
+      ...prev,
+      [slug]: {
+        ...(prev[slug] ??
+          createCategorySectionEditorState({
+            slug,
+            name: '',
+            image: null,
+            createdAt: '',
+            updatedAt: ''
+          })),
+        imageFile: null,
+        imagePreview: null,
+        removeImage: true,
+        status: null,
+        error: null
+      }
+    }));
   };
 
   const resetCategorySectionDraft = (categoryItem: Category) => {
@@ -1041,6 +1048,8 @@ const AdminPage = () => {
     payload.append('slug', nextSlug);
     if (editor.imageFile) {
       payload.append('image', editor.imageFile);
+    } else if (editor.removeImage) {
+      payload.append('removeImage', 'true');
     }
 
     try {
@@ -1877,7 +1886,9 @@ const AdminPage = () => {
               const editor =
                 categorySectionEditors[categoryItem.slug] ??
                 createCategorySectionEditorState(categoryItem);
-              const previewSrc = editor.imagePreview ?? categoryItem.image;
+              const previewSrc = editor.removeImage
+                ? null
+                : editor.imagePreview ?? categoryItem.image;
 
               return (
                 <form
@@ -1938,6 +1949,17 @@ const AdminPage = () => {
                       <span>Изображение не загружено</span>
                     )}
                   </div>
+                  {previewSrc && (
+                    <button
+                      type="button"
+                      className="admin-section-remove-image"
+                      onClick={() => handleCategorySectionImageRemove(categoryItem.slug)}
+                      disabled={editor.isSubmitting}
+                    >
+                      <span className="link-button">Удалить</span>
+                      <DeleteCrossIcon />
+                    </button>
+                  )}
 
                   {editor.status && <p className="status-text">{editor.status}</p>}
                   {editor.error && <p className="status-text status-text--error">{editor.error}</p>}
