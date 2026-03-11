@@ -78,6 +78,8 @@ p{
 
 html {
   background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html.ui-top-white,
@@ -2708,4 +2710,26 @@ input[type='file'] {
     flex-direction: column;
   }
 
+}
+
+/* iPad / tablet Safari hardening for product cards */
+@media (min-width: 768px) and (max-width: 1180px) and (hover: none) and (pointer: coarse) {
+  .products-grid .slide {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .products-grid .product-info {
+    min-width: 0;
+  }
+
+  .products-grid .product-info h3 {
+    word-break: break-word;
+  }
+
+  .products-grid .slide .product-actions .primary-button,
+  .products-grid .slide .product-actions .ghost-button {
+    white-space: normal;
+    line-height: 1.2;
+  }
 }
