@@ -9,6 +9,11 @@ import { logSecurityEventFromRequest, maskPhone } from '../securityEvents';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+const normalizePhone = (value?: string | null) => (value ?? '').replace(/\D/g, '');
+
+const getSuperAdminPhone = () =>
+  normalizePhone(process.env.SUPER_ADMIN_PHONE ?? process.env.ADMIN_PHONE ?? '79964292550');
+
 const getCsrfHeaderValue = (req: Request) => {
   const value = req.header('x-csrf-token');
   return typeof value === 'string' ? value.trim() : '';
@@ -80,6 +85,29 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
       phoneMasked: maskPhone(req.user?.phone)
     });
     res.status(403).json({ error: '\u0414\u043e\u0441\u0442\u0443\u043f \u0437\u0430\u043f\u0440\u0435\u0449\u0435\u043d' });
+    return;
+  }
+
+  next();
+};
+
+export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
+  const superAdminPhone = getSuperAdminPhone();
+  const userPhone = normalizePhone(req.user?.phone);
+  const hasSuperAdminAccess =
+    Boolean(req.user) &&
+    req.user?.role === 'admin' &&
+    Boolean(superAdminPhone) &&
+    userPhone === superAdminPhone;
+
+  if (!hasSuperAdminAccess) {
+    logSecurityEventFromRequest(req, {
+      eventType: 'auth_forbidden',
+      reason: 'super_admin_required',
+      userId: req.user?.userId,
+      phoneMasked: maskPhone(req.user?.phone)
+    });
+    res.status(403).json({ error: 'Доступ запрещен' });
     return;
   }
 

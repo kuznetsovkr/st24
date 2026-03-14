@@ -83,7 +83,7 @@ import {
   updateUserProfile,
   upsertUser
 } from './db/users';
-import { authenticate, requireAdmin } from './middleware/auth';
+import { authenticate, requireAdmin, requireSuperAdmin } from './middleware/auth';
 import {
   reportTelegramVerificationStatus,
   sendPhoneVerificationCode,
@@ -136,6 +136,12 @@ import {
 } from './orderLifecycleEvents';
 import { logAdminAuditEvent } from './adminAuditEvents';
 import { logErrorEvent } from './errorEvents';
+import {
+  SUPER_ADMIN_LOG_KINDS,
+  isSuperAdminLogKind,
+  listSuperAdminLogs,
+  superAdminLogsToCsv
+} from './superAdminLogs';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
 
 const CODE_TTL_MINUTES = 5;
@@ -221,6 +227,9 @@ const parseTrustProxy = (value: string | undefined): boolean | number | string =
 
 const TRUST_PROXY = parseTrustProxy(process.env.TRUST_PROXY);
 const REQUEST_ID_HEADER = 'x-request-id';
+const SUPER_ADMIN_LOGS_PATH =
+  (process.env.SUPER_ADMIN_LOGS_PATH ?? '/api/private/super-admin/logs').trim() ||
+  '/api/private/super-admin/logs';
 
 const getOrCreateRequestId = (req: Request) => {
   const fromHeader = req.header(REQUEST_ID_HEADER)?.trim();
@@ -3604,6 +3613,87 @@ export const createApp = () => {
     otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
     res.json({ ok: true });
   });
+
+  app.get(
+    SUPER_ADMIN_LOGS_PATH,
+    authenticate,
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      const kindRaw = typeof req.query.kind === 'string' ? req.query.kind.trim() : '';
+      if (!kindRaw || !isSuperAdminLogKind(kindRaw)) {
+        res.status(400).json({
+          error: 'Некорректные данные запроса',
+          availableKinds: SUPER_ADMIN_LOG_KINDS
+        });
+        return;
+      }
+
+      const formatRaw = typeof req.query.format === 'string' ? req.query.format.trim() : 'json';
+      const format = formatRaw === 'csv' ? 'csv' : formatRaw === 'json' ? 'json' : null;
+      if (!format) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
+
+      const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
+      const parsedLimit = limitRaw ? parsePositiveInt(limitRaw, 1, 10000) : 1000;
+      if (!parsedLimit) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
+      const limit = parsedLimit;
+
+      const offsetRaw = typeof req.query.offset === 'string' ? req.query.offset.trim() : '';
+      const parsedOffset = offsetRaw ? Number.parseInt(offsetRaw, 10) : 0;
+      if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
+      const offset = Math.floor(parsedOffset);
+
+      const fromRaw = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+      const toRaw = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+      const from = fromRaw || undefined;
+      const to = toRaw || undefined;
+
+      if ((from && Number.isNaN(Date.parse(from))) || (to && Number.isNaN(Date.parse(to)))) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
+
+      try {
+        const result = await listSuperAdminLogs({
+          kind: kindRaw,
+          from,
+          to,
+          limit,
+          offset
+        });
+
+        if (format === 'csv') {
+          const csv = superAdminLogsToCsv(result.columns, result.items);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const filename = `logs-${kindRaw}-${timestamp}.csv`;
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+          res.send(`\uFEFF${csv}`);
+          return;
+        }
+
+        res.json({
+          kind: kindRaw,
+          total: result.total,
+          limit,
+          offset,
+          from: from ?? null,
+          to: to ?? null,
+          items: result.items
+        });
+      } catch {
+        res.status(500).json({ error: 'Не удалось выполнить запрос' });
+      }
+    }
+  );
 
   app.get('/', (_req: Request, res: Response) => {
     res.json({ message: 'E-commerce API' });
