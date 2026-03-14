@@ -26,6 +26,10 @@ export type ProductSkuSearchResult = {
   total: number;
   usedFallback: boolean;
   fallbackPrefix: string | null;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
 };
 
 export type ProductListResult = {
@@ -250,18 +254,45 @@ export const deleteProduct = async (id: string): Promise<ProductRow | null> => {
 
 const SKU_NORMALIZED_SQL = `regexp_replace(lower(sku), '[^[:alnum:]]+', '', 'g')`;
 
-const buildLimitClause = (limit?: number) => {
+const normalizeSearchLimit = (limit?: number) => {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) {
-    return '';
+    return undefined;
   }
-  const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
-  return `LIMIT ${safeLimit}`;
+  return Math.max(1, Math.min(Math.trunc(limit), 200));
+};
+
+const normalizeSearchOffset = (offset?: number) => {
+  if (typeof offset !== 'number' || !Number.isFinite(offset)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(offset));
+};
+
+const buildPaginationClause = (
+  params: Array<string | number>,
+  limit: number | undefined,
+  offset: number
+) => {
+  let clause = '';
+  if (typeof limit === 'number') {
+    params.push(limit);
+    clause += `LIMIT $${params.length}\n        `;
+  }
+  if (offset > 0 || typeof limit === 'number') {
+    params.push(offset);
+    clause += `OFFSET $${params.length}`;
+  }
+  return clause;
 };
 
 export const searchProductsBySku = async (
   skuQuery: string,
-  limit?: number
+  limit?: number,
+  offset?: number
 ): Promise<ProductSkuSearchResult> => {
+  const safeLimit = normalizeSearchLimit(limit);
+  const safeOffset = normalizeSearchOffset(offset);
+
   const normalizedQuery = skuQuery
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, '');
@@ -270,11 +301,14 @@ export const searchProductsBySku = async (
       items: [],
       total: 0,
       usedFallback: false,
-      fallbackPrefix: null
+      fallbackPrefix: null,
+      limit: safeLimit ?? 0,
+      offset: safeOffset,
+      hasMore: false,
+      nextOffset: null
     };
   }
 
-  const limitClause = buildLimitClause(limit);
   const fallbackPrefix = normalizedQuery.slice(0, 4);
 
   const exactCountResult = await query(
@@ -289,6 +323,8 @@ export const searchProductsBySku = async (
   const exactTotal = Number(exactCountResult.rows[0]?.count ?? 0);
 
   if (exactTotal > 0) {
+    const exactItemsParams: Array<string | number> = [normalizedQuery];
+    const exactPaginationClause = buildPaginationClause(exactItemsParams, safeLimit, safeOffset);
     const exactItemsResult = await query(
       `
         SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
@@ -299,16 +335,23 @@ export const searchProductsBySku = async (
           CASE WHEN ${SKU_NORMALIZED_SQL} = $1 THEN 0 ELSE 1 END,
           LENGTH(${SKU_NORMALIZED_SQL}) ASC,
           created_at DESC
-        ${limitClause};
+        ${exactPaginationClause};
       `,
-      [normalizedQuery]
+      exactItemsParams
     );
+    const exactItems = exactItemsResult.rows as ProductRow[];
+    const exactNextOffset = safeOffset + exactItems.length;
+    const exactHasMore = exactNextOffset < exactTotal;
 
     return {
-      items: exactItemsResult.rows as ProductRow[],
+      items: exactItems,
       total: exactTotal,
       usedFallback: false,
-      fallbackPrefix: null
+      fallbackPrefix: null,
+      limit: safeLimit ?? exactItems.length,
+      offset: safeOffset,
+      hasMore: exactHasMore,
+      nextOffset: exactHasMore ? exactNextOffset : null
     };
   }
 
@@ -317,7 +360,11 @@ export const searchProductsBySku = async (
       items: [],
       total: 0,
       usedFallback: false,
-      fallbackPrefix: null
+      fallbackPrefix: null,
+      limit: safeLimit ?? 0,
+      offset: safeOffset,
+      hasMore: false,
+      nextOffset: null
     };
   }
 
@@ -337,10 +384,16 @@ export const searchProductsBySku = async (
       items: [],
       total: 0,
       usedFallback: true,
-      fallbackPrefix
+      fallbackPrefix,
+      limit: safeLimit ?? 0,
+      offset: safeOffset,
+      hasMore: false,
+      nextOffset: null
     };
   }
 
+  const fallbackItemsParams: Array<string | number> = [fallbackPrefix];
+  const fallbackPaginationClause = buildPaginationClause(fallbackItemsParams, safeLimit, safeOffset);
   const fallbackItemsResult = await query(
     `
       SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
@@ -348,15 +401,22 @@ export const searchProductsBySku = async (
       WHERE ${SKU_NORMALIZED_SQL} LIKE $1 || '%'
         AND is_hidden = FALSE
       ORDER BY created_at DESC
-      ${limitClause};
+      ${fallbackPaginationClause};
     `,
-    [fallbackPrefix]
+    fallbackItemsParams
   );
+  const fallbackItems = fallbackItemsResult.rows as ProductRow[];
+  const fallbackNextOffset = safeOffset + fallbackItems.length;
+  const fallbackHasMore = fallbackNextOffset < fallbackTotal;
 
   return {
-    items: fallbackItemsResult.rows as ProductRow[],
+    items: fallbackItems,
     total: fallbackTotal,
     usedFallback: true,
-    fallbackPrefix
+    fallbackPrefix,
+    limit: safeLimit ?? fallbackItems.length,
+    offset: safeOffset,
+    hasMore: fallbackHasMore,
+    nextOffset: fallbackHasMore ? fallbackNextOffset : null
   };
 };

@@ -31,6 +31,10 @@ export type ProductSkuSearchResult = {
   total: number;
   usedFallback: boolean;
   fallbackPrefix: string | null;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
 };
 
 export type BoxType = {
@@ -374,35 +378,97 @@ export const fetchProducts = async (options?: {
   return page.items;
 };
 
-export const searchProductsBySku = async (sku: string, limit?: number) => {
+export const searchProductsBySku = async (
+  sku: string,
+  options?: number | { limit?: number; offset?: number }
+) => {
+  const requestedLimit =
+    typeof options === 'number'
+      ? options
+      : typeof options?.limit === 'number'
+      ? options.limit
+      : undefined;
+  const requestedOffset =
+    typeof options === 'object' && options !== null && typeof options.offset === 'number'
+      ? options.offset
+      : 0;
+
   const normalizedSku = sku.trim();
+  const normalizedLimit =
+    typeof requestedLimit === 'number' && Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.trunc(requestedLimit)
+      : undefined;
+  const normalizedOffset =
+    typeof requestedOffset === 'number' && Number.isFinite(requestedOffset) && requestedOffset >= 0
+      ? Math.trunc(requestedOffset)
+      : 0;
+
   if (!normalizedSku) {
     return {
       items: [],
       total: 0,
       usedFallback: false,
-      fallbackPrefix: null
+      fallbackPrefix: null,
+      limit: normalizedLimit ?? 0,
+      offset: normalizedOffset,
+      hasMore: false,
+      nextOffset: null
     } satisfies ProductSkuSearchResult;
   }
 
   const url = new URL(`${API_BASE}/api/products/search`);
   url.searchParams.set('sku', normalizedSku);
-  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) {
-    url.searchParams.set('limit', String(Math.trunc(limit)));
+  if (typeof normalizedLimit === 'number') {
+    url.searchParams.set('limit', String(normalizedLimit));
+  }
+  if (normalizedOffset > 0) {
+    url.searchParams.set('offset', String(normalizedOffset));
   }
 
   const data = await fetchJson<{
     items: Product[];
-    total: number;
-    usedFallback: boolean;
-    fallbackPrefix: string | null;
+    total?: number;
+    usedFallback?: boolean;
+    fallbackPrefix?: string | null;
+    limit?: number;
+    offset?: number;
+    hasMore?: boolean;
+    nextOffset?: number | null;
   }>(url.toString());
 
+  const normalizedItems = data.items.map(normalizeProduct);
+  const resolvedOffset =
+    typeof data.offset === 'number' && Number.isFinite(data.offset)
+      ? Math.trunc(data.offset)
+      : normalizedOffset;
+  const resolvedLimit =
+    typeof data.limit === 'number' && Number.isFinite(data.limit)
+      ? Math.trunc(data.limit)
+      : normalizedLimit ?? normalizedItems.length;
+  const resolvedTotal =
+    typeof data.total === 'number' && Number.isFinite(data.total)
+      ? Math.trunc(data.total)
+      : resolvedOffset + normalizedItems.length;
+  const resolvedHasMore =
+    typeof data.hasMore === 'boolean'
+      ? data.hasMore
+      : resolvedOffset + normalizedItems.length < resolvedTotal;
+  const resolvedNextOffset =
+    typeof data.nextOffset === 'number' && Number.isFinite(data.nextOffset)
+      ? Math.trunc(data.nextOffset)
+      : resolvedHasMore
+      ? resolvedOffset + normalizedItems.length
+      : null;
+
   return {
-    items: data.items.map(normalizeProduct),
-    total: data.total,
-    usedFallback: data.usedFallback,
-    fallbackPrefix: data.fallbackPrefix
+    items: normalizedItems,
+    total: resolvedTotal,
+    usedFallback: Boolean(data.usedFallback),
+    fallbackPrefix: typeof data.fallbackPrefix === 'string' ? data.fallbackPrefix : null,
+    limit: resolvedLimit,
+    offset: resolvedOffset,
+    hasMore: resolvedHasMore,
+    nextOffset: resolvedNextOffset
   } satisfies ProductSkuSearchResult;
 };
 

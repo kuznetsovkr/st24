@@ -1973,26 +1973,40 @@ export const createApp = () => {
   app.get('/api/products/search', async (req: Request, res: Response) => {
     const sku = typeof req.query.sku === 'string' ? req.query.sku.trim() : '';
     const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
-    const limitParsed = Number.parseInt(limitRaw, 10);
-    const limit = Number.isFinite(limitParsed) && limitParsed > 0 ? limitParsed : undefined;
+    const offsetRaw = typeof req.query.offset === 'string' ? req.query.offset.trim() : '';
+    const limit = limitRaw ? parsePositiveInt(limitRaw, 1, PRODUCTS_PAGE_LIMIT_MAX) : undefined;
+    const offset = offsetRaw ? parsePositiveInt(offsetRaw, 0, 1_000_000) : 0;
+
+    if ((limitRaw && limit === null) || offset === null) {
+      res.status(400).json({ error: 'Invalid request data' });
+      return;
+    }
 
     if (!sku) {
       res.json({
         items: [],
         total: 0,
         usedFallback: false,
-        fallbackPrefix: null
+        fallbackPrefix: null,
+        limit: limit ?? 0,
+        offset,
+        hasMore: false,
+        nextOffset: null
       });
       return;
     }
 
     try {
-      const result = await searchProductsBySku(sku, limit);
+      const result = await searchProductsBySku(sku, limit ?? undefined, offset);
       res.json({
         items: result.items.map(mapProduct),
         total: result.total,
         usedFallback: result.usedFallback,
-        fallbackPrefix: result.fallbackPrefix
+        fallbackPrefix: result.fallbackPrefix,
+        limit: result.limit,
+        offset: result.offset,
+        hasMore: result.hasMore,
+        nextOffset: result.nextOffset
       });
     } catch {
       res.status(500).json({ error: 'Не удалось выполнить запрос' });
