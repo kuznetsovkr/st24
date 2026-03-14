@@ -155,7 +155,7 @@ const OrderSuccessPage = () => {
           <h1>Заказ №{order.orderNumber} оформлен</h1>
         </div>
       </header>
-      <div className="card">
+      <div className="card" style={{ border: 'none' }}>
         <div className="need-part-success" role="status" aria-live="polite">
           <div className="need-part-success-icon" aria-hidden="true">
             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="13" viewBox="0 0 17 13" fill="none">
@@ -170,7 +170,7 @@ const OrderSuccessPage = () => {
           </div>
           <p className="status-text need-part-success-text">Спасибо за заказ.</p>
         </div>
-        <p className="muted">
+        <p className="muted"  style={{ textAlign: 'center' }}>
           Статус оплаты: <strong>{paymentStatusLabel}</strong>
         </p>
         <div className="button-row">
