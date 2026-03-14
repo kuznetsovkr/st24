@@ -388,6 +388,14 @@ const B2B_REQUEST_RATE_LIMIT_MAX = parsePositiveEnvInt(
   process.env.B2B_REQUEST_RATE_LIMIT_MAX,
   3
 );
+const PRODUCTS_PAGE_LIMIT_DEFAULT = parsePositiveEnvInt(
+  process.env.PRODUCTS_PAGE_LIMIT_DEFAULT,
+  24
+);
+const PRODUCTS_PAGE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.PRODUCTS_PAGE_LIMIT_MAX,
+  100
+);
 
 type RateLimitState = {
   count: number;
@@ -1912,6 +1920,17 @@ export const createApp = () => {
     const category = typeof req.query.category === 'string' ? req.query.category : undefined;
     const featured = req.query.featured === 'true';
     const includeHidden = req.query.includeHidden === 'true';
+    const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
+    const offsetRaw = typeof req.query.offset === 'string' ? req.query.offset.trim() : '';
+    const parsedLimit = limitRaw
+      ? parsePositiveInt(limitRaw, 1, PRODUCTS_PAGE_LIMIT_MAX)
+      : PRODUCTS_PAGE_LIMIT_DEFAULT;
+    const parsedOffset = offsetRaw ? parsePositiveInt(offsetRaw, 0, 1_000_000) : 0;
+
+    if (parsedLimit === null || parsedOffset === null) {
+      res.status(400).json({ error: 'Invalid request data' });
+      return;
+    }
 
     if (includeHidden) {
       const { token } = getRequestAuthToken(req);
@@ -1931,8 +1950,23 @@ export const createApp = () => {
       }
     }
 
-    listProducts(category, featured, includeHidden)
-      .then((items) => res.json({ items: items.map(mapProduct) }))
+    listProducts({
+      category,
+      featured,
+      includeHidden,
+      limit: parsedLimit,
+      offset: parsedOffset
+    })
+      .then((result) =>
+        res.json({
+          items: result.items.map(mapProduct),
+          total: result.total,
+          limit: result.limit,
+          offset: result.offset,
+          hasMore: result.hasMore,
+          nextOffset: result.nextOffset
+        })
+      )
       .catch(() => res.status(500).json({ error: 'Не удалось загрузить товары' }));
   });
 

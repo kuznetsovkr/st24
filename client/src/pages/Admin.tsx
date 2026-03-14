@@ -361,7 +361,7 @@ const AdminPage = () => {
     try {
       const [categoryItems, productItems, boxItems, deliveryItems, banner] = await Promise.all([
         fetchCategories(),
-        fetchProducts({ includeHidden: true }),
+        fetchProducts({ includeHidden: true, limit: 500 }),
         fetchBoxTypes(),
         fetchDeliveryProviders(),
         fetchHomeBanner()

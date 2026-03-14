@@ -162,6 +162,15 @@ export type ShippingEstimate = {
   quoteToken: string;
 };
 
+export type ProductsPage = {
+  items: Product[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
 export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 const CSRF_COOKIE_NAME = 'her_csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -276,14 +285,18 @@ export const deleteCategorySection = async (slug: string) => {
   });
 };
 
-export const fetchProducts = async (options?: {
+export const fetchProductsPage = async (options?: {
   category?: string;
   featured?: boolean;
   includeHidden?: boolean;
+  limit?: number;
+  offset?: number;
 }) => {
   const category = options?.category;
   const featured = options?.featured;
   const includeHidden = options?.includeHidden;
+  const limit = options?.limit;
+  const offset = options?.offset;
   const url = new URL(`${API_BASE}/api/products`);
   if (category) {
     url.searchParams.set('category', category);
@@ -294,10 +307,71 @@ export const fetchProducts = async (options?: {
   if (includeHidden) {
     url.searchParams.set('includeHidden', 'true');
   }
-  const data = await fetchJson<{ items: Product[] }>(url.toString(), {
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) {
+    url.searchParams.set('limit', String(Math.trunc(limit)));
+  }
+  if (typeof offset === 'number' && Number.isFinite(offset) && offset >= 0) {
+    url.searchParams.set('offset', String(Math.trunc(offset)));
+  }
+
+  const data = await fetchJson<{
+    items: Product[];
+    total?: number;
+    limit?: number;
+    offset?: number;
+    hasMore?: boolean;
+    nextOffset?: number | null;
+  }>(url.toString(), {
     headers: includeHidden ? authHeaders() : undefined
   });
-  return data.items.map(normalizeProduct);
+
+  const normalizedItems = data.items.map(normalizeProduct);
+  const resolvedLimit =
+    typeof data.limit === 'number' && Number.isFinite(data.limit)
+      ? Math.trunc(data.limit)
+      : typeof limit === 'number' && Number.isFinite(limit)
+      ? Math.trunc(limit)
+      : normalizedItems.length;
+  const resolvedOffset =
+    typeof data.offset === 'number' && Number.isFinite(data.offset)
+      ? Math.trunc(data.offset)
+      : typeof offset === 'number' && Number.isFinite(offset)
+      ? Math.trunc(offset)
+      : 0;
+  const resolvedTotal =
+    typeof data.total === 'number' && Number.isFinite(data.total)
+      ? Math.trunc(data.total)
+      : resolvedOffset + normalizedItems.length;
+  const resolvedHasMore =
+    typeof data.hasMore === 'boolean'
+      ? data.hasMore
+      : resolvedOffset + normalizedItems.length < resolvedTotal;
+  const resolvedNextOffset =
+    typeof data.nextOffset === 'number' && Number.isFinite(data.nextOffset)
+      ? Math.trunc(data.nextOffset)
+      : resolvedHasMore
+      ? resolvedOffset + normalizedItems.length
+      : null;
+
+  return {
+    items: normalizedItems,
+    total: resolvedTotal,
+    limit: resolvedLimit,
+    offset: resolvedOffset,
+    hasMore: resolvedHasMore,
+    nextOffset: resolvedNextOffset
+  } satisfies ProductsPage;
+};
+
+export const fetchProducts = async (options?: {
+  category?: string;
+  featured?: boolean;
+  includeHidden?: boolean;
+  limit?: number;
+  offset?: number;
+}) => {
+  const page = await fetchProductsPage(options);
+  return page.items;
 };
 
 export const searchProductsBySku = async (sku: string, limit?: number) => {

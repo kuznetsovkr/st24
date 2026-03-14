@@ -28,6 +28,23 @@ export type ProductSkuSearchResult = {
   fallbackPrefix: string | null;
 };
 
+export type ProductListResult = {
+  items: ProductRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
+type ListProductsInput = {
+  category?: string;
+  featured?: boolean;
+  includeHidden?: boolean;
+  limit: number;
+  offset: number;
+};
+
 type ProductInput = {
   name: string;
   sku: string;
@@ -45,11 +62,13 @@ type ProductInput = {
   isHidden: boolean;
 };
 
-export const listProducts = async (
-  category?: string,
-  featured?: boolean,
-  includeHidden?: boolean
-): Promise<ProductRow[]> => {
+export const listProducts = async ({
+  category,
+  featured,
+  includeHidden,
+  limit,
+  offset
+}: ListProductsInput): Promise<ProductListResult> => {
   const conditions: string[] = [];
   const values: Array<string | number | string[] | null> = [];
 
@@ -70,17 +89,44 @@ export const listProducts = async (
   const orderBy = featured
     ? 'ORDER BY slider_order ASC, created_at DESC'
     : 'ORDER BY created_at DESC';
+
+  const countResult = await query(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM products
+      ${whereClause};
+    `,
+    values
+  );
+  const total = Number(countResult.rows[0]?.count ?? 0);
+
+  const rowsParams = [...values, limit, offset];
+  const limitParamIndex = values.length + 1;
+  const offsetParamIndex = values.length + 2;
   const result = await query(
     `
       SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
       FROM products
       ${whereClause}
-      ${orderBy};
+      ${orderBy}
+      LIMIT $${limitParamIndex}
+      OFFSET $${offsetParamIndex};
     `,
-    values
+    rowsParams
   );
 
-  return result.rows as ProductRow[];
+  const items = result.rows as ProductRow[];
+  const nextOffset = offset + items.length;
+  const hasMore = nextOffset < total;
+
+  return {
+    items,
+    total,
+    limit,
+    offset,
+    hasMore,
+    nextOffset: hasMore ? nextOffset : null
+  };
 };
 
 export const findProductById = async (id: string): Promise<ProductRow | null> => {

@@ -35,7 +35,7 @@ const HomePage = () => {
 
     const load = async () => {
       try {
-        const items = await fetchProducts({ featured: true });
+        const items = await fetchProducts({ featured: true, limit: 120 });
         if (!active) {
           return;
         }
