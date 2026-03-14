@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { requestAuthCode, setAuthToken, verifyAuthCode } from '../api';
+import { requestAuthCode, verifyAuthCode } from '../api';
 import TurnstileWidget from './TurnstileWidget.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
@@ -199,7 +199,6 @@ const AuthModal = () => {
           ? await verifyAuthCode(phone.trim(), '', password.trim())
           : await verifyAuthCode(phone.trim(), code.trim());
 
-      setAuthToken(result.token);
       setUser(result.user);
       await mergeWithServer();
       closeAuthModal();

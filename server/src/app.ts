@@ -4,7 +4,16 @@ import multer from 'multer';
 import fs from 'fs';
 import { randomInt, randomUUID } from 'crypto';
 import path from 'path';
-import { signToken, verifyToken } from './auth';
+import {
+  CSRF_COOKIE_NAME,
+  clearAuthCookies,
+  createCsrfToken,
+  getCookieValue,
+  getRequestAuthToken,
+  setAuthCookies,
+  signToken,
+  verifyToken
+} from './auth';
 import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
 import { findAuthCode, saveAuthCode, deleteAuthCode } from './db/authCodes';
 import {
@@ -199,6 +208,32 @@ const parseTrustProxy = (value: string | undefined): boolean | number | string =
 };
 
 const TRUST_PROXY = parseTrustProxy(process.env.TRUST_PROXY);
+
+const parseOriginList = (value: string | undefined) =>
+  (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const resolveCorsAllowedOrigins = () => {
+  const allowed = [
+    ...parseOriginList(process.env.CORS_ALLOWED_ORIGINS),
+    ...parseOriginList(
+    process.env.CORS_ORIGIN ?? process.env.CLIENT_URL ?? process.env.FRONTEND_URL
+    )
+  ];
+
+  if (allowed.length > 0) {
+    return new Set(allowed);
+  }
+
+  return null;
+};
+
+const CORS_ALLOWED_ORIGINS = resolveCorsAllowedOrigins();
+
+const isCorsOriginAllowed = (origin: string) =>
+  !CORS_ALLOWED_ORIGINS || CORS_ALLOWED_ORIGINS.has(origin);
 
 const normalizeIp = (value: string | undefined) => {
   if (!value) {
@@ -1018,7 +1053,18 @@ export const createApp = () => {
   const app = express();
   app.set('trust proxy', TRUST_PROXY);
 
-  app.use(cors());
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin || isCorsOriginAllowed(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(null, false);
+      },
+      credentials: true
+    })
+  );
   app.use(
     express.json({
       limit: '2mb',
@@ -1679,13 +1725,13 @@ export const createApp = () => {
     const includeHidden = req.query.includeHidden === 'true';
 
     if (includeHidden) {
-      const header = req.headers.authorization;
-      if (!header) {
+      const { token } = getRequestAuthToken(req);
+      if (!token) {
         res.status(403).json({ error: 'Forbidden' });
         return;
       }
       try {
-        const payload = verifyToken(header.replace('Bearer ', ''));
+        const payload = verifyToken(token);
         if (payload.role !== 'admin') {
           res.status(403).json({ error: 'Forbidden' });
           return;
@@ -2805,8 +2851,15 @@ export const createApp = () => {
       }
       otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
       const user = await upsertUser(phone, 'admin');
-      const token = signToken({ userId: user.id, phone: user.phone, role: user.role });
-      res.json({ token, user: mapUser(user) });
+      const csrfToken = createCsrfToken();
+      const token = signToken({
+        userId: user.id,
+        phone: user.phone,
+        role: user.role,
+        csrfToken
+      });
+      setAuthCookies(res, token, csrfToken);
+      res.json({ user: mapUser(user) });
       return;
     }
 
@@ -2843,8 +2896,15 @@ export const createApp = () => {
 
     const role = phone === getAdminPhone() ? 'admin' : 'user';
     const user = await upsertUser(phone, role);
-    const token = signToken({ userId: user.id, phone: user.phone, role: user.role });
-    res.json({ token, user: mapUser(user) });
+    const csrfToken = createCsrfToken();
+    const token = signToken({
+      userId: user.id,
+      phone: user.phone,
+      role: user.role,
+      csrfToken
+    });
+    setAuthCookies(res, token, csrfToken);
+    res.json({ user: mapUser(user) });
   });
 
   app.get('/api/auth/me', authenticate, async (req: Request, res: Response) => {
@@ -2861,6 +2921,31 @@ export const createApp = () => {
     }
 
     res.json(mapUser(user));
+  });
+
+  app.post('/api/auth/logout', (req: Request, res: Response) => {
+    const { token, source } = getRequestAuthToken(req);
+    if (token && source === 'cookie') {
+      try {
+        const payload = verifyToken(token);
+        const csrfHeader = req.header('x-csrf-token')?.trim() ?? '';
+        const csrfCookie = getCookieValue(req, CSRF_COOKIE_NAME) ?? '';
+        if (
+          !csrfHeader ||
+          !csrfCookie ||
+          csrfHeader !== csrfCookie ||
+          csrfHeader !== payload.csrfToken
+        ) {
+          res.status(403).json({ error: 'Invalid CSRF token' });
+          return;
+        }
+      } catch {
+        // Clear stale cookies even if the session token can no longer be verified.
+      }
+    }
+
+    clearAuthCookies(res);
+    res.json({ ok: true });
   });
 
   app.put('/api/profile', authenticate, async (req: Request, res: Response) => {

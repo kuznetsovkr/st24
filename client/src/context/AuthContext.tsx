@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { clearAuthToken, fetchMe, getAuthToken } from '../api.ts';
+import { fetchMe, logout as logoutRequest } from '../api.ts';
 import type { AuthUser } from '../api.ts';
 
 type AuthStatus = 'loading' | 'guest' | 'auth';
@@ -25,22 +25,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
-    clearAuthToken();
+    void logoutRequest();
     setUser(null);
   };
 
   const refresh = async () => {
-    const token = getAuthToken();
-    if (!token) {
-      setUser(null);
-      return;
-    }
-
     try {
       const data = await fetchMe();
       setUser(data);
     } catch {
-      clearAuthToken();
       setUser(null);
     }
   };

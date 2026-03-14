@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import {
   createBoxType,
-  clearAuthToken,
   createProduct,
   deleteCategorySection,
   deleteBoxType,
@@ -13,9 +12,8 @@ import {
   fetchHomeBanner,
   fetchMe,
   fetchProducts,
-  getAuthToken,
+  logout as logoutAuth,
   requestAuthCode,
-  setAuthToken,
   updateCategorySection,
   updateDeliveryProvider,
   updateHomeBanner,
@@ -348,19 +346,12 @@ const AdminPage = () => {
   }, [fontTheme]);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      setAuthStatus('guest');
-      return;
-    }
-
     fetchMe()
       .then((user) => {
         setAuthUser(user);
         setAuthStatus('auth');
       })
       .catch(() => {
-        clearAuthToken();
         setAuthStatus('guest');
       });
   }, []);
@@ -1234,7 +1225,6 @@ const AdminPage = () => {
         authMode === 'password'
           ? await verifyAuthCode(phone.trim(), '', password.trim())
           : await verifyAuthCode(phone.trim(), code.trim());
-      setAuthToken(result.token);
       setAuthUser(result.user);
       setAuthStatus('auth');
       setCode('');
@@ -1248,7 +1238,7 @@ const AdminPage = () => {
   };
 
   const handleLogout = () => {
-    clearAuthToken();
+    void logoutAuth();
     setAuthUser(null);
     setAuthStatus('guest');
   };

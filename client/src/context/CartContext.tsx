@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { fetchCart, getAuthToken, mergeCart, syncCart } from '../api.ts';
+import { fetchCart, mergeCart, syncCart } from '../api.ts';
 
 export type CartItem = {
   id: string;
@@ -36,6 +36,17 @@ type CartContextValue = {
 
 const CartContext = createContext<CartContextValue | undefined>(undefined);
 const STORAGE_KEY = 'her_cart_v1';
+const CSRF_COOKIE_NAME = 'her_csrf_token';
+
+const hasCsrfCookie = () => {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return document.cookie
+    .split(';')
+    .some((part) => part.trim().startsWith(`${CSRF_COOKIE_NAME}=`));
+};
 
 const loadCart = (): CartEntry[] => {
   if (typeof window === 'undefined') {
@@ -57,6 +68,7 @@ const loadCart = (): CartEntry[] => {
 export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [items, setItems] = useState<CartEntry[]>(() => loadCart());
   const [hydrated, setHydrated] = useState(false);
+  const [hasServerSession, setHasServerSession] = useState(false);
   const skipNextSync = useRef(true);
   const syncTimeout = useRef<number | null>(null);
 
@@ -77,8 +89,8 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasCsrfCookie()) {
+      setHasServerSession(false);
       setHydrated(true);
       return;
     }
@@ -89,10 +101,16 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         if (!active) {
           return;
         }
+        setHasServerSession(true);
         skipNextSync.current = true;
         setItems(serverItems);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setHasServerSession(false);
+      })
       .finally(() => {
         if (active) {
           setHydrated(true);
@@ -113,8 +131,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasServerSession || !hasCsrfCookie()) {
       return;
     }
 
@@ -128,7 +145,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
 
     syncTimeout.current = window.setTimeout(() => {
-      syncCart(toSyncPayload(items)).catch(() => {});
+      syncCart(toSyncPayload(items)).catch(() => {
+        setHasServerSession(false);
+      });
     }, 400);
 
     return () => {
@@ -136,7 +155,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         window.clearTimeout(syncTimeout.current);
       }
     };
-  }, [hydrated, items]);
+  }, [hydrated, hasServerSession, items]);
 
   const addItem = (item: CartItem, quantity = 1) => {
     if (quantity <= 0) {
@@ -204,17 +223,19 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const getQuantity = (id: string) => items.find((entry) => entry.id === id)?.quantity ?? 0;
 
   const mergeWithServer = async () => {
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasCsrfCookie()) {
+      setHasServerSession(false);
       setHydrated(true);
       return;
     }
 
     try {
       const merged = await mergeCart(toSyncPayload(items));
+      setHasServerSession(true);
       skipNextSync.current = true;
       setItems(merged);
     } catch {
+      setHasServerSession(false);
       // ignore sync errors to keep local cart usable
     } finally {
       setHydrated(true);
@@ -222,27 +243,37 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const refreshFromServer = async () => {
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasServerSession || !hasCsrfCookie()) {
       return items;
     }
 
-    const serverItems = await fetchCart();
-    skipNextSync.current = true;
-    setItems(serverItems);
-    return serverItems;
+    try {
+      const serverItems = await fetchCart();
+      setHasServerSession(true);
+      skipNextSync.current = true;
+      setItems(serverItems);
+      return serverItems;
+    } catch {
+      setHasServerSession(false);
+      return items;
+    }
   };
 
   const syncWithServer = async () => {
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasServerSession || !hasCsrfCookie()) {
       return items;
     }
 
-    const synced = await syncCart(toSyncPayload(items));
-    skipNextSync.current = true;
-    setItems(synced);
-    return synced;
+    try {
+      const synced = await syncCart(toSyncPayload(items));
+      setHasServerSession(true);
+      skipNextSync.current = true;
+      setItems(synced);
+      return synced;
+    } catch {
+      setHasServerSession(false);
+      return items;
+    }
   };
 
   const totals = useMemo(() => {

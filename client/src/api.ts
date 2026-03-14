@@ -163,16 +163,35 @@ export type ShippingEstimate = {
 };
 
 export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
-const TOKEN_KEY = 'her_auth_token';
+const CSRF_COOKIE_NAME = 'her_csrf_token';
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-export const getAuthToken = () => localStorage.getItem(TOKEN_KEY);
-export const setAuthToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
-export const clearAuthToken = () => localStorage.removeItem(TOKEN_KEY);
+const getCookieValue = (name: string) => {
+  if (typeof document === 'undefined') {
+    return null;
+  }
 
-const authHeaders = (): Record<string, string> => {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escapedName}=([^;]*)`));
+  if (!match?.[1]) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 };
+
+const clearCsrfCookie = () => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.cookie = `${CSRF_COOKIE_NAME}=; Max-Age=0; Path=/`;
+};
+
+const authHeaders = (): Record<string, string> => ({});
 
 const normalizeImageUrl = (value: string) => {
   if (!value) {
@@ -214,7 +233,21 @@ const normalizeCatalogPage = (page: CatalogPageSettings): CatalogPageSettings =>
 });
 
 const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
-  const response = await fetch(url, options);
+  const method = (options?.method ?? 'GET').toUpperCase();
+  const headers = new Headers(options?.headers);
+
+  if (!SAFE_METHODS.has(method)) {
+    const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
+    if (csrfToken && !headers.has('X-CSRF-Token')) {
+      headers.set('X-CSRF-Token', csrfToken);
+    }
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    credentials: 'include',
+    headers
+  });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || 'Request failed');
@@ -520,11 +553,21 @@ export const requestAuthCode = async (
 };
 
 export const verifyAuthCode = async (phone: string, code: string, password?: string) => {
-  return fetchJson<{ token: string; user: AuthUser }>(`${API_BASE}/api/auth/verify`, {
+  return fetchJson<{ user: AuthUser }>(`${API_BASE}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, code, password })
   });
+};
+
+export const logout = async () => {
+  try {
+    await fetchJson<{ ok: boolean }>(`${API_BASE}/api/auth/logout`, {
+      method: 'POST'
+    });
+  } finally {
+    clearCsrfCookie();
+  }
 };
 
 export const fetchMe = async () => {
