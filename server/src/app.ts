@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
+import { randomInt } from 'crypto';
 import path from 'path';
 import { signToken, verifyToken } from './auth';
 import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
@@ -157,15 +158,40 @@ const getTelegramOrdersWebhookSecret = () =>
   process.env.TELEGRAM_ORDERS_WEBHOOK_SECRET;
 const getTelegramB2BWebhookSecret = () => process.env.TELEGRAM_B2B_WEBHOOK_SECRET;
 
+const parseTrustProxy = (value: string | undefined): boolean | number | string => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (normalized === 'true' || normalized === '1') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0') {
+    return false;
+  }
+
+  const asNumber = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return asNumber;
+  }
+
+  return trimmed;
+};
+
+const TRUST_PROXY = parseTrustProxy(process.env.TRUST_PROXY);
+
+const normalizeIp = (value: string | undefined) => {
+  if (!value) {
+    return undefined;
+  }
+  return value.startsWith('::ffff:') ? value.slice(7) : value;
+};
+
 const getRequestIp = (req: Request) => {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0]?.trim() || undefined;
-  }
-  if (Array.isArray(forwarded) && forwarded.length > 0) {
-    return forwarded[0]?.trim() || undefined;
-  }
-  return req.socket.remoteAddress || undefined;
+  const fromExpress = typeof req.ip === 'string' ? req.ip : undefined;
+  return normalizeIp(fromExpress ?? req.socket.remoteAddress ?? undefined);
 };
 
 const parsePositiveEnvInt = (value: string | undefined, fallback: number) => {
@@ -187,57 +213,109 @@ const PHONE_CODE_RATE_LIMIT_MAX = parsePositiveEnvInt(
   process.env.PHONE_CODE_RATE_LIMIT_MAX,
   5
 );
+const OTP_VERIFY_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.OTP_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
+  600
+);
+const OTP_VERIFY_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.OTP_VERIFY_RATE_LIMIT_MAX,
+  10
+);
+const EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
+  600
+);
+const EMAIL_VERIFY_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.EMAIL_VERIFY_RATE_LIMIT_MAX,
+  10
+);
 
-type PhoneCodeRateLimitState = {
+type RateLimitState = {
   count: number;
   resetAt: number;
 };
 
-const phoneCodeRateLimitStore = new Map<string, PhoneCodeRateLimitState>();
-let phoneCodeRateLimitLastCleanup = 0;
+type RateLimitResult = {
+  allowed: boolean;
+  retryAfterSeconds: number;
+};
 
-const consumePhoneCodeRateLimit = (scope: string, ip: string | undefined, phone: string) => {
-  const now = Date.now();
-  const key = `${scope}:${ip ?? 'unknown'}:${phone}`;
-  const windowMs = PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS * 1000;
-  const limit = PHONE_CODE_RATE_LIMIT_MAX;
+type ScopedRateLimiter = {
+  consume: (scope: string, ip: string | undefined, subject: string) => RateLimitResult;
+  reset: (scope: string, ip: string | undefined, subject: string) => void;
+};
 
-  if (now - phoneCodeRateLimitLastCleanup > windowMs) {
-    for (const [storeKey, state] of phoneCodeRateLimitStore.entries()) {
-      if (state.resetAt <= now) {
-        phoneCodeRateLimitStore.delete(storeKey);
+const createScopedRateLimiter = (windowSeconds: number, max: number): ScopedRateLimiter => {
+  const store = new Map<string, RateLimitState>();
+  let lastCleanup = 0;
+  const windowMs = windowSeconds * 1000;
+  const keyOf = (scope: string, ip: string | undefined, subject: string) =>
+    `${scope}:${ip ?? 'unknown'}:${subject}`;
+
+  const consume = (
+    scope: string,
+    ip: string | undefined,
+    subject: string
+  ): RateLimitResult => {
+    const now = Date.now();
+    const key = keyOf(scope, ip, subject);
+
+    if (now - lastCleanup > windowMs) {
+      for (const [storeKey, state] of store.entries()) {
+        if (state.resetAt <= now) {
+          store.delete(storeKey);
+        }
       }
+      lastCleanup = now;
     }
-    phoneCodeRateLimitLastCleanup = now;
-  }
 
-  const existing = phoneCodeRateLimitStore.get(key);
-  if (!existing || existing.resetAt <= now) {
-    phoneCodeRateLimitStore.set(key, {
-      count: 1,
-      resetAt: now + windowMs
-    });
+    const existing = store.get(key);
+    if (!existing || existing.resetAt <= now) {
+      store.set(key, {
+        count: 1,
+        resetAt: now + windowMs
+      });
+      return {
+        allowed: true,
+        retryAfterSeconds: 0
+      };
+    }
+
+    if (existing.count >= max) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+      return {
+        allowed: false,
+        retryAfterSeconds
+      };
+    }
+
+    existing.count += 1;
+    store.set(key, existing);
     return {
       allowed: true,
       retryAfterSeconds: 0
     };
-  }
-
-  if (existing.count >= limit) {
-    const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
-    return {
-      allowed: false,
-      retryAfterSeconds
-    };
-  }
-
-  existing.count += 1;
-  phoneCodeRateLimitStore.set(key, existing);
-  return {
-    allowed: true,
-    retryAfterSeconds: 0
   };
+
+  const reset = (scope: string, ip: string | undefined, subject: string) => {
+    store.delete(keyOf(scope, ip, subject));
+  };
+
+  return { consume, reset };
 };
+
+const phoneCodeRequestRateLimiter = createScopedRateLimiter(
+  PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS,
+  PHONE_CODE_RATE_LIMIT_MAX
+);
+const otpVerifyRateLimiter = createScopedRateLimiter(
+  OTP_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
+  OTP_VERIFY_RATE_LIMIT_MAX
+);
+const emailVerifyRateLimiter = createScopedRateLimiter(
+  EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
+  EMAIL_VERIFY_RATE_LIMIT_MAX
+);
 
 const parsePriceCents = (value?: string) => {
   if (!value) {
@@ -310,9 +388,9 @@ const parsePositiveInt = (value?: string, min = 1, max = 100000) => {
 
 const generateNumericCode = (length: number) => {
   const safeLength = Math.max(1, Math.floor(length));
-  const min = Math.pow(10, safeLength - 1);
+  const min = safeLength === 1 ? 0 : Math.pow(10, safeLength - 1);
   const max = Math.pow(10, safeLength);
-  return String(Math.floor(min + Math.random() * (max - min)));
+  return String(randomInt(min, max)).padStart(safeLength, '0');
 };
 
 const parseIntegerField = (value: unknown, min: number, max: number) => {
@@ -737,6 +815,7 @@ const mapCartItem = (row: CartItemRow) => {
 
 export const createApp = () => {
   const app = express();
+  app.set('trust proxy', TRUST_PROXY);
 
   app.use(cors());
   app.use(
@@ -2269,12 +2348,13 @@ export const createApp = () => {
     const adminAuthMode = getAdminAuthMode();
     const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
     const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+    const requestIp = getRequestIp(req);
     if (!phone) {
       res.status(400).json({ error: 'Некорректный телефон' });
       return;
     }
 
-    const authRateLimit = consumePhoneCodeRateLimit('auth', getRequestIp(req), phone);
+    const authRateLimit = phoneCodeRequestRateLimiter.consume('auth', requestIp, phone);
     if (!authRateLimit.allowed) {
       res.setHeader('Retry-After', String(authRateLimit.retryAfterSeconds));
       res.status(429).json({
@@ -2294,7 +2374,7 @@ export const createApp = () => {
 
     if (isTurnstileEnabled() && !canSkipCaptchaForSmsFallback) {
       try {
-        await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
+        await verifyTurnstileToken(captchaToken, requestIp, 'request_phone_code');
       } catch (error) {
         res.status(400).json({
           error: error instanceof Error ? error.message : 'Не удалось подтвердить проверку'
@@ -2322,7 +2402,7 @@ export const createApp = () => {
         code,
         ttlMinutes: CODE_TTL_MINUTES,
         context: 'auth',
-        ip: getRequestIp(req),
+        ip: requestIp,
         preferredChannel
       });
 
@@ -2352,6 +2432,8 @@ export const createApp = () => {
     const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const adminAuthMode = getAdminAuthMode();
+    const requestIp = getRequestIp(req);
+    const verifyScope = 'auth_verify';
 
     if (!phone) {
       res.status(400).json({ error: 'Телефон обязателен' });
@@ -2368,10 +2450,19 @@ export const createApp = () => {
         res.status(400).json({ error: 'Пароль обязателен' });
         return;
       }
+      const verifyRateLimit = otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
+      if (!verifyRateLimit.allowed) {
+        res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
+        res.status(429).json({
+          error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+        });
+        return;
+      }
       if (password !== adminPassword) {
         res.status(400).json({ error: 'Неверный пароль' });
         return;
       }
+      otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
       const user = await upsertUser(phone, 'admin');
       const token = signToken({ userId: user.id, phone: user.phone, role: user.role });
       res.json({ token, user: mapUser(user) });
@@ -2383,6 +2474,14 @@ export const createApp = () => {
       return;
     }
 
+    const verifyRateLimit = otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
+    if (!verifyRateLimit.allowed) {
+      res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+      });
+      return;
+    }
     const stored = await findAuthCode(phone);
     if (stored?.delivery_channel === 'telegram_gateway' && stored.provider_request_id) {
       void reportTelegramVerificationStatus(stored.provider_request_id, code);
@@ -2399,6 +2498,7 @@ export const createApp = () => {
     }
 
     await deleteAuthCode(phone);
+    otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
 
     const role = phone === getAdminPhone() ? 'admin' : 'user';
     const user = await upsertUser(phone, role);
@@ -2532,9 +2632,20 @@ export const createApp = () => {
     const rawEmail = typeof req.body.email === 'string' ? req.body.email : '';
     const email = normalizeEmail(rawEmail);
     const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+    const requestIp = getRequestIp(req);
+    const verifyScope = 'profile_email_verify';
 
     if (!email || !code) {
       res.status(400).json({ error: 'Email and code are required' });
+      return;
+    }
+
+    const verifyRateLimit = emailVerifyRateLimiter.consume(verifyScope, requestIp, email);
+    if (!verifyRateLimit.allowed) {
+      res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+      });
       return;
     }
 
@@ -2562,6 +2673,7 @@ export const createApp = () => {
     }
 
     await deleteEmailCode(email);
+    emailVerifyRateLimiter.reset(verifyScope, requestIp, email);
     res.json({ ok: true });
   });
 
@@ -2576,12 +2688,17 @@ export const createApp = () => {
     const phone = normalizePhone(rawPhone);
     const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
     const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+    const requestIp = getRequestIp(req);
     if (!phone) {
       res.status(400).json({ error: 'Phone is required' });
       return;
     }
 
-    const profilePhoneRateLimit = consumePhoneCodeRateLimit('profile_phone', getRequestIp(req), phone);
+    const profilePhoneRateLimit = phoneCodeRequestRateLimiter.consume(
+      'profile_phone',
+      requestIp,
+      phone
+    );
     if (!profilePhoneRateLimit.allowed) {
       res.setHeader('Retry-After', String(profilePhoneRateLimit.retryAfterSeconds));
       res.status(429).json({
@@ -2601,7 +2718,7 @@ export const createApp = () => {
 
     if (isTurnstileEnabled() && !canSkipCaptchaForSmsFallback) {
       try {
-        await verifyTurnstileToken(captchaToken, getRequestIp(req), 'request_phone_code');
+        await verifyTurnstileToken(captchaToken, requestIp, 'request_phone_code');
       } catch (error) {
         res.status(400).json({
           error: error instanceof Error ? error.message : 'Не удалось подтвердить проверку'
@@ -2630,7 +2747,7 @@ export const createApp = () => {
         code,
         ttlMinutes: CODE_TTL_MINUTES,
         context: 'profile_phone',
-        ip: getRequestIp(req),
+        ip: requestIp,
         preferredChannel
       });
 
@@ -2664,9 +2781,20 @@ export const createApp = () => {
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
     const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+    const requestIp = getRequestIp(req);
+    const verifyScope = 'profile_phone_verify';
 
     if (!phone || !code) {
       res.status(400).json({ error: 'Phone and code are required' });
+      return;
+    }
+
+    const verifyRateLimit = otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
+    if (!verifyRateLimit.allowed) {
+      res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+      });
       return;
     }
 
@@ -2697,6 +2825,7 @@ export const createApp = () => {
     }
 
     await deleteAuthCode(phone);
+    otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
     res.json({ ok: true });
   });
 

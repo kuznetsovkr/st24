@@ -10,8 +10,15 @@ type TurnstileVerifyResult = {
 };
 
 const getTurnstileSecretKey = () => process.env.TURNSTILE_SECRET_KEY?.trim() ?? '';
+const isProduction = () => (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
 
 export const isTurnstileEnabled = () => Boolean(getTurnstileSecretKey());
+
+export const assertTurnstileConfiguration = () => {
+  if (isProduction() && !isTurnstileEnabled()) {
+    throw new Error('TURNSTILE_SECRET_KEY is required in production');
+  }
+};
 
 export const verifyTurnstileToken = async (
   token: string,

@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { createApp } from './app';
 import { initDb } from './db/init';
+import { assertTurnstileConfiguration } from './turnstile';
 import { ensureUploadsDir } from './uploads';
 import {
   startTelegramB2BPolling,
@@ -9,6 +10,7 @@ import {
 } from './telegram';
 
 dotenv.config();
+assertTurnstileConfiguration();
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
