@@ -135,6 +135,7 @@ import {
   parseYooKassaAmountCents
 } from './orderLifecycleEvents';
 import { logAdminAuditEvent } from './adminAuditEvents';
+import { logErrorEvent } from './errorEvents';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
 
 const CODE_TTL_MINUTES = 5;
@@ -164,6 +165,10 @@ const B2B_UPLOAD_TMP_DIR = path.resolve(process.cwd(), 'tmp', 'b2b-requests');
 
 type RawBodyRequest = Request & {
   rawBody?: string;
+};
+
+type RequestWithRequestMeta = Request & {
+  requestId?: string;
 };
 
 const normalizePhone = (value: string) => value.replace(/\D/g, '');
@@ -215,6 +220,47 @@ const parseTrustProxy = (value: string | undefined): boolean | number | string =
 };
 
 const TRUST_PROXY = parseTrustProxy(process.env.TRUST_PROXY);
+const REQUEST_ID_HEADER = 'x-request-id';
+
+const getOrCreateRequestId = (req: Request) => {
+  const fromHeader = req.header(REQUEST_ID_HEADER)?.trim();
+  if (fromHeader) {
+    return fromHeader.slice(0, 128);
+  }
+  return randomUUID();
+};
+
+const getRouteForErrorLog = (req: Request) => {
+  const route = (req.originalUrl ?? req.path ?? req.url ?? '').trim();
+  return route || 'unknown_route';
+};
+
+const normalizeErrorForLog = (error: unknown) => {
+  if (error instanceof Error) {
+    const errorClass = error.name?.trim() || error.constructor?.name || 'Error';
+    const message = error.message?.trim() || 'unknown_error';
+    return {
+      errorClass,
+      message,
+      stack: error.stack ?? null
+    };
+  }
+
+  if (typeof error === 'string') {
+    const message = error.trim() || 'unknown_error';
+    return {
+      errorClass: 'NonErrorThrown',
+      message,
+      stack: null
+    };
+  }
+
+  return {
+    errorClass: 'UnknownError',
+    message: 'unknown_error',
+    stack: null
+  };
+};
 
 const parseOriginList = (value: string | undefined) =>
   (value ?? '')
@@ -1114,6 +1160,12 @@ export const createApp = () => {
       }
     })
   );
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const requestId = getOrCreateRequestId(req);
+    (req as RequestWithRequestMeta).requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    next();
+  });
   app.use(
     '/uploads',
     (_req: Request, res: Response, next: NextFunction) => {
@@ -3557,7 +3609,18 @@ export const createApp = () => {
     res.json({ message: 'E-commerce API' });
   });
 
-  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
+    const reqWithMeta = req as RequestWithRequestMeta;
+    const normalizedError = normalizeErrorForLog(error);
+    void logErrorEvent({
+      errorClass: normalizedError.errorClass,
+      message: normalizedError.message,
+      stack: normalizedError.stack,
+      requestId: reqWithMeta.requestId ?? req.header(REQUEST_ID_HEADER) ?? null,
+      route: getRouteForErrorLog(req),
+      userId: req.user?.userId ?? null
+    });
+
     if (error instanceof multer.MulterError) {
       if (error.code === 'LIMIT_FILE_SIZE') {
         res.status(400).json({ error: 'Файл слишком большой. Максимальный размер — 5 МБ.' });
