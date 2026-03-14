@@ -10,9 +10,9 @@ import { formatPhone } from '../utils/formatPhone.ts';
 const isCaptchaValidationError = (value: string) => {
   const normalized = value.toLowerCase();
   return (
-    normalized.includes('капч') ||
+    normalized.includes('РєР°РїС‡') ||
     normalized.includes('captcha') ||
-    normalized.includes('проверк')
+    normalized.includes('РїСЂРѕРІРµСЂРє')
   );
 };
 
@@ -33,7 +33,7 @@ const NeedPartModal = () => {
   const handleCaptchaTokenChange = useCallback((token: string | null) => {
     setCaptchaToken(token);
     if (token) {
-      setError((prev) => (prev === 'Подтвердите, что вы не робот.' ? null : prev));
+      setError((prev) => (prev === 'РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ РІС‹ РЅРµ СЂРѕР±РѕС‚.' ? null : prev));
     }
   }, []);
 
@@ -61,15 +61,15 @@ const NeedPartModal = () => {
     setError(null);
 
     if (!fullName.trim() || !phone.trim()) {
-      setError('Заполните ФИО и номер телефона.');
+      setError('Р—Р°РїРѕР»РЅРёС‚Рµ Р¤РРћ Рё РЅРѕРјРµСЂ С‚РµР»РµС„РѕРЅР°.');
       return;
     }
     if (!agreed) {
-      setError('Нужно согласиться с условиями и политикой.');
+      setError('РќСѓР¶РЅРѕ СЃРѕРіР»Р°СЃРёС‚СЊСЃСЏ СЃ СѓСЃР»РѕРІРёСЏРјРё Рё РїРѕР»РёС‚РёРєРѕР№.');
       return;
     }
     if (turnstileSiteKey && !captchaToken) {
-      setError('Подтвердите, что вы не робот.');
+      setError('РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ РІС‹ РЅРµ СЂРѕР±РѕС‚.');
       return;
     }
 
@@ -90,7 +90,7 @@ const NeedPartModal = () => {
           setCaptchaResetKey((prev) => prev + 1);
         }
       } else {
-        setError('Не удалось отправить заявку.');
+        setError('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ.');
       }
     } finally {
       setIsSubmitting(false);
@@ -102,10 +102,10 @@ const NeedPartModal = () => {
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <p className="eyebrow">Нужна деталь</p>
-            <h3>Запрос по товару</h3>
+            <p className="eyebrow">РќСѓР¶РЅР° РґРµС‚Р°Р»СЊ</p>
+            <h3>Р—Р°РїСЂРѕСЃ РїРѕ С‚РѕРІР°СЂСѓ</h3>
           </div>
-          <button className="icon-button" aria-label="Закрыть" onClick={closeNeedPartModal}>
+          <button className="icon-button" aria-label="Р—Р°РєСЂС‹С‚СЊ" onClick={closeNeedPartModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="17"
@@ -137,27 +137,27 @@ const NeedPartModal = () => {
                 />
               </svg>
             </div>
-            <p className="status-text need-part-success-text">Заявка отправлена. Мы свяжемся с вами.</p>
+            <p className="status-text need-part-success-text">Р—Р°СЏРІРєР° РѕС‚РїСЂР°РІР»РµРЅР°. РњС‹ СЃРІСЏР¶РµРјСЃСЏ СЃ РІР°РјРё.</p>
           </div>
         ) : (
           <>
             <p className="muted">
-              Товар: {product.name}
-              {product.sku ? ` · SKU ${product.sku}` : ''}
+              РўРѕРІР°СЂ: {product.name}
+              {product.sku ? ` В· SKU ${product.sku}` : ''}
             </p>
             <form className="stacked-form" onSubmit={handleSubmit}>
               <label className="field">
-                <span>ФИО</span>
+                <span>Р¤РРћ</span>
                 <input
                   type="text"
                   value={fullName}
                   onChange={(event) => setFullName(event.target.value)}
-                  placeholder="Иванов Иван Иванович"
+                  placeholder="РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡"
                   required
                 />
               </label>
               <label className="field">
-                <span>Телефон</span>
+                <span>РўРµР»РµС„РѕРЅ</span>
                 <input
                   type="tel"
                   value={phone}
@@ -173,8 +173,8 @@ const NeedPartModal = () => {
                   onChange={(event) => setAgreed(event.target.checked)}
                 />
                 <span>
-                  Согласен с <Link to="/terms" target="_blank" rel="noopener noreferrer">условиями оферты</Link> и{' '}
-                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">политикой обработки персональных данных</Link>.
+                  РЎРѕРіР»Р°СЃРµРЅ СЃ <Link to="/terms" target="_blank" rel="noopener noreferrer">СѓСЃР»РѕРІРёСЏРјРё РѕС„РµСЂС‚С‹</Link> Рё{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">РїРѕР»РёС‚РёРєРѕР№ РѕР±СЂР°Р±РѕС‚РєРё РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹С… РґР°РЅРЅС‹С…</Link>.
                 </span>
               </label>
               {turnstileSiteKey && (
@@ -188,10 +188,10 @@ const NeedPartModal = () => {
               {error && <p className="status-text status-text--error">{error}</p>}
               <div className="modal-actions">
                 <button className="primary-button" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Отправляем...' : 'Отправить заявку'}
+                  {isSubmitting ? 'РћС‚РїСЂР°РІР»СЏРµРј...' : 'РћС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ'}
                 </button>
                 <button type="button" className="ghost-button" onClick={closeNeedPartModal}>
-                  Отменить
+                  РћС‚РјРµРЅРёС‚СЊ
                 </button>
               </div>
             </form>
