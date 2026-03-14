@@ -600,11 +600,15 @@ const isUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 const isTelegramWebhookAllowed = (req: Request, secret?: string) => {
-  if (!secret) {
-    return true;
+  const expectedSecret = secret?.trim();
+  if (!expectedSecret) {
+    return false;
   }
-  const header = req.headers['x-telegram-bot-api-secret-token'];
-  return header === secret;
+  const providedSecret = req.header('x-telegram-bot-api-secret-token')?.trim();
+  if (!providedSecret) {
+    return false;
+  }
+  return providedSecret === expectedSecret;
 };
 
 const getPublicOrigin = (req: Request) => {
@@ -631,12 +635,12 @@ const getYooKassaReturnUrl = (req: Request, orderId: string) =>
 const isYooKassaWebhookAllowed = (req: Request) => {
   const expectedSecret = getYooKassaWebhookSecret();
   if (!expectedSecret) {
-    return true;
+    return false;
   }
-  const providedSecret =
-    typeof req.query.secret === 'string'
-      ? req.query.secret.trim()
-      : req.header('x-yookassa-webhook-secret')?.trim();
+  const providedSecret = req.header('x-yookassa-webhook-secret')?.trim();
+  if (!providedSecret) {
+    return false;
+  }
   return providedSecret === expectedSecret;
 };
 
@@ -2056,38 +2060,43 @@ export const createApp = () => {
       return;
     }
 
-    try {
-      const event = typeof req.body?.event === 'string' ? req.body.event : '';
-      const paymentObject =
-        req.body?.object && typeof req.body.object === 'object'
-          ? (req.body.object as YooKassaPayment)
-          : null;
+    if (!isYooKassaConfigured()) {
+      res.status(503).json({ ok: false });
+      return;
+    }
 
-      if (!paymentObject?.id || !paymentObject.status) {
+    try {
+      const paymentId =
+        req.body?.object &&
+        typeof req.body.object === 'object' &&
+        typeof (req.body.object as { id?: unknown }).id === 'string'
+          ? ((req.body.object as { id: string }).id ?? '').trim()
+          : '';
+
+      if (!paymentId) {
         res.status(400).json({ error: 'Invalid YooKassa webhook payload' });
         return;
       }
 
+      const payment = await fetchYooKassaPayment(paymentId);
+      if (!payment.id || !payment.status) {
+        res.status(400).json({ error: 'Invalid YooKassa payment data' });
+        return;
+      }
+
       const metadataOrderId =
-        paymentObject.metadata && typeof paymentObject.metadata.orderId === 'string'
-          ? paymentObject.metadata.orderId
+        payment.metadata && typeof payment.metadata.orderId === 'string'
+          ? payment.metadata.orderId.trim()
           : '';
 
       const orderByMetadata = metadataOrderId ? await findOrderById(metadataOrderId) : null;
-      const order = orderByMetadata ?? (await findOrderByPaymentId(paymentObject.id));
+      const order = orderByMetadata ?? (await findOrderByPaymentId(payment.id));
       if (!order) {
         res.json({ ok: true });
         return;
       }
 
-      const updatedOrder = await syncOrderWithYooKassaPayment(order, paymentObject);
-
-      if (event === 'payment.succeeded' && updatedOrder.status !== 'paid') {
-        const paidOrder = await markOrderPaidById(updatedOrder.id);
-        if (paidOrder) {
-          await finalizePaidOrder(paidOrder);
-        }
-      }
+      await syncOrderWithYooKassaPayment(order, payment);
 
       res.json({ ok: true });
     } catch (error) {
