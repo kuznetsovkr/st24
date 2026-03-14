@@ -143,6 +143,7 @@ import {
   superAdminLogsToCsv
 } from './superAdminLogs';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
+import { createScopedRateLimiter } from './rateLimiter';
 
 const CODE_TTL_MINUTES = 5;
 const PHONE_CODE_LENGTH = 4;
@@ -396,80 +397,6 @@ const PRODUCTS_PAGE_LIMIT_MAX = parsePositiveEnvInt(
   process.env.PRODUCTS_PAGE_LIMIT_MAX,
   100
 );
-
-type RateLimitState = {
-  count: number;
-  resetAt: number;
-};
-
-type RateLimitResult = {
-  allowed: boolean;
-  retryAfterSeconds: number;
-};
-
-type ScopedRateLimiter = {
-  consume: (scope: string, ip: string | undefined, subject: string) => RateLimitResult;
-  reset: (scope: string, ip: string | undefined, subject: string) => void;
-};
-
-const createScopedRateLimiter = (windowSeconds: number, max: number): ScopedRateLimiter => {
-  const store = new Map<string, RateLimitState>();
-  let lastCleanup = 0;
-  const windowMs = windowSeconds * 1000;
-  const keyOf = (scope: string, ip: string | undefined, subject: string) =>
-    `${scope}:${ip ?? 'unknown'}:${subject}`;
-
-  const consume = (
-    scope: string,
-    ip: string | undefined,
-    subject: string
-  ): RateLimitResult => {
-    const now = Date.now();
-    const key = keyOf(scope, ip, subject);
-
-    if (now - lastCleanup > windowMs) {
-      for (const [storeKey, state] of store.entries()) {
-        if (state.resetAt <= now) {
-          store.delete(storeKey);
-        }
-      }
-      lastCleanup = now;
-    }
-
-    const existing = store.get(key);
-    if (!existing || existing.resetAt <= now) {
-      store.set(key, {
-        count: 1,
-        resetAt: now + windowMs
-      });
-      return {
-        allowed: true,
-        retryAfterSeconds: 0
-      };
-    }
-
-    if (existing.count >= max) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
-      return {
-        allowed: false,
-        retryAfterSeconds
-      };
-    }
-
-    existing.count += 1;
-    store.set(key, existing);
-    return {
-      allowed: true,
-      retryAfterSeconds: 0
-    };
-  };
-
-  const reset = (scope: string, ip: string | undefined, subject: string) => {
-    store.delete(keyOf(scope, ip, subject));
-  };
-
-  return { consume, reset };
-};
 
 const phoneCodeRequestRateLimiter = createScopedRateLimiter(
   PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS,
@@ -2960,9 +2887,9 @@ export const createApp = () => {
     res.json({ ok: true });
   });
 
-  app.post('/api/requests/b2b', (req: Request, res: Response) => {
+  app.post('/api/requests/b2b', async (req: Request, res: Response) => {
     const requestIp = getRequestIp(req);
-    const uploadRateLimit = b2bRequestRateLimiter.consume('b2b_upload', requestIp, 'public');
+    const uploadRateLimit = await b2bRequestRateLimiter.consume('b2b_upload', requestIp, 'public');
     if (!uploadRateLimit.allowed) {
       logSecurityEventFromRequest(req, {
         eventType: 'rate_limit_exceeded',
@@ -3085,7 +3012,7 @@ export const createApp = () => {
       return;
     }
 
-    const needPartRateLimit = needPartRateLimiter.consume(
+    const needPartRateLimit = await needPartRateLimiter.consume(
       'need_part',
       requestIp,
       `${normalizePhone(phone)}:${productId}`
@@ -3146,7 +3073,7 @@ export const createApp = () => {
       return;
     }
 
-    const authRateLimit = phoneCodeRequestRateLimiter.consume('auth', requestIp, phone);
+    const authRateLimit = await phoneCodeRequestRateLimiter.consume('auth', requestIp, phone);
     if (!authRateLimit.allowed) {
       logSecurityEventFromRequest(req, {
         eventType: 'rate_limit_exceeded',
@@ -3246,7 +3173,7 @@ export const createApp = () => {
         res.status(400).json({ error: 'Пароль обязателен' });
         return;
       }
-      const verifyRateLimit = otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
+      const verifyRateLimit = await otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
       if (!verifyRateLimit.allowed) {
         res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
         res.status(429).json({
@@ -3258,7 +3185,7 @@ export const createApp = () => {
         res.status(400).json({ error: 'Неверный пароль' });
         return;
       }
-      otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+      await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
       const user = await upsertUser(phone, 'admin');
       const csrfToken = createCsrfToken();
       const token = signToken({
@@ -3277,7 +3204,7 @@ export const createApp = () => {
       return;
     }
 
-    const verifyRateLimit = otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
+    const verifyRateLimit = await otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
       res.status(429).json({
@@ -3301,7 +3228,7 @@ export const createApp = () => {
     }
 
     await deleteAuthCode(phone);
-    otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+    await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
 
     const role = phone === getAdminPhone() ? 'admin' : 'user';
     const user = await upsertUser(phone, role);
@@ -3474,7 +3401,7 @@ export const createApp = () => {
       return;
     }
 
-    const verifyRateLimit = emailVerifyRateLimiter.consume(verifyScope, requestIp, email);
+    const verifyRateLimit = await emailVerifyRateLimiter.consume(verifyScope, requestIp, email);
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
       res.status(429).json({
@@ -3507,7 +3434,7 @@ export const createApp = () => {
     }
 
     await deleteEmailCode(email);
-    emailVerifyRateLimiter.reset(verifyScope, requestIp, email);
+    await emailVerifyRateLimiter.reset(verifyScope, requestIp, email);
     res.json({ ok: true });
   });
 
@@ -3528,7 +3455,7 @@ export const createApp = () => {
       return;
     }
 
-    const profilePhoneRateLimit = phoneCodeRequestRateLimiter.consume(
+    const profilePhoneRateLimit = await phoneCodeRequestRateLimiter.consume(
       'profile_phone',
       requestIp,
       phone
@@ -3622,7 +3549,7 @@ export const createApp = () => {
       return;
     }
 
-    const verifyRateLimit = otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
+    const verifyRateLimit = await otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
       res.status(429).json({
@@ -3658,7 +3585,7 @@ export const createApp = () => {
     }
 
     await deleteAuthCode(phone);
-    otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+    await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
     res.json({ ok: true });
   });
 
