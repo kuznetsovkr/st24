@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { logPhoneCodeDeliveryEvent } from './phoneCodeDeliveryLogs';
 
 export type PhoneVerificationChannel = 'telegram_gateway' | 'sms_ru' | 'debug';
 
@@ -289,30 +290,105 @@ export const sendPhoneVerificationCode = async (
 
   if (preferredChannel !== 'sms_ru' && getTelegramGatewayToken()) {
     try {
-      return await sendViaTelegramGateway(input);
+      const delivery = await sendViaTelegramGateway(input);
+      await logPhoneCodeDeliveryEvent({
+        phone: input.phone,
+        channel: delivery.channel,
+        context: input.context,
+        status: 'sent',
+        preferredChannel: preferredChannel ?? null,
+        fallbackUsed: false,
+        providerRequestId: delivery.providerRequestId,
+        providerMessageId: delivery.providerMessageId,
+        ip: input.ip
+      });
+      return delivery;
     } catch (error) {
-      errors.push(formatProviderError('Telegram Gateway', error));
+      const message = formatProviderError('Telegram Gateway', error);
+      errors.push(message);
+      await logPhoneCodeDeliveryEvent({
+        phone: input.phone,
+        channel: 'telegram_gateway',
+        context: input.context,
+        status: 'failed',
+        preferredChannel: preferredChannel ?? null,
+        fallbackUsed: false,
+        error: message,
+        ip: input.ip
+      });
     }
   }
 
   if (getSmsRuApiId()) {
     try {
-      return await sendViaSmsRu(input);
+      const delivery = await sendViaSmsRu(input);
+      await logPhoneCodeDeliveryEvent({
+        phone: input.phone,
+        channel: delivery.channel,
+        context: input.context,
+        status: 'sent',
+        preferredChannel: preferredChannel ?? null,
+        fallbackUsed: errors.length > 0,
+        providerRequestId: delivery.providerRequestId,
+        providerMessageId: delivery.providerMessageId,
+        ip: input.ip
+      });
+      return delivery;
     } catch (error) {
-      errors.push(formatProviderError('SMS.RU', error));
+      const message = formatProviderError('SMS.RU', error);
+      errors.push(message);
+      await logPhoneCodeDeliveryEvent({
+        phone: input.phone,
+        channel: 'sms_ru',
+        context: input.context,
+        status: 'failed',
+        preferredChannel: preferredChannel ?? null,
+        fallbackUsed: errors.length > 1,
+        error: message,
+        ip: input.ip
+      });
     }
   }
 
   if (isDebugCodeEnabled()) {
+    await logPhoneCodeDeliveryEvent({
+      phone: input.phone,
+      channel: 'debug',
+      context: input.context,
+      status: 'sent',
+      preferredChannel: preferredChannel ?? null,
+      fallbackUsed: errors.length > 0,
+      ip: input.ip
+    });
     return {
       channel: 'debug'
     };
   }
 
   if (errors.length > 0) {
+    await logPhoneCodeDeliveryEvent({
+      phone: input.phone,
+      channel: 'unknown',
+      context: input.context,
+      status: 'failed',
+      preferredChannel: preferredChannel ?? null,
+      fallbackUsed: true,
+      error: errors.join(' | '),
+      ip: input.ip
+    });
     throw new Error(`Не удалось отправить код. ${errors.join(' | ')}`);
   }
 
+  await logPhoneCodeDeliveryEvent({
+    phone: input.phone,
+    channel: 'unknown',
+    context: input.context,
+    status: 'failed',
+    preferredChannel: preferredChannel ?? null,
+    fallbackUsed: false,
+    error: 'telegram_and_sms_providers_not_configured',
+    ip: input.ip
+  });
   throw new Error('Не настроены Telegram Gateway и SMS.RU для отправки кодов');
 };
 

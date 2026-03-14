@@ -306,6 +306,38 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS phone_code_delivery_events (
+      id UUID PRIMARY KEY,
+      phone TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      context TEXT NOT NULL,
+      status TEXT NOT NULL,
+      preferred_channel TEXT,
+      fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
+      provider_request_id TEXT,
+      provider_message_id TEXT,
+      error TEXT,
+      ip TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS phone_code_delivery_stats (
+      phone TEXT PRIMARY KEY,
+      telegram_sent_count INTEGER NOT NULL DEFAULT 0,
+      sms_sent_count INTEGER NOT NULL DEFAULT 0,
+      last_action TEXT NOT NULL,
+      last_channel TEXT,
+      last_context TEXT,
+      last_event_status TEXT,
+      last_event_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS auth_codes (
       phone TEXT PRIMARY KEY,
       code TEXT NOT NULL,
@@ -474,6 +506,10 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS error_events_created_idx ON error_events (created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS error_events_request_created_idx ON error_events (request_id, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS error_events_user_created_idx ON error_events (user_id, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_events_created_idx ON phone_code_delivery_events (created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_events_phone_created_idx ON phone_code_delivery_events (phone, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_events_channel_created_idx ON phone_code_delivery_events (channel, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_stats_updated_idx ON phone_code_delivery_stats (updated_at DESC);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)

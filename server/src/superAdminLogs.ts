@@ -6,6 +6,8 @@ export const SUPER_ADMIN_LOG_KINDS = [
   'admin_audit',
   'integration',
   'error',
+  'phone_code_delivery_events',
+  'phone_code_delivery_stats',
   'telegram_subscribers',
   'telegram_order_subscribers',
   'telegram_b2b_subscribers'
@@ -24,6 +26,7 @@ type ListSuperAdminLogsInput = {
 type LogSourceDefinition = {
   table: string;
   columns: string[];
+  orderByColumn?: string;
 };
 
 type ListSuperAdminLogsResult = {
@@ -101,6 +104,39 @@ const LOG_SOURCES: Record<SuperAdminLogKind, LogSourceDefinition> = {
       'request_id',
       'route',
       'user_id',
+      'created_at'
+    ]
+  },
+  phone_code_delivery_events: {
+    table: 'phone_code_delivery_events',
+    columns: [
+      'id',
+      'phone',
+      'channel',
+      'context',
+      'status',
+      'preferred_channel',
+      'fallback_used',
+      'provider_request_id',
+      'provider_message_id',
+      'error',
+      'ip',
+      'created_at'
+    ]
+  },
+  phone_code_delivery_stats: {
+    table: 'phone_code_delivery_stats',
+    orderByColumn: 'updated_at',
+    columns: [
+      'phone',
+      'telegram_sent_count',
+      'sms_sent_count',
+      'last_action',
+      'last_channel',
+      'last_context',
+      'last_event_status',
+      'last_event_at',
+      'updated_at',
       'created_at'
     ]
   },
@@ -190,6 +226,7 @@ export const listSuperAdminLogs = async (
   const filter = buildCreatedAtFilter(input.from, input.to);
   const whereSql = filter.whereSql;
   const selectColumnsSql = source.columns.join(', ');
+  const orderByColumn = source.orderByColumn ?? 'created_at';
 
   const countResult = await query(
     `
@@ -209,7 +246,7 @@ export const listSuperAdminLogs = async (
       SELECT ${selectColumnsSql}
       FROM ${source.table}
       ${whereSql}
-      ORDER BY created_at DESC
+      ORDER BY ${orderByColumn} DESC
       LIMIT $${limitParamIndex}
       OFFSET $${offsetParamIndex};
     `,
