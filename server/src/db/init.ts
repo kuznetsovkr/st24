@@ -266,6 +266,19 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS admin_audit_events (
+      id UUID PRIMARY KEY,
+      actor_user_id TEXT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      action TEXT NOT NULL,
+      before_json JSONB,
+      after_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS auth_codes (
       phone TEXT PRIMARY KEY,
       code TEXT NOT NULL,
@@ -425,6 +438,9 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS order_lifecycle_events_type_created_idx ON order_lifecycle_events (event_type, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS order_lifecycle_events_order_created_idx ON order_lifecycle_events (order_id, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS order_lifecycle_events_payment_created_idx ON order_lifecycle_events (payment_id, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS admin_audit_events_created_idx ON admin_audit_events (created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS admin_audit_events_actor_created_idx ON admin_audit_events (actor_user_id, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS admin_audit_events_entity_created_idx ON admin_audit_events (entity_type, entity_id, created_at DESC);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)

@@ -24,6 +24,7 @@ import {
   type BoxTypeRow
 } from './db/boxTypes';
 import {
+  findDeliveryProviderByKey,
   isDeliveryProviderEnabled,
   isDeliveryProviderKey,
   listDeliveryProviders,
@@ -133,6 +134,7 @@ import {
   logOrderLifecycleEvent,
   parseYooKassaAmountCents
 } from './orderLifecycleEvents';
+import { logAdminAuditEvent } from './adminAuditEvents';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
 
 const CODE_TTL_MINUTES = 5;
@@ -1366,6 +1368,7 @@ export const createApp = () => {
     async (req: Request, res: Response) => {
       const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
       const uploadedFilename = req.file?.filename;
+      const actorUserId = req.user?.userId ?? null;
 
       if (!name) {
         if (uploadedFilename) {
@@ -1390,6 +1393,15 @@ export const createApp = () => {
           removeUploadedFiles([current.image]);
         }
 
+        void logAdminAuditEvent({
+          actorUserId,
+          entityType: 'catalog_page',
+          entityId: 'catalog',
+          action: 'update',
+          beforeJson: current ? mapCatalogPage(current) : null,
+          afterJson: mapCatalogPage(updated)
+        });
+
         res.json({ page: mapCatalogPage(updated) });
       } catch {
         if (uploadedFilename) {
@@ -1407,6 +1419,7 @@ export const createApp = () => {
     upload.single('image'),
     async (req: Request, res: Response) => {
       const slug = typeof req.params.slug === 'string' ? req.params.slug.trim() : '';
+      const actorUserId = req.user?.userId ?? null;
       const nextSlug =
         typeof req.body?.slug === 'string' ? req.body.slug.trim().toLowerCase() : slug;
       const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
@@ -1464,6 +1477,15 @@ export const createApp = () => {
           removeUploadedFiles([current.image]);
         }
 
+        void logAdminAuditEvent({
+          actorUserId,
+          entityType: 'category',
+          entityId: updated.slug,
+          action: 'update',
+          beforeJson: mapCategory(current),
+          afterJson: mapCategory(updated)
+        });
+
         res.json({ item: mapCategory(updated) });
       } catch (error) {
         if (uploadedFilename) {
@@ -1481,6 +1503,7 @@ export const createApp = () => {
 
   app.delete('/api/categories/:slug', authenticate, requireAdmin, async (req: Request, res: Response) => {
     const slug = typeof req.params.slug === 'string' ? req.params.slug.trim() : '';
+    const actorUserId = req.user?.userId ?? null;
     if (!slug) {
       res.status(400).json({ error: '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 URL \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.' });
       return;
@@ -1511,6 +1534,15 @@ export const createApp = () => {
       if (deleted.image) {
         removeUploadedFiles([deleted.image]);
       }
+
+      void logAdminAuditEvent({
+        actorUserId,
+        entityType: 'category',
+        entityId: deleted.slug,
+        action: 'delete',
+        beforeJson: mapCategory(deleted),
+        afterJson: null
+      });
 
       res.json({ ok: true });
     } catch {
@@ -1545,6 +1577,7 @@ export const createApp = () => {
     requireAdmin,
     async (req: Request, res: Response) => {
       const keyRaw = typeof req.params.key === 'string' ? req.params.key.trim() : '';
+      const actorUserId = req.user?.userId ?? null;
       if (!isDeliveryProviderKey(keyRaw)) {
         res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
@@ -1556,11 +1589,25 @@ export const createApp = () => {
       }
 
       try {
+        const current = await findDeliveryProviderByKey(keyRaw);
+        if (!current) {
+          res.status(404).json({ error: 'Не найдено' });
+          return;
+        }
+
         const item = await updateDeliveryProviderEnabled(keyRaw, req.body.isEnabled);
         if (!item) {
           res.status(404).json({ error: 'Не найдено' });
           return;
         }
+        void logAdminAuditEvent({
+          actorUserId,
+          entityType: 'delivery_provider',
+          entityId: item.key,
+          action: 'update',
+          beforeJson: mapDeliveryProvider(current),
+          afterJson: mapDeliveryProvider(item)
+        });
         res.json(mapDeliveryProvider(item));
       } catch {
         res.status(500).json({ error: 'Не удалось выполнить запрос' });
@@ -1598,6 +1645,7 @@ export const createApp = () => {
       { name: 'mobileImage', maxCount: 1 }
     ]),
     async (req: Request, res: Response) => {
+      const actorUserId = req.user?.userId ?? null;
       const files =
         ((req.files ?? {}) as {
           [fieldname: string]: Express.Multer.File[];
@@ -1639,6 +1687,15 @@ export const createApp = () => {
           removeUploadedFiles(Array.from(oldFilenamesToDelete));
         }
 
+        void logAdminAuditEvent({
+          actorUserId,
+          entityType: 'banner',
+          entityId: 'home',
+          action: 'update',
+          beforeJson: current ? mapSiteBanner(current) : null,
+          afterJson: mapSiteBanner(updated)
+        });
+
         res.json({ banner: mapSiteBanner(updated) });
       } catch {
         if (uploadedFilenames.length > 0) {
@@ -1650,6 +1707,7 @@ export const createApp = () => {
   );
 
   app.post('/api/box-types', authenticate, requireAdmin, async (req: Request, res: Response) => {
+    const actorUserId = req.user?.userId ?? null;
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     const lengthCm = parseIntegerField(req.body.lengthCm, 1, 500);
     const widthCm = parseIntegerField(req.body.widthCm, 1, 500);
@@ -1691,6 +1749,14 @@ export const createApp = () => {
         fillRatio: fillRatio ?? 0,
         sortOrder: sortOrder ?? 0
       });
+      void logAdminAuditEvent({
+        actorUserId,
+        entityType: 'box_type',
+        entityId: item.id,
+        action: 'create',
+        beforeJson: null,
+        afterJson: mapBoxType(item)
+      });
       res.status(201).json(mapBoxType(item));
     } catch {
       res.status(500).json({ error: 'Не удалось выполнить запрос' });
@@ -1698,6 +1764,7 @@ export const createApp = () => {
   });
 
   app.put('/api/box-types/:id', authenticate, requireAdmin, async (req: Request, res: Response) => {
+    const actorUserId = req.user?.userId ?? null;
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     const lengthCm = parseIntegerField(req.body.lengthCm, 1, 500);
     const widthCm = parseIntegerField(req.body.widthCm, 1, 500);
@@ -1729,6 +1796,7 @@ export const createApp = () => {
     }
 
     try {
+      const before = (await listBoxTypes()).find((entry) => entry.id === req.params.id) ?? null;
       const item = await updateBoxType(req.params.id, {
         name,
         lengthCm: lengthCm ?? 0,
@@ -1743,6 +1811,14 @@ export const createApp = () => {
         res.status(404).json({ error: 'Тип коробки не найден' });
         return;
       }
+      void logAdminAuditEvent({
+        actorUserId,
+        entityType: 'box_type',
+        entityId: item.id,
+        action: 'update',
+        beforeJson: before ? mapBoxType(before) : null,
+        afterJson: mapBoxType(item)
+      });
       res.json(mapBoxType(item));
     } catch {
       res.status(500).json({ error: 'Не удалось выполнить запрос' });
@@ -1750,12 +1826,21 @@ export const createApp = () => {
   });
 
   app.delete('/api/box-types/:id', authenticate, requireAdmin, async (req: Request, res: Response) => {
+    const actorUserId = req.user?.userId ?? null;
     try {
       const item = await deleteBoxType(req.params.id);
       if (!item) {
         res.status(404).json({ error: 'Тип коробки не найден' });
         return;
       }
+      void logAdminAuditEvent({
+        actorUserId,
+        entityType: 'box_type',
+        entityId: item.id,
+        action: 'delete',
+        beforeJson: mapBoxType(item),
+        afterJson: null
+      });
       res.json({ ok: true });
     } catch {
       res.status(500).json({ error: 'Не удалось выполнить запрос' });
@@ -1820,6 +1905,7 @@ export const createApp = () => {
   });
 
   app.post('/api/products', authenticate, requireAdmin, upload.array('images', 5), async (req, res) => {
+    const actorUserId = req.user?.userId ?? null;
     const files = (req.files ?? []) as Express.Multer.File[];
     const filenames = files.map((file) => file.filename);
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
@@ -1920,6 +2006,14 @@ export const createApp = () => {
         isHidden
       });
 
+      void logAdminAuditEvent({
+        actorUserId,
+        entityType: 'product',
+        entityId: product.id,
+        action: 'create',
+        beforeJson: null,
+        afterJson: mapProduct(product)
+      });
       res.status(201).json(mapProduct(product));
     } catch {
       removeUploadedFiles(filenames);
@@ -1929,6 +2023,7 @@ export const createApp = () => {
 
   app.put('/api/products/:id', authenticate, requireAdmin, upload.array('images', 5), async (req, res) => {
     const { id } = req.params;
+    const actorUserId = req.user?.userId ?? null;
     const existing = await findProductById(id);
     if (!existing) {
       res.status(404).json({ error: 'Заказ не найден' });
@@ -2075,6 +2170,14 @@ export const createApp = () => {
       if (removeAfterUpdate.length > 0) {
         removeUploadedFiles(removeAfterUpdate);
       }
+      void logAdminAuditEvent({
+        actorUserId,
+        entityType: 'product',
+        entityId: updated.id,
+        action: 'update',
+        beforeJson: mapProduct(existing),
+        afterJson: mapProduct(updated)
+      });
       res.json(mapProduct(updated));
     } catch {
       removeUploadedFiles(filenames);
@@ -2083,6 +2186,7 @@ export const createApp = () => {
   });
 
   app.delete('/api/products/:id', authenticate, requireAdmin, async (req, res) => {
+    const actorUserId = req.user?.userId ?? null;
     const { id } = req.params;
     const removed = await deleteProduct(id);
     if (!removed) {
@@ -2090,6 +2194,14 @@ export const createApp = () => {
       return;
     }
 
+    void logAdminAuditEvent({
+      actorUserId,
+      entityType: 'product',
+      entityId: removed.id,
+      action: 'delete',
+      beforeJson: mapProduct(removed),
+      afterJson: null
+    });
     removeUploadedFiles(removed.images ?? []);
     res.json({ ok: true });
   });
