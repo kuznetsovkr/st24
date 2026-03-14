@@ -87,7 +87,7 @@ import {
   sendTelegramMessage
 } from './telegram';
 import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile';
-import { removeUploadedFiles, toPublicUrl, upload } from './uploads';
+import { removeUploadedFiles, toPublicUrl, upload, UploadValidationError } from './uploads';
 import {
   PickupPointProxyError,
   searchDellinPickupPoints,
@@ -193,6 +193,17 @@ const normalizeIp = (value: string | undefined) => {
     return undefined;
   }
   return value.startsWith('::ffff:') ? value.slice(7) : value;
+};
+
+const SAFE_UPLOAD_STATIC_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+const applyUploadsSecurityHeaders = (res: Response) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; img-src 'self' data:; media-src 'none'; object-src 'none'; script-src 'none'; sandbox"
+  );
 };
 
 const getRequestIp = (req: Request) => {
@@ -953,7 +964,24 @@ export const createApp = () => {
       }
     })
   );
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  app.use(
+    '/uploads',
+    (_req: Request, res: Response, next: NextFunction) => {
+      applyUploadsSecurityHeaders(res);
+      next();
+    },
+    express.static(path.join(process.cwd(), 'uploads'), {
+      fallthrough: false,
+      index: false,
+      setHeaders: (res, filePath) => {
+        applyUploadsSecurityHeaders(res);
+        const ext = path.extname(filePath).toLowerCase();
+        if (!SAFE_UPLOAD_STATIC_EXTENSIONS.has(ext)) {
+          res.setHeader('Content-Disposition', 'attachment');
+        }
+      }
+    })
+  );
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
@@ -3039,10 +3067,16 @@ export const createApp = () => {
       return;
     }
 
+    if (error instanceof UploadValidationError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
     if (error instanceof Error) {
       const message = error.message || 'Internal server error';
       const isClientUploadError =
-        message === 'Only images allowed' ||
+        message.includes('Unsupported file') ||
+        message.includes('signature') ||
         message.includes('Допустимы только');
       res.status(isClientUploadError ? 400 : 500).json({ error: message });
       return;
