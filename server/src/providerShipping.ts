@@ -5,9 +5,33 @@ import {
   type ShippingEstimateProvider,
   type ShippingEstimateResult
 } from './shippingEstimate';
+import { logIntegrationEvent } from './integrationEvents';
 
 type ProviderApiResult = ShippingEstimateResult & {
   source: 'provider_api' | 'estimate_fallback';
+};
+
+type ProviderErrorWithStatus = Error & {
+  statusCode?: number;
+};
+
+const createProviderApiError = (message: string, statusCode?: number) => {
+  const error = new Error(message) as ProviderErrorWithStatus;
+  if (typeof statusCode === 'number' && Number.isFinite(statusCode)) {
+    error.statusCode = Math.trunc(statusCode);
+  }
+  return error;
+};
+
+const getStatusCodeFromError = (error: unknown) => {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+  const code = (error as ProviderErrorWithStatus).statusCode;
+  if (typeof code !== 'number' || !Number.isFinite(code)) {
+    return null;
+  }
+  return Math.trunc(code);
 };
 
 const trimToUndefined = (value?: string | null) => {
@@ -185,7 +209,10 @@ const calculateDellinShipping = async (
   const payloadRecord = asRecord(payloadRaw);
 
   if (!response.ok || !payloadRecord) {
-    throw new Error(`Delovye Linii API request failed (${response.status})`);
+    throw createProviderApiError(
+      `Delovye Linii API request failed (${response.status})`,
+      response.status
+    );
   }
 
   const metadata = asRecord(payloadRecord.metadata);
@@ -194,7 +221,7 @@ const calculateDellinShipping = async (
     const errors = Array.isArray(payloadRecord.errors) ? payloadRecord.errors : [];
     const firstError = asRecord(errors[0]);
     const message = String(firstError?.detail ?? firstError?.message ?? 'Unknown API error');
-    throw new Error(`Delovye Linii API error: ${message}`);
+    throw createProviderApiError(`Delovye Linii API error: ${message}`, metadataStatus);
   }
 
   const data = asRecord(payloadRecord.data);
@@ -260,12 +287,15 @@ const calculateRussianPostShipping = async (
   const payloadRecord = asRecord(payloadRaw);
 
   if (!response.ok || !payloadRecord) {
-    throw new Error(`Russian Post API request failed (${response.status})`);
+    throw createProviderApiError(
+      `Russian Post API request failed (${response.status})`,
+      response.status
+    );
   }
 
   if (String(payloadRecord.status ?? '').toUpperCase() === 'ERROR') {
     const message = String(payloadRecord.message ?? 'Unknown Russian Post API error');
-    throw new Error(`Russian Post API error: ${message}`);
+    throw createProviderApiError(`Russian Post API error: ${message}`, response.status);
   }
 
   const totalRate = safeNumber(payloadRecord['total-rate'] ?? payloadRecord.totalRate);
@@ -290,16 +320,49 @@ const shouldFallbackToEstimate = () =>
 export const calculateShippingWithProviderApi = async (
   input: ShippingEstimateInput
 ): Promise<ProviderApiResult> => {
+  const operation = 'calculate_shipping';
+  const attempt = 1;
+  const startedAt = Date.now();
   try {
-    if (input.provider === 'dellin') {
-      return await calculateDellinShipping(input);
-    }
-    return await calculateRussianPostShipping(input);
+    const result =
+      input.provider === 'dellin'
+        ? await calculateDellinShipping(input)
+        : await calculateRussianPostShipping(input);
+    void logIntegrationEvent({
+      provider: input.provider,
+      operation,
+      attempt,
+      statusCode: 200,
+      latencyMs: Date.now() - startedAt,
+      fallbackUsed: false
+    });
+    return result;
   } catch (error) {
+    const statusCode = getStatusCodeFromError(error);
+    const latencyMs = Date.now() - startedAt;
+    const errorMessage = error instanceof Error ? error.message : 'unknown_error';
     if (!shouldFallbackToEstimate()) {
+      void logIntegrationEvent({
+        provider: input.provider,
+        operation,
+        attempt,
+        statusCode,
+        latencyMs,
+        fallbackUsed: false,
+        error: errorMessage
+      });
       throw error;
     }
     const estimated = estimateShippingCost(input);
+    void logIntegrationEvent({
+      provider: input.provider,
+      operation,
+      attempt,
+      statusCode,
+      latencyMs,
+      fallbackUsed: true,
+      error: errorMessage
+    });
     return {
       ...estimated,
       source: 'estimate_fallback'

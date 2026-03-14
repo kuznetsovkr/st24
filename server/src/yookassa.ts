@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { logIntegrationEvent } from './integrationEvents';
 
 const YOOKASSA_BASE_URL = 'https://api.yookassa.ru/v3';
 
@@ -89,34 +90,60 @@ const parseYooKassaErrorMessage = (status: number, payload: unknown) => {
 const requestYooKassa = async <T>(
   endpoint: string,
   options: RequestInit,
-  idempotenceKey?: string
+  idempotenceKey?: string,
+  operation = 'request'
 ): Promise<T> => {
-  const headers: Record<string, string> = {
-    Authorization: getAuthHeaderValue(),
-    'Content-Type': 'application/json',
-    ...(idempotenceKey ? { 'Idempotence-Key': idempotenceKey } : {})
-  };
+  const startedAt = Date.now();
+  let statusCode: number | null = null;
 
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
-    ...options,
-    headers
-  });
+  try {
+    const headers: Record<string, string> = {
+      Authorization: getAuthHeaderValue(),
+      'Content-Type': 'application/json',
+      ...(idempotenceKey ? { 'Idempotence-Key': idempotenceKey } : {})
+    };
 
-  const rawBody = await response.text();
-  let parsedBody: unknown = null;
-  if (rawBody) {
-    try {
-      parsedBody = JSON.parse(rawBody) as unknown;
-    } catch {
-      parsedBody = null;
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+      ...options,
+      headers
+    });
+    statusCode = response.status;
+
+    const rawBody = await response.text();
+    let parsedBody: unknown = null;
+    if (rawBody) {
+      try {
+        parsedBody = JSON.parse(rawBody) as unknown;
+      } catch {
+        parsedBody = null;
+      }
     }
-  }
 
-  if (!response.ok) {
-    throw new Error(parseYooKassaErrorMessage(response.status, parsedBody));
-  }
+    if (!response.ok) {
+      throw new Error(parseYooKassaErrorMessage(response.status, parsedBody));
+    }
 
-  return parsedBody as T;
+    void logIntegrationEvent({
+      provider: 'yookassa',
+      operation,
+      attempt: 1,
+      statusCode,
+      latencyMs: Date.now() - startedAt,
+      fallbackUsed: false
+    });
+    return parsedBody as T;
+  } catch (error) {
+    void logIntegrationEvent({
+      provider: 'yookassa',
+      operation,
+      attempt: 1,
+      statusCode,
+      latencyMs: Date.now() - startedAt,
+      fallbackUsed: false,
+      error: error instanceof Error ? error.message : 'unknown_error'
+    });
+    throw error;
+  }
 };
 
 export type YooKassaPayment = {
@@ -199,11 +226,17 @@ export const createYooKassaPayment = async (
       method: 'POST',
       body: JSON.stringify(body)
     },
-    randomUUID()
+    randomUUID(),
+    'create_payment'
   );
 };
 
 export const fetchYooKassaPayment = async (paymentId: string): Promise<YooKassaPayment> =>
-  requestYooKassa<YooKassaPayment>(`/payments/${paymentId}`, {
-    method: 'GET'
-  });
+  requestYooKassa<YooKassaPayment>(
+    `/payments/${paymentId}`,
+    {
+      method: 'GET'
+    },
+    undefined,
+    'fetch_payment'
+  );

@@ -10,6 +10,7 @@ import {
   upsertTelegramSubscriber,
   type TelegramSubscriberInput
 } from './db/telegram';
+import { logIntegrationEvent } from './integrationEvents';
 
 type TelegramConfig = {
   token: string;
@@ -431,25 +432,54 @@ export const startTelegramPolling = () => {
   }
 
   let offset = 0;
+  let attempt = 0;
 
   const poll = async () => {
+    const currentAttempt = (attempt += 1);
+    const startedAt = Date.now();
+    let statusCode: number | null = null;
     try {
       const response = await fetch(
         `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`
       );
+      statusCode = response.status;
       const data = (await response.json()) as {
-        ok: boolean;
+        ok?: boolean;
+        error_code?: number;
+        description?: string;
         result?: Array<{ update_id: number } & Record<string, unknown>>;
       };
 
-      if (data.ok && Array.isArray(data.result)) {
+      if (response.ok && data.ok && Array.isArray(data.result)) {
         for (const update of data.result) {
           offset = Math.max(offset, update.update_id + 1);
           await handleTelegramUpdate(update);
         }
+      } else {
+        const message =
+          typeof data.description === 'string'
+            ? data.description
+            : 'telegram polling returned non-ok response';
+        void logIntegrationEvent({
+          provider: 'telegram',
+          operation: 'poll_updates',
+          attempt: currentAttempt,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          fallbackUsed: false,
+          error: message
+        });
       }
-    } catch {
-      // ignore polling errors, retry on next tick
+    } catch (error) {
+      void logIntegrationEvent({
+        provider: 'telegram',
+        operation: 'poll_updates',
+        attempt: currentAttempt,
+        statusCode,
+        latencyMs: Date.now() - startedAt,
+        fallbackUsed: false,
+        error: error instanceof Error ? error.message : 'unknown_error'
+      });
     } finally {
       setTimeout(poll, 1000);
     }
@@ -470,25 +500,54 @@ export const startTelegramOrderPolling = () => {
   }
 
   let offset = 0;
+  let attempt = 0;
 
   const poll = async () => {
+    const currentAttempt = (attempt += 1);
+    const startedAt = Date.now();
+    let statusCode: number | null = null;
     try {
       const response = await fetch(
         `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`
       );
+      statusCode = response.status;
       const data = (await response.json()) as {
-        ok: boolean;
+        ok?: boolean;
+        error_code?: number;
+        description?: string;
         result?: Array<{ update_id: number } & Record<string, unknown>>;
       };
 
-      if (data.ok && Array.isArray(data.result)) {
+      if (response.ok && data.ok && Array.isArray(data.result)) {
         for (const update of data.result) {
           offset = Math.max(offset, update.update_id + 1);
           await handleTelegramOrderUpdate(update);
         }
+      } else {
+        const message =
+          typeof data.description === 'string'
+            ? data.description
+            : 'telegram orders polling returned non-ok response';
+        void logIntegrationEvent({
+          provider: 'telegram',
+          operation: 'poll_updates_orders',
+          attempt: currentAttempt,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          fallbackUsed: false,
+          error: message
+        });
       }
-    } catch {
-      // ignore polling errors, retry on next tick
+    } catch (error) {
+      void logIntegrationEvent({
+        provider: 'telegram',
+        operation: 'poll_updates_orders',
+        attempt: currentAttempt,
+        statusCode,
+        latencyMs: Date.now() - startedAt,
+        fallbackUsed: false,
+        error: error instanceof Error ? error.message : 'unknown_error'
+      });
     } finally {
       setTimeout(poll, 1000);
     }
@@ -509,25 +568,54 @@ export const startTelegramB2BPolling = () => {
   }
 
   let offset = 0;
+  let attempt = 0;
 
   const poll = async () => {
+    const currentAttempt = (attempt += 1);
+    const startedAt = Date.now();
+    let statusCode: number | null = null;
     try {
       const response = await fetch(
         `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`
       );
+      statusCode = response.status;
       const data = (await response.json()) as {
-        ok: boolean;
+        ok?: boolean;
+        error_code?: number;
+        description?: string;
         result?: Array<{ update_id: number } & Record<string, unknown>>;
       };
 
-      if (data.ok && Array.isArray(data.result)) {
+      if (response.ok && data.ok && Array.isArray(data.result)) {
         for (const update of data.result) {
           offset = Math.max(offset, update.update_id + 1);
           await handleTelegramB2BUpdate(update);
         }
+      } else {
+        const message =
+          typeof data.description === 'string'
+            ? data.description
+            : 'telegram b2b polling returned non-ok response';
+        void logIntegrationEvent({
+          provider: 'telegram',
+          operation: 'poll_updates_b2b',
+          attempt: currentAttempt,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          fallbackUsed: false,
+          error: message
+        });
       }
-    } catch {
-      // ignore polling errors, retry on next tick
+    } catch (error) {
+      void logIntegrationEvent({
+        provider: 'telegram',
+        operation: 'poll_updates_b2b',
+        attempt: currentAttempt,
+        statusCode,
+        latencyMs: Date.now() - startedAt,
+        fallbackUsed: false,
+        error: error instanceof Error ? error.message : 'unknown_error'
+      });
     } finally {
       setTimeout(poll, 1000);
     }

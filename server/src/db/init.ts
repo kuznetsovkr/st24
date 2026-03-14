@@ -279,6 +279,20 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS integration_events (
+      id UUID PRIMARY KEY,
+      provider TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      attempt INTEGER,
+      status_code INTEGER,
+      latency_ms INTEGER,
+      fallback_used BOOLEAN NOT NULL DEFAULT FALSE,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS auth_codes (
       phone TEXT PRIMARY KEY,
       code TEXT NOT NULL,
@@ -441,6 +455,9 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS admin_audit_events_created_idx ON admin_audit_events (created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS admin_audit_events_actor_created_idx ON admin_audit_events (actor_user_id, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS admin_audit_events_entity_created_idx ON admin_audit_events (entity_type, entity_id, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS integration_events_created_idx ON integration_events (created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS integration_events_provider_operation_idx ON integration_events (provider, operation, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS integration_events_fallback_idx ON integration_events (fallback_used, created_at DESC);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)
