@@ -39,6 +39,25 @@ const trimToUndefined = (value?: string | null) => {
   return trimmed ? trimmed : undefined;
 };
 
+const formatDateInTimezone = (date: Date, timeZone: string) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return `${year}-${month}-${day}`;
+};
+
 const safeNumber = (value: unknown) => {
   const parsed =
     typeof value === 'number'
@@ -153,7 +172,9 @@ const calculateDellinShipping = async (
   const baseUrl =
     trimToUndefined(process.env.DELLIN_API_BASE_URL) ?? 'https://api.dellin.ru';
   const deliveryType = trimToUndefined(process.env.DELLIN_DELIVERY_TYPE) ?? 'auto';
-  const today = new Date().toISOString().slice(0, 10);
+  const dellinTimeZone =
+    trimToUndefined(process.env.DELLIN_PRODUCE_DATE_TIMEZONE) ?? 'Asia/Krasnoyarsk';
+  const today = formatDateInTimezone(new Date(), dellinTimeZone);
 
   const stats = getParcelStats(input.parcels);
   const maxParcel = stats.normalized.reduce(
