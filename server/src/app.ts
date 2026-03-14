@@ -129,6 +129,10 @@ import {
   type YooKassaPayment,
   type YooKassaReceipt
 } from './yookassa';
+import {
+  logOrderLifecycleEvent,
+  parseYooKassaAmountCents
+} from './orderLifecycleEvents';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
 
 const CODE_TTL_MINUTES = 5;
@@ -971,10 +975,24 @@ const finalizePaidOrder = async (order: OrderRow) => {
 };
 
 const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPayment) => {
+  const previousPaymentStatus = order.payment_status ?? null;
+  const amountCents = parseYooKassaAmountCents(payment.amount?.value) ?? order.total_cents;
+
   await updateOrderPayment(order.id, {
     provider: 'yookassa',
     paymentId: payment.id,
     paymentStatus: payment.status
+  });
+
+  void logOrderLifecycleEvent({
+    eventType: 'payment_status_synced',
+    orderId: order.id,
+    orderNumber: order.order_number,
+    paymentId: payment.id,
+    oldStatus: previousPaymentStatus,
+    newStatus: payment.status,
+    amountCents,
+    provider: 'yookassa'
   });
 
   if (payment.status === 'succeeded' || payment.paid === true) {
@@ -984,6 +1002,16 @@ const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPa
     }
     const paidOrder = await markOrderPaidById(order.id);
     if (paidOrder) {
+      void logOrderLifecycleEvent({
+        eventType: 'order_status_changed',
+        orderId: paidOrder.id,
+        orderNumber: paidOrder.order_number,
+        paymentId: payment.id,
+        oldStatus: order.status,
+        newStatus: paidOrder.status,
+        amountCents: paidOrder.total_cents,
+        provider: 'yookassa'
+      });
       await finalizePaidOrder(paidOrder);
       return paidOrder;
     }
@@ -991,6 +1019,16 @@ const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPa
 
   if (payment.status === 'canceled') {
     const canceledOrder = await updateOrderPaymentStatusById(order.id, 'canceled');
+    void logOrderLifecycleEvent({
+      eventType: 'payment_status_changed',
+      orderId: order.id,
+      orderNumber: order.order_number,
+      paymentId: payment.id,
+      oldStatus: previousPaymentStatus,
+      newStatus: 'canceled',
+      amountCents,
+      provider: 'yookassa'
+    });
     return canceledOrder ?? order;
   }
 
@@ -2166,6 +2204,7 @@ export const createApp = () => {
       res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
+    let orderAmountCents: number | null = null;
     try {
       const providerEnabled = await isDeliveryProviderEnabled(deliveryProvider);
       if (!providerEnabled) {
@@ -2219,6 +2258,7 @@ export const createApp = () => {
         0
       );
       const totalCents = itemsTotalCents + deliveryCostCents;
+      orderAmountCents = totalCents;
       const order = await createOrder({
         userId,
         fullName,
@@ -2234,15 +2274,36 @@ export const createApp = () => {
           quantity: item.quantity
         }))
       });
+      void logOrderLifecycleEvent({
+        eventType: 'order_created',
+        orderId: order.id,
+        orderNumber: order.order_number,
+        oldStatus: null,
+        newStatus: order.status,
+        amountCents: order.total_cents,
+        provider: deliveryProvider
+      });
       res.status(201).json({ order: mapOrder(order) });
     } catch (error) {
       if (error instanceof InsufficientStockError) {
+        void logOrderLifecycleEvent({
+          eventType: 'order_create_failed',
+          amountCents: orderAmountCents,
+          provider: deliveryProvider,
+          error: 'insufficient_stock'
+        });
         res.status(409).json({
           error: 'Недостаточно товара на складе',
           issues: error.issues
         });
         return;
       }
+      void logOrderLifecycleEvent({
+        eventType: 'order_create_failed',
+        amountCents: orderAmountCents,
+        provider: deliveryProvider,
+        error: error instanceof Error ? error.message : 'unknown_error'
+      });
       res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
@@ -2314,14 +2375,28 @@ export const createApp = () => {
       return;
     }
 
+    let orderForLog: OrderRow | null = null;
+    let paymentIdForLog: string | null = null;
+    let amountForLog: number | null = null;
     try {
       const order = await findOrderByIdForUser(req.params.id, userId);
+      orderForLog = order;
       if (!order) {
         res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
 
       if (order.status === 'paid') {
+        void logOrderLifecycleEvent({
+          eventType: 'payment_attempt_skipped',
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentId: order.payment_id,
+          oldStatus: order.status,
+          newStatus: order.status,
+          amountCents: order.total_cents,
+          provider: order.payment_provider ?? 'yookassa'
+        });
         res.json({
           order: mapOrder(order),
           alreadyPaid: true
@@ -2332,6 +2407,7 @@ export const createApp = () => {
       const amountCents = isYooKassaUseOrderTotal()
         ? order.total_cents
         : getYooKassaFixedAmountCents();
+      amountForLog = amountCents;
       const isTestMode = !isYooKassaUseOrderTotal();
       const orderItems = await listOrderItemsForUser(order.id, userId);
       const receipt = !isTestMode
@@ -2349,6 +2425,7 @@ export const createApp = () => {
         },
         receipt
       });
+      paymentIdForLog = payment.id;
 
       const confirmationUrl = payment.confirmation?.confirmation_url;
       if (!confirmationUrl) {
@@ -2362,6 +2439,17 @@ export const createApp = () => {
         paymentStatus: payment.status
       });
 
+      void logOrderLifecycleEvent({
+        eventType: 'payment_attempt_created',
+        orderId: order.id,
+        orderNumber: order.order_number,
+        paymentId: payment.id,
+        oldStatus: order.payment_status,
+        newStatus: payment.status,
+        amountCents,
+        provider: 'yookassa'
+      });
+
       res.json({
         order: mapOrder(updatedOrder ?? order),
         confirmationUrl,
@@ -2373,6 +2461,17 @@ export const createApp = () => {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+      void logOrderLifecycleEvent({
+        eventType: 'payment_attempt_failed',
+        orderId: orderForLog?.id,
+        orderNumber: orderForLog?.order_number,
+        paymentId: paymentIdForLog,
+        oldStatus: orderForLog?.payment_status,
+        newStatus: null,
+        amountCents: amountForLog,
+        provider: 'yookassa',
+        error: message
+      });
       console.error('Failed to process request', error);
       res.status(502).json({ error: message });
     }
@@ -2392,8 +2491,11 @@ export const createApp = () => {
       return;
     }
 
+    let refreshOrderForLog: OrderRow | null = null;
+    let refreshPaymentIdForLog: string | null = null;
     try {
       const order = await findOrderByIdForUser(req.params.id, userId);
+      refreshOrderForLog = order;
       if (!order) {
         res.status(404).json({ error: 'Заказ не найден' });
         return;
@@ -2410,7 +2512,18 @@ export const createApp = () => {
       }
 
       const payment = await fetchYooKassaPayment(order.payment_id);
+      refreshPaymentIdForLog = payment.id;
       const updatedOrder = await syncOrderWithYooKassaPayment(order, payment);
+      void logOrderLifecycleEvent({
+        eventType: 'payment_refresh_succeeded',
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.order_number,
+        paymentId: payment.id,
+        oldStatus: order.payment_status,
+        newStatus: payment.status,
+        amountCents: parseYooKassaAmountCents(payment.amount?.value) ?? updatedOrder.total_cents,
+        provider: updatedOrder.payment_provider ?? 'yookassa'
+      });
       res.json({
         order: mapOrder(updatedOrder),
         paymentStatus: payment.status
@@ -2418,6 +2531,17 @@ export const createApp = () => {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+      void logOrderLifecycleEvent({
+        eventType: 'payment_refresh_failed',
+        orderId: refreshOrderForLog?.id,
+        orderNumber: refreshOrderForLog?.order_number,
+        paymentId: refreshPaymentIdForLog ?? refreshOrderForLog?.payment_id,
+        oldStatus: refreshOrderForLog?.payment_status,
+        newStatus: null,
+        amountCents: null,
+        provider: refreshOrderForLog?.payment_provider ?? 'yookassa',
+        error: message
+      });
       console.error('Failed to refresh YooKassa payment status', error);
       res.status(502).json({ error: message });
     }
@@ -2484,6 +2608,8 @@ export const createApp = () => {
       return;
     }
 
+    let webhookPaymentIdForLog: string | null = null;
+    let webhookOrderForLog: OrderRow | null = null;
     try {
       const paymentId =
         req.body?.object &&
@@ -2498,6 +2624,7 @@ export const createApp = () => {
       }
 
       const payment = await fetchYooKassaPayment(paymentId);
+      webhookPaymentIdForLog = payment.id;
       if (!payment.id || !payment.status) {
         res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
@@ -2510,15 +2637,46 @@ export const createApp = () => {
 
       const orderByMetadata = metadataOrderId ? await findOrderById(metadataOrderId) : null;
       const order = orderByMetadata ?? (await findOrderByPaymentId(payment.id));
+      webhookOrderForLog = order;
       if (!order) {
+        void logOrderLifecycleEvent({
+          eventType: 'payment_webhook_order_not_found',
+          paymentId: payment.id,
+          newStatus: payment.status,
+          amountCents: parseYooKassaAmountCents(payment.amount?.value),
+          provider: 'yookassa',
+          error: 'order_not_found'
+        });
         res.json({ ok: true });
         return;
       }
 
-      await syncOrderWithYooKassaPayment(order, payment);
+      const updatedOrder = await syncOrderWithYooKassaPayment(order, payment);
+
+      void logOrderLifecycleEvent({
+        eventType: 'payment_webhook_processed',
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.order_number,
+        paymentId: payment.id,
+        oldStatus: order.status,
+        newStatus: updatedOrder.status,
+        amountCents: parseYooKassaAmountCents(payment.amount?.value) ?? updatedOrder.total_cents,
+        provider: updatedOrder.payment_provider ?? 'yookassa'
+      });
 
       res.json({ ok: true });
     } catch (error) {
+      void logOrderLifecycleEvent({
+        eventType: 'payment_webhook_failed',
+        orderId: webhookOrderForLog?.id,
+        orderNumber: webhookOrderForLog?.order_number,
+        paymentId: webhookPaymentIdForLog,
+        oldStatus: webhookOrderForLog?.payment_status,
+        newStatus: null,
+        amountCents: null,
+        provider: webhookOrderForLog?.payment_provider ?? 'yookassa',
+        error: error instanceof Error ? error.message : 'unknown_error'
+      });
       console.error('Failed to process YooKassa webhook', error);
       res.status(500).json({ ok: false });
     }
@@ -3321,4 +3479,3 @@ export const createApp = () => {
 
   return app;
 };
-
