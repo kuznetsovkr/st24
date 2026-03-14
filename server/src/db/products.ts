@@ -252,7 +252,7 @@ export const deleteProduct = async (id: string): Promise<ProductRow | null> => {
   return (result.rows[0] as ProductRow | undefined) ?? null;
 };
 
-const SKU_NORMALIZED_SQL = `regexp_replace(lower(sku), '[^[:alnum:]]+', '', 'g')`;
+const SKU_NORMALIZED_SQL = 'sku_normalized';
 
 const normalizeSearchLimit = (limit?: number) => {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) {

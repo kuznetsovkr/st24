@@ -32,6 +32,7 @@ export const initDb = async () => {
       id UUID PRIMARY KEY,
       name TEXT NOT NULL,
       sku TEXT NOT NULL UNIQUE,
+      sku_normalized TEXT,
       description TEXT,
       price_cents INTEGER NOT NULL,
       category_slug TEXT NOT NULL REFERENCES categories(slug),
@@ -87,6 +88,45 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE products
     ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS sku_normalized TEXT;
+  `);
+
+  await query(`
+    CREATE OR REPLACE FUNCTION products_normalize_sku_fn()
+    RETURNS TRIGGER
+    AS $$
+    BEGIN
+      NEW.sku_normalized := regexp_replace(lower(COALESCE(NEW.sku, '')), '[^[:alnum:]]+', '', 'g');
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await query(`
+    DROP TRIGGER IF EXISTS products_normalize_sku_trigger ON products;
+  `);
+
+  await query(`
+    CREATE TRIGGER products_normalize_sku_trigger
+    BEFORE INSERT OR UPDATE OF sku
+    ON products
+    FOR EACH ROW
+    EXECUTE FUNCTION products_normalize_sku_fn();
+  `);
+
+  await query(`
+    UPDATE products
+    SET sku_normalized = regexp_replace(lower(sku), '[^[:alnum:]]+', '', 'g')
+    WHERE sku_normalized IS NULL;
+  `);
+
+  await query(`
+    ALTER TABLE products
+    ALTER COLUMN sku_normalized SET NOT NULL;
   `);
 
   await query(`
@@ -485,6 +525,11 @@ export const initDb = async () => {
   `);
 
   await query(`CREATE INDEX IF NOT EXISTS products_category_idx ON products (category_slug);`);
+  await query(`
+    CREATE INDEX IF NOT EXISTS products_sku_normalized_created_idx
+    ON products (sku_normalized text_pattern_ops, created_at DESC)
+    WHERE is_hidden = FALSE;
+  `);
   await query(`CREATE INDEX IF NOT EXISTS box_types_sort_idx ON box_types (sort_order);`);
   await query(`CREATE INDEX IF NOT EXISTS delivery_providers_sort_idx ON delivery_providers (sort_order);`);
   await query(`CREATE INDEX IF NOT EXISTS cart_items_user_idx ON cart_items (user_id);`);
