@@ -888,11 +888,11 @@ const CheckoutPage = () => {
                   {showDeliveryDisclaimer ? (
                     <p className="muted">
                       Стоимость является приблизительной, итоговую стоимость можете уточнить у
-                      менеджера в 
+                      менеджера в&nbsp; 
                       <a href={TELEGRAM_LINK} target="_blank" rel="noreferrer">
                         телеграмме
-                      </a> 
-                      или на почте
+                      </a>&nbsp; 
+                      или на почте&nbsp;
                       <a href={STORE_EMAIL_HREF}>{STORE_EMAIL}</a> после отправки.
                     </p>
                   ) : null}
