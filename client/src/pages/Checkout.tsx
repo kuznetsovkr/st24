@@ -15,7 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
-import { STORE_EMAIL_HREF, TELEGRAM_LINK } from '../constants/contacts.ts';
+import { STORE_EMAIL_HREF, TELEGRAM_LINK, STORE_EMAIL } from '../constants/contacts.ts';
 import { formatPhone } from '../utils/formatPhone.ts';
 import {
   buildShippingPackingDebug,
@@ -893,7 +893,7 @@ const CheckoutPage = () => {
                         телеграмме
                       </a> 
                       или на почте
-                      <a href={STORE_EMAIL_HREF}>{STORE_EMAIL_HREF}</a> после отправки.
+                      <a href={STORE_EMAIL_HREF}>{STORE_EMAIL}</a> после отправки.
                     </p>
                   ) : null}
                   {isEstimatingDelivery ? (
