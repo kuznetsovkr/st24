@@ -259,6 +259,9 @@ const SearchPage = () => {
               {hasMore ? <div ref={loadMoreTriggerRef} style={{ height: 1 }} aria-hidden="true" /> : null}
               {isLoadingMore ? <p className="muted">Загружаем еще товары...</p> : null}
               {loadMoreError ? <p className="muted">{loadMoreError}</p> : null}
+              {!hasMore && !isLoadingMore && !loadMoreError ? (
+                <p className="muted">Вы достигли конца списка.</p>
+              ) : null}
             </>
           )}
         </>
