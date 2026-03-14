@@ -501,7 +501,6 @@ export const requestAuthCode = async (
     expiresInMinutes: number;
     requiresPassword?: boolean;
     deliveryChannel?: 'telegram_gateway' | 'sms_ru' | 'debug';
-    code?: string;
   }>(
     `${API_BASE}/api/auth/request-code`,
     {
@@ -543,7 +542,6 @@ export const requestProfilePhoneCode = async (
     ok: boolean;
     expiresInMinutes: number;
     deliveryChannel?: 'telegram_gateway' | 'sms_ru' | 'debug';
-    code?: string;
   }>(
     `${API_BASE}/api/profile/request-phone-code`,
     {

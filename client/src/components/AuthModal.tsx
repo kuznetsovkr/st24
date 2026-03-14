@@ -298,10 +298,6 @@ const AuthModal = () => {
       setDeliveryChannel(result.deliveryChannel ?? null);
       setSmsFallbackSeconds(result.deliveryChannel === 'telegram_gateway' ? SMS_FALLBACK_TIMEOUT_SECONDS : 0);
 
-      if (result.code) {
-        window.alert(`Тестовый SMS-код: ${result.code}`);
-      }
-
       if (preferredChannel === 'sms_ru' || result.deliveryChannel === 'sms_ru') {
         setRequestStatus('Код отправлен по SMS.');
       } else if (result.deliveryChannel === 'telegram_gateway') {
@@ -453,3 +449,4 @@ const AuthModal = () => {
 };
 
 export default AuthModal;
+

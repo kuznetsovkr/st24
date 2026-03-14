@@ -293,7 +293,7 @@ const AccountPage = () => {
 
     setIsRequestingCode(true);
     try {
-      const result = await requestProfilePhoneCode(
+      await requestProfilePhoneCode(
         phone.trim(),
         undefined,
         phoneCaptchaToken ?? undefined
@@ -301,9 +301,6 @@ const AccountPage = () => {
       setPhoneVerificationState('code-sent');
       setPhoneVerificationMessage('Код отправлен.');
       setPhoneResendCooldown(60);
-      if (result.code) {
-        window.alert(`Тестовый SMS-код: ${result.code}`);
-      }
     } catch (requestError) {
       if (requestError instanceof Error) {
         setPhoneVerificationError(requestError.message);
@@ -836,3 +833,4 @@ const AccountPage = () => {
 };
 
 export default AccountPage;
+

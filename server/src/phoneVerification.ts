@@ -8,7 +8,6 @@ export type PhoneVerificationDeliveryResult = {
   channel: PhoneVerificationChannel;
   providerRequestId?: string;
   providerMessageId?: string;
-  code?: string;
 };
 
 type PreferredPhoneVerificationChannel = Exclude<PhoneVerificationChannel, 'debug'>;
@@ -91,6 +90,7 @@ const getSmsRuApiId = () => trimToUndefined(process.env.SMS_RU_API_ID);
 const getSmsRuSender = () => trimToUndefined(process.env.SMS_RU_SENDER);
 
 const isSmsRuTestMode = () => process.env.SMS_RU_TEST === 'true';
+const isProduction = () => (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
 
 const getPhoneVerificationBrand = () =>
   trimToUndefined(process.env.PHONE_VERIFICATION_BRAND) ?? 'ST24';
@@ -103,6 +103,12 @@ const isDebugCodeEnabled = () => {
     return false;
   }
   return process.env.NODE_ENV !== 'production';
+};
+
+export const assertPhoneVerificationConfiguration = () => {
+  if (isProduction() && process.env.PHONE_VERIFICATION_DEBUG_CODE === 'true') {
+    throw new Error('PHONE_VERIFICATION_DEBUG_CODE must be false in production');
+  }
 };
 
 const getTelegramGatewayTtlSeconds = (ttlMinutes: number) => {
@@ -300,8 +306,7 @@ export const sendPhoneVerificationCode = async (
   if (isDebugCodeEnabled()) {
     console.log(`[PHONE VERIFY DEBUG] ${input.context} ${input.phone}: ${input.code}`);
     return {
-      channel: 'debug',
-      code: input.code
+      channel: 'debug'
     };
   }
 

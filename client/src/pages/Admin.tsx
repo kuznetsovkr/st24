@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, FormEvent } from 'react';
 import {
   createBoxType,
@@ -1193,9 +1193,6 @@ const AdminPage = () => {
         return;
       }
       setAuthMode('code');
-      if (result.code) {
-        window.alert(`Тестовый SMS-код: ${result.code}`);
-      }
       setAuthMessage('Код отправлен.');
     } catch {
       setAuthMessage('Не удалось отправить код.');

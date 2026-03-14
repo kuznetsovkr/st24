@@ -2415,8 +2415,7 @@ export const createApp = () => {
       res.json({
         ok: true,
         expiresInMinutes: CODE_TTL_MINUTES,
-        deliveryChannel: delivery.channel,
-        ...(delivery.code ? { code: delivery.code } : {})
+        deliveryChannel: delivery.channel
       });
     } catch (error) {
       await deleteAuthCode(phone);
@@ -2760,8 +2759,7 @@ export const createApp = () => {
       res.json({
         ok: true,
         expiresInMinutes: CODE_TTL_MINUTES,
-        deliveryChannel: delivery.channel,
-        ...(delivery.code ? { code: delivery.code } : {})
+        deliveryChannel: delivery.channel
       });
     } catch (error) {
       await deleteAuthCode(phone);
