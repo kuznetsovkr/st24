@@ -304,7 +304,6 @@ export const sendPhoneVerificationCode = async (
   }
 
   if (isDebugCodeEnabled()) {
-    console.log(`[PHONE VERIFY DEBUG] ${input.context} ${input.phone}: ${input.code}`);
     return {
       channel: 'debug'
     };

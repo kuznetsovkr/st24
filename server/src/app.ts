@@ -3044,7 +3044,6 @@ export const createApp = () => {
     const code = generateNumericCode(EMAIL_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
     await saveEmailCode(email, code, expiresAt);
-    console.log(`Email verification code for ${email}: ${code}`);
     res.json({ ok: true, expiresInMinutes: CODE_TTL_MINUTES });
   });
 
