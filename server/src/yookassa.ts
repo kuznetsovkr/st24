@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { logIntegrationEvent } from './integrationEvents';
+import { resilientFetch } from './httpClient';
 
 const YOOKASSA_BASE_URL = 'https://api.yookassa.ru/v3';
 
@@ -103,9 +104,13 @@ const requestYooKassa = async <T>(
       ...(idempotenceKey ? { 'Idempotence-Key': idempotenceKey } : {})
     };
 
-    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+    const response = await resilientFetch(`${getApiBaseUrl()}${endpoint}`, {
       ...options,
       headers
+    }, {
+      circuitKey: `yookassa:${operation}`,
+      timeoutMs: 15_000,
+      maxRetries: 2
     });
     statusCode = response.status;
 

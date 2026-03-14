@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { resilientFetch } from './httpClient';
 
 type TurnstileVerifyResult = {
   success?: boolean;
@@ -43,13 +44,17 @@ export const verifyTurnstileToken = async (
   }
   payload.set('idempotency_key', crypto.randomUUID());
 
-  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+  const response = await resilientFetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/x-www-form-urlencoded'
     },
     body: payload.toString()
+  }, {
+    circuitKey: 'turnstile:siteverify',
+    timeoutMs: 8_000,
+    maxRetries: 2
   });
 
   const result = (await response.json()) as TurnstileVerifyResult;

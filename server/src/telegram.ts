@@ -11,6 +11,7 @@ import {
   type TelegramSubscriberInput
 } from './db/telegram';
 import { logIntegrationEvent } from './integrationEvents';
+import { resilientFetch } from './httpClient';
 
 type TelegramConfig = {
   token: string;
@@ -104,13 +105,17 @@ const getTelegramB2BConfig = (): TelegramConfig => {
 };
 
 async function sendToChat(token: string, chatId: string, text: string) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const response = await resilientFetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
       text
     })
+  }, {
+    circuitKey: 'telegram:send_message',
+    timeoutMs: 10_000,
+    maxRetries: 2
   });
 
   if (!response.ok) {
@@ -143,9 +148,13 @@ async function sendDocumentToChat(
     payload.append('caption', caption);
   }
 
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+  const response = await resilientFetch(`https://api.telegram.org/bot${token}/sendDocument`, {
     method: 'POST',
     body: payload
+  }, {
+    circuitKey: 'telegram:send_document',
+    timeoutMs: 15_000,
+    maxRetries: 2
   });
 
   if (!response.ok) {
@@ -439,8 +448,14 @@ export const startTelegramPolling = () => {
     const startedAt = Date.now();
     let statusCode: number | null = null;
     try {
-      const response = await fetch(
-        `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`
+      const response = await resilientFetch(
+        `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`,
+        {},
+        {
+          circuitKey: 'telegram:poll_updates:main',
+          timeoutMs: 45_000,
+          maxRetries: 1
+        }
       );
       statusCode = response.status;
       const data = (await response.json()) as {
@@ -507,8 +522,14 @@ export const startTelegramOrderPolling = () => {
     const startedAt = Date.now();
     let statusCode: number | null = null;
     try {
-      const response = await fetch(
-        `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`
+      const response = await resilientFetch(
+        `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`,
+        {},
+        {
+          circuitKey: 'telegram:poll_updates:orders',
+          timeoutMs: 45_000,
+          maxRetries: 1
+        }
       );
       statusCode = response.status;
       const data = (await response.json()) as {
@@ -575,8 +596,14 @@ export const startTelegramB2BPolling = () => {
     const startedAt = Date.now();
     let statusCode: number | null = null;
     try {
-      const response = await fetch(
-        `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`
+      const response = await resilientFetch(
+        `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`,
+        {},
+        {
+          circuitKey: 'telegram:poll_updates:b2b',
+          timeoutMs: 45_000,
+          maxRetries: 1
+        }
       );
       statusCode = response.status;
       const data = (await response.json()) as {

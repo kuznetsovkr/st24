@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { logPhoneCodeDeliveryEvent } from './phoneCodeDeliveryLogs';
+import { resilientFetch } from './httpClient';
 
 export type PhoneVerificationChannel = 'telegram_gateway' | 'sms_ru' | 'debug';
 
@@ -154,7 +155,7 @@ const callTelegramGateway = async <T>(
     throw new Error('Токен Telegram Gateway не настроен');
   }
 
-  const response = await fetch(`${getTelegramGatewayBaseUrl().replace(/\/$/, '')}/${method}`, {
+  const response = await resilientFetch(`${getTelegramGatewayBaseUrl().replace(/\/$/, '')}/${method}`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -162,6 +163,10 @@ const callTelegramGateway = async <T>(
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(payload)
+  }, {
+    circuitKey: `phone_verification:telegram_gateway:${method}`,
+    timeoutMs: 10_000,
+    maxRetries: 2
   });
 
   const data = await parseJsonResponse<TelegramGatewayResponse<T>>(response);
@@ -250,13 +255,17 @@ const sendViaSmsRu = async (
     params.set('test', '1');
   }
 
-  const response = await fetch(`${SMS_RU_BASE_URL}/sms/send`, {
+  const response = await resilientFetch(`${SMS_RU_BASE_URL}/sms/send`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
     },
     body: params.toString()
+  }, {
+    circuitKey: 'phone_verification:sms_ru_send',
+    timeoutMs: 10_000,
+    maxRetries: 2
   });
 
   const data = await parseJsonResponse<SmsRuSendResponse>(response);

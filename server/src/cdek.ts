@@ -1,3 +1,5 @@
+import { resilientFetch } from './httpClient';
+
 type CdekCredentials = {
   clientId: string;
   clientSecret: string;
@@ -158,7 +160,7 @@ const requestCdek = async (
     json: options.json
   });
 
-  const response = await fetch(url.toString(), {
+  const response = await resilientFetch(url.toString(), {
     method: options.method,
     headers: {
       Accept: 'application/json',
@@ -168,6 +170,10 @@ const requestCdek = async (
       ...(options.json ? { 'Content-Type': 'application/json' } : {})
     },
     body: options.json ? JSON.stringify(options.json) : undefined
+  }, {
+    circuitKey: `cdek:api:${path}`,
+    timeoutMs: 15_000,
+    maxRetries: 2
   });
 
   const body = await parseResponseBody(response);
@@ -214,12 +220,16 @@ const fetchCdekAccessToken = async () => {
   payload.append('client_id', clientId);
   payload.append('client_secret', clientSecret);
 
-  const response = await fetch(tokenUrl.toString(), {
+  const response = await resilientFetch(tokenUrl.toString(), {
     method: 'POST',
     headers: {
       Accept: 'application/json'
     },
     body: payload
+  }, {
+    circuitKey: 'cdek:auth_token',
+    timeoutMs: 10_000,
+    maxRetries: 2
   });
 
   const body = (await parseResponseBody(response)) as

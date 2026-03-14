@@ -6,6 +6,7 @@ import {
   type ShippingEstimateResult
 } from './shippingEstimate';
 import { logIntegrationEvent } from './integrationEvents';
+import { resilientFetch } from './httpClient';
 
 type ProviderApiResult = ShippingEstimateResult & {
   source: 'provider_api' | 'estimate_fallback';
@@ -217,13 +218,17 @@ const calculateDellinShipping = async (
     }
   };
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v2/calculator.json`, {
+  const response = await resilientFetch(`${baseUrl.replace(/\/$/, '')}/v2/calculator.json`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(payload)
+  }, {
+    circuitKey: 'provider_shipping:dellin_calculator',
+    timeoutMs: 15_000,
+    maxRetries: 2
   });
 
   const payloadRaw = await parseJsonResponse(response);
@@ -293,7 +298,7 @@ const calculateRussianPostShipping = async (
     mass: totalMassGrams
   };
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/1.0/tariff`, {
+  const response = await resilientFetch(`${baseUrl.replace(/\/$/, '')}/1.0/tariff`, {
     method: 'POST',
     headers: {
       Accept: 'application/json;charset=UTF-8',
@@ -302,6 +307,10 @@ const calculateRussianPostShipping = async (
       'Content-Type': 'application/json;charset=UTF-8'
     },
     body: JSON.stringify(payload)
+  }, {
+    circuitKey: 'provider_shipping:russian_post_tariff',
+    timeoutMs: 15_000,
+    maxRetries: 2
   });
 
   const payloadRaw = await parseJsonResponse(response);

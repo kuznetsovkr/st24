@@ -1,3 +1,5 @@
+import { resilientFetch } from './httpClient';
+
 type PickupPointProvider = 'dellin' | 'russian_post';
 
 export type PickupPointOption = {
@@ -186,7 +188,7 @@ const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
     throw new PickupPointProxyError('DELLIN_APP_KEY не настроен', 500);
   }
 
-  const directoryUrlResponse = await fetch(
+  const directoryUrlResponse = await resilientFetch(
     `${getDellinBaseUrl().replace(/\/$/, '')}/v3/public/terminals.json`,
     {
       method: 'POST',
@@ -195,6 +197,11 @@ const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ appkey: appKey })
+    },
+    {
+      circuitKey: 'pickup_points:dellin_terminals_url',
+      timeoutMs: 15_000,
+      maxRetries: 2
     }
   );
 
@@ -211,11 +218,19 @@ const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
     throw new PickupPointProxyError('Delovye Linii directory URL is missing in response', 502);
   }
 
-  const directoryResponse = await fetch(directoryUrl, {
-    headers: {
-      Accept: 'application/json'
+  const directoryResponse = await resilientFetch(
+    directoryUrl,
+    {
+      headers: {
+        Accept: 'application/json'
+      }
+    },
+    {
+      circuitKey: 'pickup_points:dellin_terminals_download',
+      timeoutMs: 20_000,
+      maxRetries: 2
     }
-  });
+  );
   const directoryPayload = await parseJson(directoryResponse);
   if (!directoryResponse.ok) {
     throw new PickupPointProxyError('Не удалось получить список терминалов Деловых Линий', 502);
@@ -274,12 +289,16 @@ const requestRussianPostByAddress = async (query: string) => {
   let lastStatus = 502;
 
   for (const headers of getRussianPostHeaderVariants()) {
-    const response = await fetch(url, {
+    const response = await resilientFetch(url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
         ...headers
       }
+    }, {
+      circuitKey: 'pickup_points:russian_post_by_address',
+      timeoutMs: 12_000,
+      maxRetries: 2
     });
     const payload = await parseJson(response);
 
