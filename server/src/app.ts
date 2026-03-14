@@ -129,6 +129,7 @@ import {
   type YooKassaPayment,
   type YooKassaReceipt
 } from './yookassa';
+import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
 
 const CODE_TTL_MINUTES = 5;
 const PHONE_CODE_LENGTH = 4;
@@ -1102,6 +1103,10 @@ export const createApp = () => {
     const signature = req.header('X-Telegram-Gateway-Signature') ?? '';
 
     if (!verifyTelegramGatewaySignature(rawBody, timestamp, signature)) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'webhook_signature_invalid',
+        reason: 'telegram_gateway_signature_invalid'
+      });
       res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
@@ -2466,6 +2471,10 @@ export const createApp = () => {
 
   app.post('/api/payments/yookassa/webhook', async (req: Request, res: Response) => {
     if (!isYooKassaWebhookAllowed(req)) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'webhook_signature_invalid',
+        reason: 'yookassa_webhook_secret_invalid'
+      });
       res.status(403).json({ ok: false });
       return;
     }
@@ -2517,6 +2526,10 @@ export const createApp = () => {
 
   app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
     if (!isTelegramWebhookAllowed(req, getTelegramWebhookSecret())) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'webhook_signature_invalid',
+        reason: 'telegram_webhook_secret_invalid'
+      });
       res.status(403).json({ ok: false });
       return;
     }
@@ -2532,6 +2545,10 @@ export const createApp = () => {
 
   app.post('/api/telegram/orders-webhook', async (req: Request, res: Response) => {
     if (!isTelegramWebhookAllowed(req, getTelegramOrdersWebhookSecret())) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'webhook_signature_invalid',
+        reason: 'telegram_orders_webhook_secret_invalid'
+      });
       res.status(403).json({ ok: false });
       return;
     }
@@ -2547,6 +2564,10 @@ export const createApp = () => {
 
   app.post('/api/telegram/b2b-webhook', async (req: Request, res: Response) => {
     if (!isTelegramWebhookAllowed(req, getTelegramB2BWebhookSecret())) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'webhook_signature_invalid',
+        reason: 'telegram_b2b_webhook_secret_invalid'
+      });
       res.status(403).json({ ok: false });
       return;
     }
@@ -2564,6 +2585,10 @@ export const createApp = () => {
     const requestIp = getRequestIp(req);
     const uploadRateLimit = b2bRequestRateLimiter.consume('b2b_upload', requestIp, 'public');
     if (!uploadRateLimit.allowed) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'rate_limit_exceeded',
+        reason: 'b2b_upload_rate_limit_exceeded'
+      });
       res.setHeader('Retry-After', String(uploadRateLimit.retryAfterSeconds));
       res.status(429).json({
         error: `Слишком много запросов. Повторите через ${uploadRateLimit.retryAfterSeconds} сек.`
@@ -2744,6 +2769,11 @@ export const createApp = () => {
 
     const authRateLimit = phoneCodeRequestRateLimiter.consume('auth', requestIp, phone);
     if (!authRateLimit.allowed) {
+      logSecurityEventFromRequest(req, {
+        eventType: 'rate_limit_exceeded',
+        reason: 'auth_request_code_rate_limit_exceeded',
+        phoneMasked: maskPhone(phone)
+      });
       res.setHeader('Retry-After', String(authRateLimit.retryAfterSeconds));
       res.status(429).json({
         error: `Слишком много запросов. Повторите через ${authRateLimit.retryAfterSeconds} сек.`
@@ -3291,3 +3321,4 @@ export const createApp = () => {
 
   return app;
 };
+

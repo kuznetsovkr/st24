@@ -235,6 +235,21 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS security_events (
+      id UUID PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      ip_hash TEXT,
+      phone_masked TEXT,
+      email_masked TEXT,
+      reason TEXT NOT NULL,
+      route TEXT NOT NULL,
+      method TEXT NOT NULL,
+      user_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS auth_codes (
       phone TEXT PRIMARY KEY,
       code TEXT NOT NULL,
@@ -387,6 +402,9 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS cart_items_user_idx ON cart_items (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_user_idx ON orders (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_payment_id_idx ON orders (payment_id);`);
+  await query(`CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events (created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS security_events_type_created_idx ON security_events (event_type, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS security_events_user_created_idx ON security_events (user_id, created_at DESC);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)
