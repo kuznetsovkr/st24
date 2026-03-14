@@ -19,6 +19,8 @@ type CdekProxyResult = {
   status: number;
   body: unknown;
   forwardedHeaders: Array<[string, string]>;
+  action: 'offices' | 'calculate';
+  requestPayload: Record<string, unknown>;
 };
 
 type CdekRequestOptions = {
@@ -299,17 +301,27 @@ export const proxyCdekWidgetRequest = async (
   });
 
   if (action === 'offices') {
-    return requestCdek('deliverypoints', token, {
+    const response = await requestCdek('deliverypoints', token, {
       method: 'GET',
       query: requestPayload
     });
+    return {
+      ...response,
+      action: 'offices',
+      requestPayload
+    };
   }
 
   if (action === 'calculate') {
-    return requestCdek('calculator/tarifflist', token, {
+    const response = await requestCdek('calculator/tarifflist', token, {
       method: 'POST',
       json: requestPayload
     });
+    return {
+      ...response,
+      action: 'calculate',
+      requestPayload
+    };
   }
 
   throw new CdekProxyError({ message: 'Unknown action', status: 400 });

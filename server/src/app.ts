@@ -101,6 +101,12 @@ import {
   getShippingProviderApiDebug
 } from './providerShipping';
 import {
+  buildShippingParcelsFromCart,
+  hashShippingParcels,
+  normalizeShippingParcels
+} from './shippingParcels';
+import { createDeliveryQuoteToken, verifyDeliveryQuoteToken } from './shippingQuote';
+import {
   createYooKassaPayment,
   fetchYooKassaPayment,
   getYooKassaFixedAmountCents,
@@ -417,6 +423,127 @@ const parseFillRatioField = (value: unknown) => {
     return null;
   }
   return Math.round(parsed * 100) / 100;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const toTrimmedString = (value: unknown) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
+};
+
+const parseNumber = (value: unknown) => {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+      ? Number.parseFloat(value.replace(',', '.'))
+      : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const parseCdekTariffCode = (value: unknown) => {
+  const parsed =
+    typeof value === 'number'
+      ? Math.round(value)
+      : typeof value === 'string'
+      ? Number.parseInt(value, 10)
+      : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const extractCdekDestinationCode = (requestPayload: Record<string, unknown>) => {
+  const directCode =
+    toTrimmedString(requestPayload.office_code) ??
+    toTrimmedString(requestPayload.officeCode) ??
+    toTrimmedString(requestPayload.destinationCode);
+  if (directCode) {
+    return directCode;
+  }
+
+  const toLocation = asRecord(requestPayload.to_location ?? requestPayload.toLocation);
+  if (!toLocation) {
+    return undefined;
+  }
+
+  return (
+    toTrimmedString(toLocation.code) ??
+    toTrimmedString(toLocation.office_code) ??
+    toTrimmedString(toLocation.officeCode) ??
+    toTrimmedString(toLocation.pvz_code) ??
+    toTrimmedString(toLocation.pvzCode)
+  );
+};
+
+const attachCdekQuoteTokens = (
+  responseBody: unknown,
+  requestPayload: Record<string, unknown>
+) => {
+  const parcelsRaw = Array.isArray(requestPayload.goods)
+    ? requestPayload.goods
+    : Array.isArray(requestPayload.packages)
+    ? requestPayload.packages
+    : [];
+  const parcelsHash = hashShippingParcels(normalizeShippingParcels(parcelsRaw));
+  const destinationCode = extractCdekDestinationCode(requestPayload);
+
+  const attachToTariffArray = (tariffs: unknown[]) =>
+    tariffs.map((item) => {
+      const record = asRecord(item);
+      if (!record) {
+        return item;
+      }
+
+      const deliverySum = parseNumber(record.delivery_sum);
+      if (!Number.isFinite(deliverySum) || deliverySum < 0) {
+        return item;
+      }
+
+      const tariffCode = parseCdekTariffCode(record.tariff_code);
+      const quoteToken = createDeliveryQuoteToken({
+        provider: 'cdek',
+        costCents: Math.round(deliverySum * 100),
+        parcelsHash,
+        destinationCode,
+        tariffCode
+      });
+
+      return {
+        ...record,
+        quote_token: quoteToken
+      };
+    });
+
+  if (Array.isArray(responseBody)) {
+    return attachToTariffArray(responseBody);
+  }
+
+  const record = asRecord(responseBody);
+  if (!record) {
+    return responseBody;
+  }
+
+  const listKeys = ['tariff_codes', 'tariffCodes', 'tariffs', 'items'];
+  for (const key of listKeys) {
+    const list = record[key];
+    if (Array.isArray(list)) {
+      return {
+        ...record,
+        [key]: attachToTariffArray(list)
+      };
+    }
+  }
+
+  return responseBody;
 };
 
 const b2bUpload = multer({
@@ -859,7 +986,11 @@ export const createApp = () => {
         res.setHeader(key, value);
       }
       res.setHeader('X-Service-Version', 'node-1.0.0');
-      res.status(response.status).json(response.body);
+      const responseBody =
+        response.action === 'calculate'
+          ? attachCdekQuoteTokens(response.body, response.requestPayload)
+          : response.body;
+      res.status(response.status).json(responseBody);
     } catch (error) {
       if (error instanceof CdekProxyError) {
         if (error.status >= 500) {
@@ -994,6 +1125,13 @@ export const createApp = () => {
         destinationCode,
         destinationAddress
       });
+      const parcelsHash = hashShippingParcels(normalizeShippingParcels(parcels));
+      const quoteToken = createDeliveryQuoteToken({
+        provider,
+        costCents: estimate.estimatedCostCents,
+        parcelsHash,
+        destinationCode: destinationCode.trim() || undefined
+      });
       const debug = getShippingProviderApiDebug(estimate);
       console.log('[SHIPPING]', {
         provider,
@@ -1001,7 +1139,10 @@ export const createApp = () => {
         destinationCode,
         destinationCity
       });
-      res.json(estimate);
+      res.json({
+        ...estimate,
+        quoteToken
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to calculate shipping cost';
@@ -1832,50 +1973,105 @@ export const createApp = () => {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-
     const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim() : '';
     const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
     const email =
       typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const pickupPoint =
       typeof req.body.pickupPoint === 'string' ? req.body.pickupPoint.trim() : '';
-    const deliveryCostInput = req.body.deliveryCostCents;
-    const deliveryCostCents =
-      typeof deliveryCostInput === 'number'
-        ? Math.round(deliveryCostInput)
-        : typeof deliveryCostInput === 'string' && deliveryCostInput.trim() !== ''
-          ? Number.parseInt(deliveryCostInput, 10)
-          : 0;
-
+    const pickupPointCode =
+      typeof req.body.pickupPointCode === 'string' ? req.body.pickupPointCode.trim() : '';
+    const destinationCode =
+      typeof req.body.destinationCode === 'string' ? req.body.destinationCode.trim() : '';
+    const deliveryProviderRaw =
+      typeof req.body.deliveryProvider === 'string' ? req.body.deliveryProvider.trim() : '';
+    const deliveryProvider = isDeliveryProviderKey(deliveryProviderRaw)
+      ? deliveryProviderRaw
+      : null;
+    const deliveryQuoteToken =
+      typeof req.body.deliveryQuoteToken === 'string' ? req.body.deliveryQuoteToken.trim() : '';
+    const deliveryTariffCode = parseCdekTariffCode(req.body.deliveryTariffCode);
     const errors: string[] = [];
     if (!fullName) {
-      errors.push('ФИО обязательно');
+      errors.push('Full name is required');
     }
     if (!phone) {
-      errors.push('Телефон обязателен');
+      errors.push('Phone is required');
     }
     if (!email || !isValidEmail(email)) {
-      errors.push('Некорректная почта');
+      errors.push('Invalid email');
     }
     if (!pickupPoint) {
-      errors.push('Выберите пункт выдачи');
+      errors.push('Pickup point is required');
     }
-    if (Number.isNaN(deliveryCostCents) || deliveryCostCents < 0) {
-      errors.push('Некорректная стоимость доставки');
+    if (!deliveryProvider) {
+      errors.push('Unsupported delivery provider');
     }
-
+    if (!pickupPointCode) {
+      errors.push('Pickup point code is required');
+    }
+    if (!deliveryQuoteToken) {
+      errors.push('Delivery quote is missing');
+    }
+    if (deliveryProvider && deliveryProvider !== 'cdek' && !destinationCode) {
+      errors.push('Destination code is required');
+    }
     if (errors.length > 0) {
       res.status(400).json({ errors });
       return;
     }
-
+    if (!deliveryProvider) {
+      res.status(400).json({ error: 'Unsupported delivery provider' });
+      return;
+    }
     try {
-      const cartItems = await listCartItems(userId);
-      if (cartItems.length === 0) {
-        res.status(400).json({ error: 'Корзина пуста' });
+      const providerEnabled = await isDeliveryProviderEnabled(deliveryProvider);
+      if (!providerEnabled) {
+        res.status(503).json({ error: 'Delivery provider is disabled' });
         return;
       }
-
+      const cartItems = await listCartItems(userId);
+      if (cartItems.length === 0) {
+        res.status(400).json({ error: 'Cart is empty' });
+        return;
+      }
+      const boxTypes = await listBoxTypes();
+      const cartParcels = buildShippingParcelsFromCart(cartItems, boxTypes);
+      const cartParcelsHash = hashShippingParcels(cartParcels);
+      const quote = verifyDeliveryQuoteToken(deliveryQuoteToken);
+      if (!quote.ok) {
+        res.status(400).json({ error: 'Invalid or expired delivery quote' });
+        return;
+      }
+      if (quote.payload.provider !== deliveryProvider) {
+        res.status(400).json({ error: 'Delivery provider does not match quote' });
+        return;
+      }
+      if (quote.payload.parcelsHash !== cartParcelsHash) {
+        res.status(409).json({
+          error: 'Cart or shipping parameters changed. Recalculate delivery before checkout.'
+        });
+        return;
+      }
+      const destinationCodeToCheck =
+        deliveryProvider === 'cdek' ? pickupPointCode : destinationCode || pickupPointCode;
+      if (
+        quote.payload.destinationCode &&
+        quote.payload.destinationCode !== destinationCodeToCheck
+      ) {
+        res.status(400).json({ error: 'Pickup point does not match delivery quote' });
+        return;
+      }
+      if (
+        deliveryProvider === 'cdek' &&
+        quote.payload.tariffCode &&
+        deliveryTariffCode &&
+        quote.payload.tariffCode !== deliveryTariffCode
+      ) {
+        res.status(400).json({ error: 'CDEK tariff does not match delivery quote' });
+        return;
+      }
+      const deliveryCostCents = quote.payload.costCents;
       const itemsTotalCents = cartItems.reduce(
         (sum, item) => sum + item.price_cents * item.quantity,
         0
@@ -1896,12 +2092,11 @@ export const createApp = () => {
           quantity: item.quantity
         }))
       });
-
       res.status(201).json({ order: mapOrder(order) });
     } catch (error) {
       if (error instanceof InsufficientStockError) {
         res.status(409).json({
-          error: 'Недостаточно товара на складе',
+          error: 'Not enough items in stock',
           issues: error.issues
         });
         return;
@@ -1909,7 +2104,6 @@ export const createApp = () => {
       res.status(500).json({ error: 'Failed to create order' });
     }
   });
-
   app.get('/api/orders', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {

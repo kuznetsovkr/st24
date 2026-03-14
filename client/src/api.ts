@@ -159,6 +159,7 @@ export type ShippingEstimate = {
   billedWeightKg: number;
   actualWeightKg: number;
   volumetricWeightKg: number;
+  quoteToken: string;
 };
 
 export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -406,7 +407,13 @@ export const createOrder = async (payload: {
   phone: string;
   email: string;
   pickupPoint: string;
-  deliveryCostCents?: number;
+  pickupPointCode: string;
+  deliveryProvider: DeliveryProviderKey;
+  deliveryQuoteToken: string;
+  deliveryTariffCode?: number;
+  destinationCode?: string;
+  destinationCity?: string;
+  destinationAddress?: string;
 }) => {
   const data = await fetchJson<{ order: Order }>(`${API_BASE}/api/orders`, {
     method: 'POST',

@@ -38,6 +38,7 @@ type CdekWidgetTariff = {
   tariff_code: number;
   tariff_name: string;
   delivery_sum: number;
+  quote_token?: string;
 };
 
 type CdekWidgetOffice = {
@@ -200,8 +201,12 @@ const CheckoutPage = () => {
   const [deliveryProvider, setDeliveryProvider] = useState<DeliveryProvider>('cdek');
   const [pickupPoint, setPickupPoint] = useState('');
   const [pickupPointCode, setPickupPointCode] = useState('');
+  const [pickupPointCity, setPickupPointCity] = useState('');
+  const [pickupPointAddress, setPickupPointAddress] = useState('');
   const [deliveryCostCents, setDeliveryCostCents] = useState<number | null>(null);
   const [deliveryTariffName, setDeliveryTariffName] = useState('');
+  const [deliveryTariffCode, setDeliveryTariffCode] = useState<number | null>(null);
+  const [deliveryQuoteToken, setDeliveryQuoteToken] = useState('');
   const [pickupSearchQuery, setPickupSearchQuery] = useState(
     getPickupSearchDefault('cdek', DEFAULT_CDEK_LOCATION)
   );
@@ -325,7 +330,11 @@ const CheckoutPage = () => {
     estimateRequestIdRef.current += 1;
     setPickupPoint('');
     setPickupPointCode('');
+    setPickupPointCity('');
+    setPickupPointAddress('');
     setDeliveryTariffName('');
+    setDeliveryTariffCode(null);
+    setDeliveryQuoteToken('');
     setPickupOptions([]);
     setPickupOptionsError(null);
     setIsEstimatingDelivery(false);
@@ -451,7 +460,15 @@ const CheckoutPage = () => {
           const label = buildPickupPointLabel(target);
           setPickupPoint(label);
           setPickupPointCode(target.code ?? '');
+          setPickupPointCity(target.city ?? '');
+          setPickupPointAddress(target.address ?? '');
           setDeliveryTariffName(tariff?.tariff_name ?? '');
+          setDeliveryTariffCode(
+            tariff && Number.isFinite(tariff.tariff_code)
+              ? Math.round(tariff.tariff_code)
+              : null
+          );
+          setDeliveryQuoteToken(typeof tariff?.quote_token === 'string' ? tariff.quote_token : '');
           setDeliveryCostCents(
             tariff && Number.isFinite(tariff.delivery_sum)
               ? Math.round(tariff.delivery_sum * 100)
@@ -589,6 +606,7 @@ const CheckoutPage = () => {
         return;
       }
       setDeliveryCostCents(estimate.estimatedCostCents);
+      setDeliveryQuoteToken(estimate.quoteToken);
     } catch (estimateError) {
       if (estimateRequestIdRef.current !== requestId) {
         return;
@@ -599,6 +617,7 @@ const CheckoutPage = () => {
         setPickupOptionsError('Не удалось рассчитать ориентировочную стоимость доставки.');
       }
       setDeliveryCostCents(null);
+      setDeliveryQuoteToken('');
     } finally {
       if (estimateRequestIdRef.current === requestId) {
         setIsEstimatingDelivery(false);
@@ -609,7 +628,11 @@ const CheckoutPage = () => {
   const handlePickupPointChoose = async (point: PickupPointOption) => {
     setPickupPoint(point.label);
     setPickupPointCode(point.code);
+    setPickupPointCity(point.city);
+    setPickupPointAddress(point.address);
     setDeliveryTariffName('');
+    setDeliveryTariffCode(null);
+    setDeliveryQuoteToken('');
     setPickupOptionsError(null);
     await requestNonCdekEstimate(point);
     setError(null);
@@ -625,32 +648,42 @@ const CheckoutPage = () => {
     }
 
     if (items.length === 0) {
-      setError('Корзина пуста. Добавьте товары, чтобы оформить заказ.');
+      setError('Cart is empty. Add products to continue.');
       return;
     }
 
     if (!hasEnabledDeliveryProviders) {
-      setError('Способы доставки временно недоступны. Попробуйте позже.');
+      setError('Delivery methods are temporarily unavailable. Please try later.');
       return;
     }
 
     if (!fullName.trim() || !phone.trim() || !email.trim()) {
-      setError('Заполните ФИО, телефон и почту.');
+      setError('Fill full name, phone and email.');
       return;
     }
 
     if (!pickupPoint) {
-      setError('Выберите пункт выдачи.');
+      setError('Choose a pickup point.');
+      return;
+    }
+
+    if (!pickupPointCode) {
+      setError('Pickup point code is missing. Please reselect a pickup point.');
       return;
     }
 
     if (deliveryProvider === 'cdek' && deliveryCostCents === null) {
-      setError('Не удалось получить стоимость доставки. Выберите пункт выдачи ещё раз.');
+      setError('Could not calculate CDEK delivery. Please reselect the pickup point.');
+      return;
+    }
+
+    if (!deliveryQuoteToken) {
+      setError('Delivery quote expired. Please reselect the pickup point.');
       return;
     }
 
     if (!agreed) {
-      setError('Нужно согласиться с условиями оферты и политикой.');
+      setError('Accept terms and privacy policy to continue.');
       return;
     }
 
@@ -661,13 +694,13 @@ const CheckoutPage = () => {
         (item) => typeof item.stock === 'number' && item.quantity > item.stock
       );
       if (hasIssues) {
-        setError('Некоторых товаров нет в нужном количестве. Проверьте корзину.');
+        setError('Some products are out of stock in requested quantity. Check your cart.');
         return;
       }
 
       const providerLabel = DELIVERY_PROVIDER_LABELS[deliveryProvider];
       const pickupPointValue = pickupPointCode
-        ? `${providerLabel}: ${pickupPoint} (код: ${pickupPointCode})`
+        ? `${providerLabel}: ${pickupPoint} (code: ${pickupPointCode})`
         : `${providerLabel}: ${pickupPoint}`;
 
       const order = await createOrder({
@@ -675,20 +708,26 @@ const CheckoutPage = () => {
         phone: phone.trim(),
         email: email.trim(),
         pickupPoint: pickupPointValue,
-        deliveryCostCents: deliveryProvider === 'cdek' ? deliveryCostCents ?? 0 : 0
+        pickupPointCode,
+        deliveryProvider,
+        deliveryQuoteToken,
+        deliveryTariffCode:
+          deliveryProvider === 'cdek' ? deliveryTariffCode ?? undefined : undefined,
+        destinationCode: deliveryProvider === 'cdek' ? undefined : pickupPointCode,
+        destinationCity: deliveryProvider === 'cdek' ? undefined : pickupPointCity,
+        destinationAddress: deliveryProvider === 'cdek' ? undefined : pickupPointAddress
       });
       navigate(`/payment/${order.id}`);
     } catch (submitError) {
       if (submitError instanceof Error) {
         setError(submitError.message);
       } else {
-        setError('Не удалось оформить заказ.');
+        setError('Could not create order.');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
-
   const toggleSummaryItemName = (itemId: string) => {
     setExpandedSummaryItemIds((prev) => {
       const next = new Set(prev);
