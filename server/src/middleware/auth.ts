@@ -27,7 +27,7 @@ const ensureCsrfProtection = (req: Request, res: Response) => {
   const csrfFromJwt = req.user?.csrfToken ?? '';
 
   if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie || csrfHeader !== csrfFromJwt) {
-    res.status(403).json({ error: 'Invalid CSRF token' });
+    res.status(403).json({ error: 'Недействительный CSRF-токен' });
     return false;
   }
 
@@ -37,7 +37,7 @@ const ensureCsrfProtection = (req: Request, res: Response) => {
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {
   const { token, source } = getRequestAuthToken(req);
   if (!token || !source) {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: 'Требуется авторизация' });
     return;
   }
 
@@ -52,13 +52,13 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
 
     next();
   } catch {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: 'Требуется авторизация' });
   }
 };
 
 export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user || req.user.role !== 'admin') {
-    res.status(403).json({ error: 'Forbidden' });
+    res.status(403).json({ error: 'Доступ запрещен' });
     return;
   }
 

@@ -62,7 +62,7 @@ const getAuthHeaderValue = () => {
   const shopId = getShopId();
   const secretKey = getSecretKey();
   if (!shopId || !secretKey) {
-    throw new Error('YOOKASSA credentials are not configured');
+    throw new Error('Данные YOOKASSA не настроены');
   }
   return `Basic ${Buffer.from(`${shopId}:${secretKey}`).toString('base64')}`;
 };

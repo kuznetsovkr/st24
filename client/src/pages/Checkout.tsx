@@ -648,42 +648,42 @@ const CheckoutPage = () => {
     }
 
     if (items.length === 0) {
-      setError('Cart is empty. Add products to continue.');
+      setError('Корзина пуста. Добавьте товары для продолжения.');
       return;
     }
 
     if (!hasEnabledDeliveryProviders) {
-      setError('Delivery methods are temporarily unavailable. Please try later.');
+      setError('Способы доставки временно недоступны. Попробуйте позже.');
       return;
     }
 
     if (!fullName.trim() || !phone.trim() || !email.trim()) {
-      setError('Fill full name, phone and email.');
+      setError('Заполните ФИО, телефон и email.');
       return;
     }
 
     if (!pickupPoint) {
-      setError('Choose a pickup point.');
+      setError('Выберите пункт выдачи.');
       return;
     }
 
     if (!pickupPointCode) {
-      setError('Pickup point code is missing. Please reselect a pickup point.');
+      setError('Отсутствует код пункта выдачи. Выберите пункт снова.');
       return;
     }
 
     if (deliveryProvider === 'cdek' && deliveryCostCents === null) {
-      setError('Could not calculate CDEK delivery. Please reselect the pickup point.');
+      setError('Не удалось рассчитать доставку CDEK. Выберите пункт выдачи снова.');
       return;
     }
 
     if (!deliveryQuoteToken) {
-      setError('Delivery quote expired. Please reselect the pickup point.');
+      setError('Срок действия стоимости доставки истек. Выберите пункт выдачи снова.');
       return;
     }
 
     if (!agreed) {
-      setError('Accept terms and privacy policy to continue.');
+      setError('Подтвердите согласие с условиями и политикой конфиденциальности.');
       return;
     }
 
@@ -694,7 +694,7 @@ const CheckoutPage = () => {
         (item) => typeof item.stock === 'number' && item.quantity > item.stock
       );
       if (hasIssues) {
-        setError('Some products are out of stock in requested quantity. Check your cart.');
+        setError('Некоторых товаров недостаточно на складе в выбранном количестве. Проверьте корзину.');
         return;
       }
 
@@ -722,7 +722,7 @@ const CheckoutPage = () => {
       if (submitError instanceof Error) {
         setError(submitError.message);
       } else {
-        setError('Could not create order.');
+        setError('Не удалось создать заказ.');
       }
     } finally {
       setIsSubmitting(false);

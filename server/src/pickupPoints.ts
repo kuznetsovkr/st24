@@ -183,7 +183,7 @@ const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
 
   const appKey = getDellinAppKey();
   if (!appKey) {
-    throw new PickupPointProxyError('DELLIN_APP_KEY is not configured', 500);
+    throw new PickupPointProxyError('DELLIN_APP_KEY не настроен', 500);
   }
 
   const directoryUrlResponse = await fetch(
@@ -200,7 +200,7 @@ const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
 
   const directoryUrlPayload = await parseJson(directoryUrlResponse);
   if (!directoryUrlResponse.ok || !isRecord(directoryUrlPayload)) {
-    throw new PickupPointProxyError('Failed to load Delovye Linii terminals directory', 502);
+    throw new PickupPointProxyError('Не удалось получить список терминалов Деловых Линий', 502);
   }
 
   const directoryUrl = safeString(
@@ -218,7 +218,7 @@ const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
   });
   const directoryPayload = await parseJson(directoryResponse);
   if (!directoryResponse.ok) {
-    throw new PickupPointProxyError('Failed to download Delovye Linii terminals list', 502);
+    throw new PickupPointProxyError('Не удалось получить список терминалов Деловых Линий', 502);
   }
 
   const records: Record<string, unknown>[] = [];

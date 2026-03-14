@@ -965,7 +965,7 @@ const finalizePaidOrder = async (order: OrderRow) => {
     const notification = buildPaidOrderNotification(order, orderItems);
     await sendOrderTelegramMessage(notification);
   } catch (error) {
-    console.error(`Failed to send paid order notification for order ${order.id}`, error);
+    console.error('Failed to process request', error);
   }
 };
 
@@ -1102,7 +1102,7 @@ export const createApp = () => {
     const signature = req.header('X-Telegram-Gateway-Signature') ?? '';
 
     if (!verifyTelegramGatewaySignature(rawBody, timestamp, signature)) {
-      res.status(401).json({ error: 'Invalid Telegram Gateway signature' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -1114,7 +1114,7 @@ export const createApp = () => {
     try {
       const cdekEnabled = await isDeliveryProviderEnabled('cdek');
       if (!cdekEnabled) {
-        res.status(503).json({ message: 'CDEK delivery is disabled' });
+        res.status(503).json({ message: 'Доставка CDEK отключена' });
         return;
       }
 
@@ -1144,7 +1144,7 @@ export const createApp = () => {
       }
 
       const message =
-        error instanceof Error ? error.message : 'Failed to process CDEK request';
+        error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       console.error('CDEK proxy unexpected error', error);
       res.status(500).json({ message });
     }
@@ -1153,14 +1153,14 @@ export const createApp = () => {
   app.get('/api/pickup-points/dellin', async (req: Request, res: Response) => {
     const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
     if (query.length < 2) {
-      res.status(400).json({ error: 'Query must contain at least 2 characters' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     try {
       const providerEnabled = await isDeliveryProviderEnabled('dellin');
       if (!providerEnabled) {
-        res.status(503).json({ error: 'Delovye Linii delivery is disabled' });
+        res.status(503).json({ error: 'Сервис временно недоступен' });
         return;
       }
 
@@ -1171,22 +1171,22 @@ export const createApp = () => {
         res.status(error.status).json({ error: error.message });
         return;
       }
-      console.error('Failed to load Delovye Linii pickup points', error);
-      res.status(500).json({ error: 'Failed to load Delovye Linii pickup points' });
+      console.error('Failed to process request', error);
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.get('/api/pickup-points/russian_post', async (req: Request, res: Response) => {
     const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
     if (query.length < 2) {
-      res.status(400).json({ error: 'Query must contain at least 2 characters' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     try {
       const providerEnabled = await isDeliveryProviderEnabled('russian_post');
       if (!providerEnabled) {
-        res.status(503).json({ error: 'Russian Post delivery is disabled' });
+        res.status(503).json({ error: 'Сервис временно недоступен' });
         return;
       }
 
@@ -1197,8 +1197,8 @@ export const createApp = () => {
         res.status(error.status).json({ error: error.message });
         return;
       }
-      console.error('Failed to load Russian Post pickup points', error);
-      res.status(500).json({ error: 'Failed to load Russian Post pickup points' });
+      console.error('Failed to process request', error);
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1209,7 +1209,7 @@ export const createApp = () => {
         ? providerRaw
         : null;
     if (!provider) {
-      res.status(400).json({ error: 'Unsupported provider' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
@@ -1251,7 +1251,7 @@ export const createApp = () => {
     try {
       const providerEnabled = await isDeliveryProviderEnabled(provider);
       if (!providerEnabled) {
-        res.status(503).json({ error: 'Delivery provider is disabled' });
+        res.status(503).json({ error: 'Сервис временно недоступен' });
         return;
       }
 
@@ -1282,7 +1282,7 @@ export const createApp = () => {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to calculate shipping cost';
+        error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       res.status(502).json({ error: message });
     }
   });
@@ -1290,7 +1290,7 @@ export const createApp = () => {
   app.get('/api/categories', (_req: Request, res: Response) => {
     listCategories()
       .then((items) => res.json({ items: items.map(mapCategory) }))
-      .catch(() => res.status(500).json({ error: 'Failed to load categories' }));
+      .catch(() => res.status(500).json({ error: 'Не удалось загрузить категории' }));
   });
 
   app.get('/api/catalog-page', async (_req: Request, res: Response) => {
@@ -1311,7 +1311,7 @@ export const createApp = () => {
 
       res.json({ page: mapCatalogPage(item) });
     } catch {
-      res.status(500).json({ error: 'Failed to load catalog page settings' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1328,7 +1328,7 @@ export const createApp = () => {
         if (uploadedFilename) {
           removeUploadedFiles([uploadedFilename]);
         }
-        res.status(400).json({ error: 'Catalog page name is required' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
 
@@ -1352,7 +1352,7 @@ export const createApp = () => {
         if (uploadedFilename) {
           removeUploadedFiles([uploadedFilename]);
         }
-        res.status(500).json({ error: 'Failed to update catalog page settings' });
+        res.status(500).json({ error: 'Не удалось выполнить запрос' });
       }
     }
   );
@@ -1398,7 +1398,7 @@ export const createApp = () => {
           if (uploadedFilename) {
             removeUploadedFiles([uploadedFilename]);
           }
-          res.status(404).json({ error: 'Category not found' });
+          res.status(404).json({ error: 'Категория не найдена' });
           return;
         }
 
@@ -1413,7 +1413,7 @@ export const createApp = () => {
           if (uploadedFilename) {
             removeUploadedFiles([uploadedFilename]);
           }
-          res.status(404).json({ error: 'Category not found' });
+          res.status(404).json({ error: 'Категория не найдена' });
           return;
         }
 
@@ -1431,7 +1431,7 @@ export const createApp = () => {
           res.status(409).json({ error: 'Такой URL категории уже используется' });
           return;
         }
-        res.status(500).json({ error: 'Failed to update category' });
+        res.status(500).json({ error: 'Не удалось выполнить запрос' });
       }
     }
   );
@@ -1483,7 +1483,7 @@ export const createApp = () => {
       const items = await listBoxTypes();
       res.json({ items: items.map(mapBoxType) });
     } catch {
-      res.status(500).json({ error: 'Failed to load box types' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1492,7 +1492,7 @@ export const createApp = () => {
       const items = await listDeliveryProviders();
       res.json({ items: items.map(mapDeliveryProvider) });
     } catch {
-      res.status(500).json({ error: 'Failed to load delivery providers' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1503,24 +1503,24 @@ export const createApp = () => {
     async (req: Request, res: Response) => {
       const keyRaw = typeof req.params.key === 'string' ? req.params.key.trim() : '';
       if (!isDeliveryProviderKey(keyRaw)) {
-        res.status(400).json({ error: 'Unsupported delivery provider' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
 
       if (typeof req.body?.isEnabled !== 'boolean') {
-        res.status(400).json({ error: 'isEnabled must be boolean' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
 
       try {
         const item = await updateDeliveryProviderEnabled(keyRaw, req.body.isEnabled);
         if (!item) {
-          res.status(404).json({ error: 'Delivery provider not found' });
+          res.status(404).json({ error: 'Не найдено' });
           return;
         }
         res.json(mapDeliveryProvider(item));
       } catch {
-        res.status(500).json({ error: 'Failed to update delivery provider' });
+        res.status(500).json({ error: 'Не удалось выполнить запрос' });
       }
     }
   );
@@ -1542,7 +1542,7 @@ export const createApp = () => {
       }
       res.json({ banner: mapSiteBanner(item) });
     } catch {
-      res.status(500).json({ error: 'Failed to load home banner' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1566,7 +1566,7 @@ export const createApp = () => {
       );
 
       if (!desktopFile && !mobileFile) {
-        res.status(400).json({ error: 'At least one banner image is required' });
+        res.status(400).json({ error: 'Нужно загрузить хотя бы одно изображение баннера' });
         return;
       }
 
@@ -1601,7 +1601,7 @@ export const createApp = () => {
         if (uploadedFilenames.length > 0) {
           removeUploadedFiles(uploadedFilenames);
         }
-        res.status(500).json({ error: 'Failed to update home banner' });
+        res.status(500).json({ error: 'Не удалось выполнить запрос' });
       }
     }
   );
@@ -1650,7 +1650,7 @@ export const createApp = () => {
       });
       res.status(201).json(mapBoxType(item));
     } catch {
-      res.status(500).json({ error: 'Failed to create box type' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1697,12 +1697,12 @@ export const createApp = () => {
         sortOrder: sortOrder ?? 0
       });
       if (!item) {
-        res.status(404).json({ error: 'Box type not found' });
+        res.status(404).json({ error: 'Тип коробки не найден' });
         return;
       }
       res.json(mapBoxType(item));
     } catch {
-      res.status(500).json({ error: 'Failed to update box type' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1710,12 +1710,12 @@ export const createApp = () => {
     try {
       const item = await deleteBoxType(req.params.id);
       if (!item) {
-        res.status(404).json({ error: 'Box type not found' });
+        res.status(404).json({ error: 'Тип коробки не найден' });
         return;
       }
       res.json({ ok: true });
     } catch {
-      res.status(500).json({ error: 'Failed to delete box type' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1727,24 +1727,24 @@ export const createApp = () => {
     if (includeHidden) {
       const { token } = getRequestAuthToken(req);
       if (!token) {
-        res.status(403).json({ error: 'Forbidden' });
+        res.status(403).json({ error: 'Доступ запрещен' });
         return;
       }
       try {
         const payload = verifyToken(token);
         if (payload.role !== 'admin') {
-          res.status(403).json({ error: 'Forbidden' });
+          res.status(403).json({ error: 'Доступ запрещен' });
           return;
         }
       } catch {
-        res.status(403).json({ error: 'Forbidden' });
+        res.status(403).json({ error: 'Доступ запрещен' });
         return;
       }
     }
 
     listProducts(category, featured, includeHidden)
       .then((items) => res.json({ items: items.map(mapProduct) }))
-      .catch(() => res.status(500).json({ error: 'Failed to load products' }));
+      .catch(() => res.status(500).json({ error: 'Не удалось загрузить товары' }));
   });
 
   app.get('/api/products/search', async (req: Request, res: Response) => {
@@ -1772,7 +1772,7 @@ export const createApp = () => {
         fallbackPrefix: result.fallbackPrefix
       });
     } catch {
-      res.status(500).json({ error: 'Failed to search products' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1880,7 +1880,7 @@ export const createApp = () => {
       res.status(201).json(mapProduct(product));
     } catch {
       removeUploadedFiles(filenames);
-      res.status(500).json({ error: 'Failed to create product' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -1888,7 +1888,7 @@ export const createApp = () => {
     const { id } = req.params;
     const existing = await findProductById(id);
     if (!existing) {
-      res.status(404).json({ error: 'Product not found' });
+      res.status(404).json({ error: 'Заказ не найден' });
       return;
     }
 
@@ -2025,7 +2025,7 @@ export const createApp = () => {
       });
 
       if (!updated) {
-        res.status(404).json({ error: 'Product not found' });
+        res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
 
@@ -2035,7 +2035,7 @@ export const createApp = () => {
       res.json(mapProduct(updated));
     } catch {
       removeUploadedFiles(filenames);
-      res.status(500).json({ error: 'Failed to update product' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -2043,7 +2043,7 @@ export const createApp = () => {
     const { id } = req.params;
     const removed = await deleteProduct(id);
     if (!removed) {
-      res.status(404).json({ error: 'Product not found' });
+      res.status(404).json({ error: 'Заказ не найден' });
       return;
     }
 
@@ -2054,7 +2054,7 @@ export const createApp = () => {
   app.get('/api/cart', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -2062,14 +2062,14 @@ export const createApp = () => {
       const items = await listCartItems(userId);
       res.json({ items: items.map(mapCartItem) });
     } catch {
-      res.status(500).json({ error: 'Failed to load cart' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.post('/api/cart/merge', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -2081,14 +2081,14 @@ export const createApp = () => {
       const items = await listCartItems(userId);
       res.json({ items: items.map(mapCartItem) });
     } catch {
-      res.status(500).json({ error: 'Failed to merge cart' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.put('/api/cart', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -2100,14 +2100,14 @@ export const createApp = () => {
       const items = await listCartItems(userId);
       res.json({ items: items.map(mapCartItem) });
     } catch {
-      res.status(500).json({ error: 'Failed to sync cart' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.post('/api/orders', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
     const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim() : '';
@@ -2130,46 +2130,46 @@ export const createApp = () => {
     const deliveryTariffCode = parseCdekTariffCode(req.body.deliveryTariffCode);
     const errors: string[] = [];
     if (!fullName) {
-      errors.push('Full name is required');
+      errors.push('ФИО обязательно');
     }
     if (!phone) {
-      errors.push('Phone is required');
+      errors.push('Телефон обязателен');
     }
     if (!email || !isValidEmail(email)) {
-      errors.push('Invalid email');
+      errors.push('Некорректный email');
     }
     if (!pickupPoint) {
-      errors.push('Pickup point is required');
+      errors.push('Пункт выдачи обязателен');
     }
     if (!deliveryProvider) {
-      errors.push('Unsupported delivery provider');
+      errors.push('Неподдерживаемая служба доставки');
     }
     if (!pickupPointCode) {
-      errors.push('Pickup point code is required');
+      errors.push('Код пункта выдачи обязателен');
     }
     if (!deliveryQuoteToken) {
-      errors.push('Delivery quote is missing');
+      errors.push('Стоимость доставки отсутствует');
     }
     if (deliveryProvider && deliveryProvider !== 'cdek' && !destinationCode) {
-      errors.push('Destination code is required');
+      errors.push('Код пункта назначения обязателен');
     }
     if (errors.length > 0) {
       res.status(400).json({ errors });
       return;
     }
     if (!deliveryProvider) {
-      res.status(400).json({ error: 'Unsupported delivery provider' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
     try {
       const providerEnabled = await isDeliveryProviderEnabled(deliveryProvider);
       if (!providerEnabled) {
-        res.status(503).json({ error: 'Delivery provider is disabled' });
+        res.status(503).json({ error: 'Сервис временно недоступен' });
         return;
       }
       const cartItems = await listCartItems(userId);
       if (cartItems.length === 0) {
-        res.status(400).json({ error: 'Cart is empty' });
+        res.status(400).json({ error: 'Корзина пуста' });
         return;
       }
       const boxTypes = await listBoxTypes();
@@ -2177,16 +2177,16 @@ export const createApp = () => {
       const cartParcelsHash = hashShippingParcels(cartParcels);
       const quote = verifyDeliveryQuoteToken(deliveryQuoteToken);
       if (!quote.ok) {
-        res.status(400).json({ error: 'Invalid or expired delivery quote' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
       if (quote.payload.provider !== deliveryProvider) {
-        res.status(400).json({ error: 'Delivery provider does not match quote' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
       if (quote.payload.parcelsHash !== cartParcelsHash) {
         res.status(409).json({
-          error: 'Cart or shipping parameters changed. Recalculate delivery before checkout.'
+          error: 'Состав корзины или параметры доставки изменились. Пересчитайте доставку перед оформлением.'
         });
         return;
       }
@@ -2196,7 +2196,7 @@ export const createApp = () => {
         quote.payload.destinationCode &&
         quote.payload.destinationCode !== destinationCodeToCheck
       ) {
-        res.status(400).json({ error: 'Pickup point does not match delivery quote' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
       if (
@@ -2205,7 +2205,7 @@ export const createApp = () => {
         deliveryTariffCode &&
         quote.payload.tariffCode !== deliveryTariffCode
       ) {
-        res.status(400).json({ error: 'CDEK tariff does not match delivery quote' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
       const deliveryCostCents = quote.payload.costCents;
@@ -2233,18 +2233,18 @@ export const createApp = () => {
     } catch (error) {
       if (error instanceof InsufficientStockError) {
         res.status(409).json({
-          error: 'Not enough items in stock',
+          error: 'Недостаточно товара на складе',
           issues: error.issues
         });
         return;
       }
-      res.status(500).json({ error: 'Failed to create order' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
   app.get('/api/orders', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -2252,59 +2252,59 @@ export const createApp = () => {
       const orders = await listOrdersByUser(userId);
       res.json({ items: orders.map(mapOrder) });
     } catch {
-      res.status(500).json({ error: 'Failed to load orders' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.get('/api/orders/:id', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     try {
       const order = await findOrderByIdForUser(req.params.id, userId);
       if (!order) {
-        res.status(404).json({ error: 'Order not found' });
+        res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
       res.json({ order: mapOrder(order) });
     } catch {
-      res.status(500).json({ error: 'Failed to load order' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.get('/api/orders/:id/items', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     try {
       const order = await findOrderByIdForUser(req.params.id, userId);
       if (!order) {
-        res.status(404).json({ error: 'Order not found' });
+        res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
       const items = await listOrderItemsForUser(req.params.id, userId);
       res.json({ items: items.map(mapOrderItem) });
     } catch {
-      res.status(500).json({ error: 'Failed to load order items' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.post('/api/orders/:id/payment', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     if (!isYooKassaConfigured()) {
       res.status(503).json({
-        error: 'YooKassa is not configured. Set YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY.'
+        error: 'YooKassa не настроена. Укажите YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.'
       });
       return;
     }
@@ -2312,7 +2312,7 @@ export const createApp = () => {
     try {
       const order = await findOrderByIdForUser(req.params.id, userId);
       if (!order) {
-        res.status(404).json({ error: 'Order not found' });
+        res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
 
@@ -2347,7 +2347,7 @@ export const createApp = () => {
 
       const confirmationUrl = payment.confirmation?.confirmation_url;
       if (!confirmationUrl) {
-        res.status(502).json({ error: 'YooKassa did not return confirmation_url' });
+        res.status(502).json({ error: 'YooKassa не вернула confirmation_url' });
         return;
       }
 
@@ -2367,8 +2367,8 @@ export const createApp = () => {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to create YooKassa payment';
-      console.error('Failed to create YooKassa payment', error);
+        error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+      console.error('Failed to process request', error);
       res.status(502).json({ error: message });
     }
   });
@@ -2376,13 +2376,13 @@ export const createApp = () => {
   app.post('/api/orders/:id/payment/refresh', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     if (!isYooKassaConfigured()) {
       res.status(503).json({
-        error: 'YooKassa is not configured. Set YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY.'
+        error: 'YooKassa не настроена. Укажите YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY.'
       });
       return;
     }
@@ -2390,7 +2390,7 @@ export const createApp = () => {
     try {
       const order = await findOrderByIdForUser(req.params.id, userId);
       if (!order) {
-        res.status(404).json({ error: 'Order not found' });
+        res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
 
@@ -2400,7 +2400,7 @@ export const createApp = () => {
       }
 
       if (!order.payment_id) {
-        res.status(400).json({ error: 'Payment is not initialized for this order' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
 
@@ -2412,7 +2412,7 @@ export const createApp = () => {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to refresh payment status';
+        error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       console.error('Failed to refresh YooKassa payment status', error);
       res.status(502).json({ error: message });
     }
@@ -2421,13 +2421,13 @@ export const createApp = () => {
   app.post('/api/orders/:id/pay', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     if (isYooKassaConfigured()) {
       res.status(400).json({
-        error: 'Manual payment is disabled when YooKassa is enabled. Use /api/orders/:id/payment.'
+        error: 'Ручная оплата отключена при включенной YooKassa. Используйте /api/orders/:id/payment.'
       });
       return;
     }
@@ -2435,7 +2435,7 @@ export const createApp = () => {
     try {
       const existingOrder = await findOrderByIdForUser(req.params.id, userId);
       if (!existingOrder) {
-        res.status(404).json({ error: 'Order not found' });
+        res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
 
@@ -2445,7 +2445,7 @@ export const createApp = () => {
         if (!paidOrder) {
           const refreshedOrder = await findOrderByIdForUser(req.params.id, userId);
           if (!refreshedOrder) {
-            res.status(404).json({ error: 'Order not found' });
+            res.status(404).json({ error: 'Заказ не найден' });
             return;
           }
           order = refreshedOrder;
@@ -2460,7 +2460,7 @@ export const createApp = () => {
 
       res.json({ order: mapOrder(order) });
     } catch {
-      res.status(500).json({ error: 'Failed to update order' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
@@ -2484,13 +2484,13 @@ export const createApp = () => {
           : '';
 
       if (!paymentId) {
-        res.status(400).json({ error: 'Invalid YooKassa webhook payload' });
+        res.status(400).json({ error: 'Некорректный payload вебхука YooKassa' });
         return;
       }
 
       const payment = await fetchYooKassaPayment(paymentId);
       if (!payment.id || !payment.status) {
-        res.status(400).json({ error: 'Invalid YooKassa payment data' });
+        res.status(400).json({ error: 'Некорректные данные запроса' });
         return;
       }
 
@@ -2566,7 +2566,7 @@ export const createApp = () => {
     if (!uploadRateLimit.allowed) {
       res.setHeader('Retry-After', String(uploadRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many requests. Try again in ${uploadRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${uploadRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -2616,7 +2616,7 @@ export const createApp = () => {
         } catch (error) {
           await removeB2BTempFile(file);
           res.status(400).json({
-            error: error instanceof Error ? error.message : 'Failed to validate captcha'
+            error: error instanceof Error ? error.message : 'Не удалось выполнить запрос'
           });
           return;
         }
@@ -2649,7 +2649,7 @@ export const createApp = () => {
         );
         res.json({ ok: true });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to send request';
+        const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
         res.status(500).json({ error: message });
       } finally {
         await removeB2BTempFile(file);
@@ -2689,7 +2689,7 @@ export const createApp = () => {
     if (!needPartRateLimit.allowed) {
       res.setHeader('Retry-After', String(needPartRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many requests. Try again in ${needPartRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${needPartRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -2699,7 +2699,7 @@ export const createApp = () => {
         await verifyTurnstileToken(captchaToken, requestIp, 'request_need_part');
       } catch (error) {
         res.status(400).json({
-          error: error instanceof Error ? error.message : 'Failed to validate captcha'
+          error: error instanceof Error ? error.message : 'Не удалось выполнить запрос'
         });
         return;
       }
@@ -2707,7 +2707,7 @@ export const createApp = () => {
 
     const product = await findProductById(productId);
     if (!product) {
-      res.status(404).json({ error: 'Product not found' });
+      res.status(404).json({ error: 'Заказ не найден' });
       return;
     }
 
@@ -2725,7 +2725,7 @@ export const createApp = () => {
       await sendTelegramMessage(lines.join('\n'));
       res.json({ ok: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to send request';
+      const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       res.status(500).json({ error: message });
     }
   });
@@ -2746,7 +2746,7 @@ export const createApp = () => {
     if (!authRateLimit.allowed) {
       res.setHeader('Retry-After', String(authRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many code requests. Try again in ${authRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${authRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -2774,7 +2774,7 @@ export const createApp = () => {
     if (phone === getAdminPhone() && adminAuthMode === 'password') {
       const adminPassword = getAdminPassword();
       if (!adminPassword) {
-        res.status(500).json({ error: 'ADMIN_PASSWORD is not configured' });
+        res.status(500).json({ error: 'ADMIN_PASSWORD не настроен' });
         return;
       }
       res.json({ ok: true, expiresInMinutes: 0, requiresPassword: true });
@@ -2830,7 +2830,7 @@ export const createApp = () => {
     if (phone === getAdminPhone() && adminAuthMode === 'password') {
       const adminPassword = getAdminPassword();
       if (!adminPassword) {
-        res.status(500).json({ error: 'ADMIN_PASSWORD is not configured' });
+        res.status(500).json({ error: 'ADMIN_PASSWORD не настроен' });
         return;
       }
       if (!password.trim()) {
@@ -2841,7 +2841,7 @@ export const createApp = () => {
       if (!verifyRateLimit.allowed) {
         res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
         res.status(429).json({
-          error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+          error: `Слишком много запросов. Повторите через ${verifyRateLimit.retryAfterSeconds} сек.`
         });
         return;
       }
@@ -2872,7 +2872,7 @@ export const createApp = () => {
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${verifyRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -2910,13 +2910,13 @@ export const createApp = () => {
   app.get('/api/auth/me', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     const user = await findUserById(userId);
     if (!user) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Не найдено' });
       return;
     }
 
@@ -2936,7 +2936,7 @@ export const createApp = () => {
           csrfHeader !== csrfCookie ||
           csrfHeader !== payload.csrfToken
         ) {
-          res.status(403).json({ error: 'Invalid CSRF token' });
+          res.status(403).json({ error: 'Недействительный CSRF-токен' });
           return;
         }
       } catch {
@@ -2951,7 +2951,7 @@ export const createApp = () => {
   app.put('/api/profile', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -2963,36 +2963,36 @@ export const createApp = () => {
     const email = normalizedEmail ? normalizedEmail : null;
 
     if (!phone) {
-      res.status(400).json({ error: 'Phone is required' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     if (phone.length !== 11 || !phone.startsWith('7')) {
-      res.status(400).json({ error: 'Invalid phone format' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     if (email && !isValidEmail(email)) {
-      res.status(400).json({ error: 'Invalid email format' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     const existing = await findUserById(userId);
     if (!existing) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Не найдено' });
       return;
     }
 
     const phoneOwner = await findUserByPhone(phone);
     if (phoneOwner && phoneOwner.id !== userId) {
-      res.status(409).json({ error: 'Phone already in use' });
+      res.status(409).json({ error: 'Конфликт данных' });
       return;
     }
 
     if (email) {
       const emailOwner = await findUserByEmail(email);
       if (emailOwner && emailOwner.id !== userId) {
-        res.status(409).json({ error: 'Email already in use' });
+        res.status(409).json({ error: 'Конфликт данных' });
         return;
       }
     }
@@ -3006,38 +3006,38 @@ export const createApp = () => {
       );
 
       if (!updated) {
-        res.status(404).json({ error: 'User not found' });
+        res.status(404).json({ error: 'Не найдено' });
         return;
       }
 
       res.json(mapUser(updated));
     } catch {
-      res.status(500).json({ error: 'Failed to update profile' });
+      res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
 
   app.post('/api/profile/request-email-code', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
     const rawEmail = typeof req.body.email === 'string' ? req.body.email : '';
     const email = normalizeEmail(rawEmail);
     if (!email) {
-      res.status(400).json({ error: 'Email is required' });
+      res.status(400).json({ error: 'Email обязателен' });
       return;
     }
 
     if (!isValidEmail(email)) {
-      res.status(400).json({ error: 'Invalid email format' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     const emailOwner = await findUserByEmail(email);
     if (emailOwner && emailOwner.id !== userId) {
-      res.status(409).json({ error: 'Email already in use' });
+      res.status(409).json({ error: 'Конфликт данных' });
       return;
     }
 
@@ -3050,7 +3050,7 @@ export const createApp = () => {
   app.post('/api/profile/verify-email-code', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -3061,7 +3061,7 @@ export const createApp = () => {
     const verifyScope = 'profile_email_verify';
 
     if (!email || !code) {
-      res.status(400).json({ error: 'Email and code are required' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
@@ -3069,31 +3069,31 @@ export const createApp = () => {
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${verifyRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
 
     if (!isValidEmail(email)) {
-      res.status(400).json({ error: 'Invalid email format' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     const emailOwner = await findUserByEmail(email);
     if (emailOwner && emailOwner.id !== userId) {
-      res.status(409).json({ error: 'Email already in use' });
+      res.status(409).json({ error: 'Конфликт данных' });
       return;
     }
 
     const stored = await findEmailCode(email);
     if (!stored || stored.code !== code) {
-      res.status(400).json({ error: 'Invalid code' });
+      res.status(400).json({ error: 'Неверный код' });
       return;
     }
 
     const expired = new Date(stored.expires_at).getTime() < Date.now();
     if (expired) {
-      res.status(400).json({ error: 'Code expired' });
+      res.status(400).json({ error: 'Код истёк' });
       return;
     }
 
@@ -3105,7 +3105,7 @@ export const createApp = () => {
   app.post('/api/profile/request-phone-code', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -3115,7 +3115,7 @@ export const createApp = () => {
     const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
     const requestIp = getRequestIp(req);
     if (!phone) {
-      res.status(400).json({ error: 'Phone is required' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
@@ -3127,7 +3127,7 @@ export const createApp = () => {
     if (!profilePhoneRateLimit.allowed) {
       res.setHeader('Retry-After', String(profilePhoneRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many code requests. Try again in ${profilePhoneRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${profilePhoneRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -3153,13 +3153,13 @@ export const createApp = () => {
     }
 
     if (phone.length !== 11 || !phone.startsWith('7')) {
-      res.status(400).json({ error: 'Invalid phone format' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     const phoneOwner = await findUserByPhone(phone);
     if (phoneOwner && phoneOwner.id !== userId) {
-      res.status(409).json({ error: 'Phone already in use' });
+      res.status(409).json({ error: 'Конфликт данных' });
       return;
     }
 
@@ -3198,7 +3198,7 @@ export const createApp = () => {
   app.post('/api/profile/verify-phone-code', authenticate, async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
 
@@ -3209,7 +3209,7 @@ export const createApp = () => {
     const verifyScope = 'profile_phone_verify';
 
     if (!phone || !code) {
-      res.status(400).json({ error: 'Phone and code are required' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
@@ -3217,19 +3217,19 @@ export const createApp = () => {
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `Too many verification attempts. Try again in ${verifyRateLimit.retryAfterSeconds} sec.`
+        error: `Слишком много запросов. Повторите через ${verifyRateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
 
     if (phone.length !== 11 || !phone.startsWith('7')) {
-      res.status(400).json({ error: 'Invalid phone format' });
+      res.status(400).json({ error: 'Некорректные данные запроса' });
       return;
     }
 
     const phoneOwner = await findUserByPhone(phone);
     if (phoneOwner && phoneOwner.id !== userId) {
-      res.status(409).json({ error: 'Phone already in use' });
+      res.status(409).json({ error: 'Конфликт данных' });
       return;
     }
 
@@ -3238,13 +3238,13 @@ export const createApp = () => {
       void reportTelegramVerificationStatus(stored.provider_request_id, code);
     }
     if (!stored || stored.code !== code) {
-      res.status(400).json({ error: 'Invalid code' });
+      res.status(400).json({ error: 'Неверный код' });
       return;
     }
 
     const expired = new Date(stored.expires_at).getTime() < Date.now();
     if (expired) {
-      res.status(400).json({ error: 'Code expired' });
+      res.status(400).json({ error: 'Код истёк' });
       return;
     }
 
@@ -3277,7 +3277,7 @@ export const createApp = () => {
     }
 
     if (error instanceof Error) {
-      const message = error.message || 'Internal server error';
+      const message = error.message || 'Внутренняя ошибка сервера';
       const isClientUploadError =
         message.includes('Unsupported file') ||
         message.includes('signature') ||
@@ -3286,7 +3286,7 @@ export const createApp = () => {
       return;
     }
 
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Не удалось выполнить запрос' });
   });
 
   return app;

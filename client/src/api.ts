@@ -250,7 +250,7 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || 'Request failed');
+    throw new Error(text || 'Не удалось выполнить запрос');
   }
   return (await response.json()) as T;
 };

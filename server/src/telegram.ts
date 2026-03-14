@@ -81,7 +81,7 @@ type UpdateProcessorOptions = {
 const getTelegramConfig = (): TelegramConfig => {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    throw new Error('Telegram is not configured');
+    throw new Error('Telegram не настроен');
   }
   return { token };
 };
@@ -89,7 +89,7 @@ const getTelegramConfig = (): TelegramConfig => {
 const getTelegramOrdersConfig = (): TelegramConfig => {
   const token = process.env.TELEGRAM_ORDERS_BOT_TOKEN;
   if (!token) {
-    throw new Error('Telegram orders bot is not configured');
+    throw new Error('Бот Telegram для заказов не настроен');
   }
   return { token };
 };
@@ -97,7 +97,7 @@ const getTelegramOrdersConfig = (): TelegramConfig => {
 const getTelegramB2BConfig = (): TelegramConfig => {
   const token = process.env.TELEGRAM_B2B_BOT_TOKEN;
   if (!token) {
-    throw new Error('Telegram B2B bot is not configured');
+    throw new Error('B2B-бот Telegram не настроен');
   }
   return { token };
 };
@@ -114,7 +114,7 @@ async function sendToChat(token: string, chatId: string, text: string) {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as TelegramError | null;
-    const description = payload?.description ?? 'Failed to send telegram message';
+    const description = payload?.description ?? 'Не удалось отправить сообщение в Telegram';
     const error = new Error(description);
     (error as Error & { errorCode?: number }).errorCode = payload?.error_code;
     throw error;
@@ -149,7 +149,7 @@ async function sendDocumentToChat(
 
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as TelegramError | null;
-    const description = data?.description ?? 'Failed to send telegram document';
+    const description = data?.description ?? 'Не удалось отправить документ в Telegram';
     const error = new Error(description);
     (error as Error & { errorCode?: number }).errorCode = data?.error_code;
     throw error;
@@ -330,7 +330,7 @@ export const sendTelegramMessage = async (text: string) => {
         await sendToChat(token, subscriber.chat_id, text);
         successCount += 1;
       } catch (error) {
-        const err = error instanceof Error ? error : new Error('Failed to send');
+        const err = error instanceof Error ? error : new Error('Не удалось отправить');
         const errorCode = (err as Error & { errorCode?: number }).errorCode;
         if (errorCode === 403 || err.message.includes('blocked')) {
           await deactivateTelegramSubscriber(subscriber.chat_id);
@@ -362,7 +362,7 @@ export const sendOrderTelegramMessage = async (text: string) => {
         await sendToChat(token, subscriber.chat_id, text);
         successCount += 1;
       } catch (error) {
-        const err = error instanceof Error ? error : new Error('Failed to send');
+        const err = error instanceof Error ? error : new Error('Не удалось отправить');
         const errorCode = (err as Error & { errorCode?: number }).errorCode;
         if (errorCode === 403 || err.message.includes('blocked')) {
           await deactivateTelegramOrderSubscriber(subscriber.chat_id);
@@ -403,7 +403,7 @@ export const sendB2BTelegramMessage = async (
         }
         successCount += 1;
       } catch (error) {
-        const err = error instanceof Error ? error : new Error('Failed to send');
+        const err = error instanceof Error ? error : new Error('Не удалось отправить');
         const errorCode = (err as Error & { errorCode?: number }).errorCode;
         if (errorCode === 403 || err.message.includes('blocked')) {
           await deactivateTelegramB2BSubscriber(subscriber.chat_id);

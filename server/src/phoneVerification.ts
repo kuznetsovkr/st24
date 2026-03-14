@@ -150,7 +150,7 @@ const callTelegramGateway = async <T>(
 ): Promise<T> => {
   const token = getTelegramGatewayToken();
   if (!token) {
-    throw new Error('Telegram Gateway token is not configured');
+    throw new Error('Токен Telegram Gateway не настроен');
   }
 
   const response = await fetch(`${getTelegramGatewayBaseUrl().replace(/\/$/, '')}/${method}`, {
@@ -185,7 +185,7 @@ const sendViaTelegramGateway = async (
 
   const requestId = check.request_id?.trim();
   if (!requestId) {
-    throw new Error('Telegram Gateway did not return request_id');
+    throw new Error('Telegram Gateway не вернул request_id');
   }
 
   const payload: Record<string, unknown> = {
@@ -222,12 +222,12 @@ const sendViaSmsRu = async (
 ): Promise<PhoneVerificationDeliveryResult> => {
   const apiId = getSmsRuApiId();
   if (!apiId) {
-    throw new Error('SMS.RU API ID is not configured');
+    throw new Error('SMS.RU API ID не настроен');
   }
 
   const phone = normalizePhone(input.phone);
   if (!phone) {
-    throw new Error('Phone number is empty');
+    throw new Error('Пустой номер телефона');
   }
 
   const params = new URLSearchParams();

@@ -91,7 +91,7 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 const resolveRussianPostIndex = (input: ShippingEstimateInput) => {
   const fromIndex = trimToUndefined(process.env.RUSSIAN_POST_INDEX_FROM);
   if (!fromIndex || !/^\d{6}$/.test(fromIndex)) {
-    throw new Error('RUSSIAN_POST_INDEX_FROM is not configured');
+    throw new Error('RUSSIAN_POST_INDEX_FROM не настроен');
   }
 
   const code = (input.destinationCode ?? '').trim();
@@ -105,7 +105,7 @@ const resolveRussianPostIndex = (input: ShippingEstimateInput) => {
     return { fromIndex, toIndex: indexMatch[1] };
   }
 
-  throw new Error('Russian Post destination index is missing');
+  throw new Error('Не указан индекс получателя Почты России');
 };
 
 const calculateDellinShipping = async (
@@ -113,17 +113,17 @@ const calculateDellinShipping = async (
 ): Promise<ProviderApiResult> => {
   const appKey = trimToUndefined(process.env.DELLIN_APP_KEY);
   if (!appKey) {
-    throw new Error('DELLIN_APP_KEY is not configured');
+    throw new Error('DELLIN_APP_KEY не настроен');
   }
 
   const fromTerminalId = trimToUndefined(process.env.DELLIN_FROM_TERMINAL_ID);
   if (!fromTerminalId) {
-    throw new Error('DELLIN_FROM_TERMINAL_ID is not configured');
+    throw new Error('DELLIN_FROM_TERMINAL_ID не настроен');
   }
 
   const destinationTerminalId = (input.destinationCode ?? '').trim();
   if (!destinationTerminalId) {
-    throw new Error('Delovye Linii destination terminal ID is missing');
+    throw new Error('Не указан terminal ID получателя Деловых Линий');
   }
 
   const baseUrl =
@@ -200,7 +200,7 @@ const calculateDellinShipping = async (
   const data = asRecord(payloadRecord.data);
   const rawPrice = safeNumber(data?.price ?? data?.intercity);
   if (!Number.isFinite(rawPrice)) {
-    throw new Error('Delovye Linii API did not return delivery price');
+    throw new Error('API Деловых Линий не вернул стоимость доставки');
   }
 
   return {
@@ -220,7 +220,7 @@ const calculateRussianPostShipping = async (
   const accessToken = trimToUndefined(process.env.RUSSIAN_POST_ACCESS_TOKEN);
   const userKey = trimToUndefined(process.env.RUSSIAN_POST_USER_KEY);
   if (!accessToken || !userKey) {
-    throw new Error('RUSSIAN_POST_ACCESS_TOKEN or RUSSIAN_POST_USER_KEY is not configured');
+    throw new Error('RUSSIAN_POST_ACCESS_TOKEN или RUSSIAN_POST_USER_KEY не настроены');
   }
 
   const { fromIndex, toIndex } = resolveRussianPostIndex(input);
@@ -270,7 +270,7 @@ const calculateRussianPostShipping = async (
 
   const totalRate = safeNumber(payloadRecord['total-rate'] ?? payloadRecord.totalRate);
   if (!Number.isFinite(totalRate)) {
-    throw new Error('Russian Post API did not return total-rate');
+    throw new Error('API Почты России не вернул total-rate');
   }
 
   return {
