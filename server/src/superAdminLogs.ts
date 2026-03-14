@@ -5,7 +5,10 @@ export const SUPER_ADMIN_LOG_KINDS = [
   'order_lifecycle',
   'admin_audit',
   'integration',
-  'error'
+  'error',
+  'telegram_subscribers',
+  'telegram_order_subscribers',
+  'telegram_b2b_subscribers'
 ] as const;
 
 export type SuperAdminLogKind = (typeof SUPER_ADMIN_LOG_KINDS)[number];
@@ -100,6 +103,48 @@ const LOG_SOURCES: Record<SuperAdminLogKind, LogSourceDefinition> = {
       'user_id',
       'created_at'
     ]
+  },
+  telegram_subscribers: {
+    table: 'telegram_subscribers',
+    columns: [
+      'chat_id',
+      'username',
+      'first_name',
+      'last_name',
+      'language_code',
+      'chat_type',
+      'is_active',
+      'updated_at',
+      'created_at'
+    ]
+  },
+  telegram_order_subscribers: {
+    table: 'telegram_order_subscribers',
+    columns: [
+      'chat_id',
+      'username',
+      'first_name',
+      'last_name',
+      'language_code',
+      'chat_type',
+      'is_active',
+      'updated_at',
+      'created_at'
+    ]
+  },
+  telegram_b2b_subscribers: {
+    table: 'telegram_b2b_subscribers',
+    columns: [
+      'chat_id',
+      'username',
+      'first_name',
+      'last_name',
+      'language_code',
+      'chat_type',
+      'is_active',
+      'updated_at',
+      'created_at'
+    ]
   }
 };
 
@@ -143,13 +188,14 @@ export const listSuperAdminLogs = async (
 ): Promise<ListSuperAdminLogsResult> => {
   const source = LOG_SOURCES[input.kind];
   const filter = buildCreatedAtFilter(input.from, input.to);
+  const whereSql = filter.whereSql;
   const selectColumnsSql = source.columns.join(', ');
 
   const countResult = await query(
     `
       SELECT COUNT(*)::int AS count
       FROM ${source.table}
-      ${filter.whereSql};
+      ${whereSql};
     `,
     filter.params
   );
@@ -162,7 +208,7 @@ export const listSuperAdminLogs = async (
     `
       SELECT ${selectColumnsSql}
       FROM ${source.table}
-      ${filter.whereSql}
+      ${whereSql}
       ORDER BY created_at DESC
       LIMIT $${limitParamIndex}
       OFFSET $${offsetParamIndex};
