@@ -476,6 +476,7 @@ export const requestNeedPart = async (payload: {
   productId: string;
   fullName: string;
   phone: string;
+  captchaToken?: string;
 }) => {
   return fetchJson<{ ok: boolean }>(`${API_BASE}/api/requests/need-part`, {
     method: 'POST',

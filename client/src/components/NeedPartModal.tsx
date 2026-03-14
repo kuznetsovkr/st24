@@ -1,10 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { requestNeedPart } from '../api.ts';
+import TurnstileWidget from './TurnstileWidget.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPhone } from '../utils/formatPhone.ts';
+
+const isCaptchaValidationError = (value: string) => {
+  const normalized = value.toLowerCase();
+  return (
+    normalized.includes('капч') ||
+    normalized.includes('captcha') ||
+    normalized.includes('проверк')
+  );
+};
 
 const NeedPartModal = () => {
   const { needPartModal, closeNeedPartModal } = useUI();
@@ -12,10 +22,20 @@ const NeedPartModal = () => {
   const product = needPartModal.product;
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+
+  const handleCaptchaTokenChange = useCallback((token: string | null) => {
+    setCaptchaToken(token);
+    if (token) {
+      setError((prev) => (prev === 'Подтвердите, что вы не робот.' ? null : prev));
+    }
+  }, []);
 
   useEffect(() => {
     if (!needPartModal.open) {
@@ -23,6 +43,8 @@ const NeedPartModal = () => {
     }
     setFullName(user?.fullName ?? '');
     setPhone(formatPhone(user?.phone ?? ''));
+    setCaptchaToken(null);
+    setCaptchaResetKey((prev) => prev + 1);
     setAgreed(false);
     setIsSubmitted(false);
     setError(null);
@@ -39,11 +61,15 @@ const NeedPartModal = () => {
     setError(null);
 
     if (!fullName.trim() || !phone.trim()) {
-      setError('Р—Р°РїРѕР»РЅРёС‚Рµ Р¤РРћ Рё РЅРѕРјРµСЂ С‚РµР»РµС„РѕРЅР°.');
+      setError('Заполните ФИО и номер телефона.');
       return;
     }
     if (!agreed) {
-      setError('РќСѓР¶РЅРѕ СЃРѕРіР»Р°СЃРёС‚СЊСЃСЏ СЃ СѓСЃР»РѕРІРёСЏРјРё Рё РїРѕР»РёС‚РёРєРѕР№.');
+      setError('Нужно согласиться с условиями и политикой.');
+      return;
+    }
+    if (turnstileSiteKey && !captchaToken) {
+      setError('Подтвердите, что вы не робот.');
       return;
     }
 
@@ -52,14 +78,19 @@ const NeedPartModal = () => {
       await requestNeedPart({
         productId: product.id,
         fullName: fullName.trim(),
-        phone: phone.trim()
+        phone: phone.trim(),
+        captchaToken: captchaToken ?? undefined
       });
       setIsSubmitted(true);
     } catch (submitError) {
       if (submitError instanceof Error) {
         setError(submitError.message);
+        if (turnstileSiteKey && isCaptchaValidationError(submitError.message)) {
+          setCaptchaToken(null);
+          setCaptchaResetKey((prev) => prev + 1);
+        }
       } else {
-        setError('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ.');
+        setError('Не удалось отправить заявку.');
       }
     } finally {
       setIsSubmitting(false);
@@ -71,10 +102,10 @@ const NeedPartModal = () => {
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <p className="eyebrow">РќСѓР¶РЅР° РґРµС‚Р°Р»СЊ</p>
-            <h3>Р—Р°РїСЂРѕСЃ РїРѕ С‚РѕРІР°СЂСѓ</h3>
+            <p className="eyebrow">Нужна деталь</p>
+            <h3>Запрос по товару</h3>
           </div>
-          <button className="icon-button" aria-label="Р—Р°РєСЂС‹С‚СЊ" onClick={closeNeedPartModal}>
+          <button className="icon-button" aria-label="Закрыть" onClick={closeNeedPartModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="17"
@@ -106,27 +137,27 @@ const NeedPartModal = () => {
                 />
               </svg>
             </div>
-            <p className="status-text need-part-success-text">Р—Р°СЏРІРєР° РѕС‚РїСЂР°РІР»РµРЅР°. РњС‹ СЃРІСЏР¶РµРјСЃСЏ СЃ РІР°РјРё.</p>
+            <p className="status-text need-part-success-text">Заявка отправлена. Мы свяжемся с вами.</p>
           </div>
         ) : (
           <>
             <p className="muted">
-              РўРѕРІР°СЂ: {product.name}
-              {product.sku ? ` В· SKU ${product.sku}` : ''}
+              Товар: {product.name}
+              {product.sku ? ` · SKU ${product.sku}` : ''}
             </p>
             <form className="stacked-form" onSubmit={handleSubmit}>
               <label className="field">
-                <span>Р¤РРћ</span>
+                <span>ФИО</span>
                 <input
                   type="text"
                   value={fullName}
                   onChange={(event) => setFullName(event.target.value)}
-                  placeholder="РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡"
+                  placeholder="Иванов Иван Иванович"
                   required
                 />
               </label>
               <label className="field">
-                <span>РўРµР»РµС„РѕРЅ</span>
+                <span>Телефон</span>
                 <input
                   type="tel"
                   value={phone}
@@ -142,17 +173,25 @@ const NeedPartModal = () => {
                   onChange={(event) => setAgreed(event.target.checked)}
                 />
                 <span>
-                  РЎРѕРіР»Р°СЃРµРЅ СЃ <Link to="/terms" target="_blank" rel="noopener noreferrer">СѓСЃР»РѕРІРёСЏРјРё РѕС„РµСЂС‚С‹</Link> Рё{' '}
-                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">РїРѕР»РёС‚РёРєРѕР№ РѕР±СЂР°Р±РѕС‚РєРё РїРµСЂСЃРѕРЅР°Р»СЊРЅС‹С… РґР°РЅРЅС‹С…</Link>.
+                  Согласен с <Link to="/terms" target="_blank" rel="noopener noreferrer">условиями оферты</Link> и{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">политикой обработки персональных данных</Link>.
                 </span>
               </label>
+              {turnstileSiteKey && (
+                <TurnstileWidget
+                  siteKey={turnstileSiteKey}
+                  action="request_need_part"
+                  resetKey={captchaResetKey}
+                  onTokenChange={handleCaptchaTokenChange}
+                />
+              )}
               {error && <p className="status-text status-text--error">{error}</p>}
               <div className="modal-actions">
                 <button className="primary-button" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'РћС‚РїСЂР°РІР»СЏРµРј...' : 'РћС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ'}
+                  {isSubmitting ? 'Отправляем...' : 'Отправить заявку'}
                 </button>
                 <button type="button" className="ghost-button" onClick={closeNeedPartModal}>
-                  РћС‚РјРµРЅРёС‚СЊ
+                  Отменить
                 </button>
               </div>
             </form>

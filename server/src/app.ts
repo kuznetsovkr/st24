@@ -1,7 +1,8 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
-import { randomInt } from 'crypto';
+import fs from 'fs';
+import { randomInt, randomUUID } from 'crypto';
 import path from 'path';
 import { signToken, verifyToken } from './auth';
 import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
@@ -133,6 +134,17 @@ const B2B_CARD_ALLOWED_MIME = new Set([
   'image/jpeg',
   'image/png'
 ]);
+const B2B_CARD_ALLOWED_EXTENSIONS = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.jpg',
+  '.jpeg',
+  '.png'
+]);
+const B2B_UPLOAD_TMP_DIR = path.resolve(process.cwd(), 'tmp', 'b2b-requests');
 
 type RawBodyRequest = Request & {
   rawBody?: string;
@@ -206,6 +218,27 @@ const applyUploadsSecurityHeaders = (res: Response) => {
   );
 };
 
+const ensureB2BUploadTempDir = () => {
+  if (!fs.existsSync(B2B_UPLOAD_TMP_DIR)) {
+    fs.mkdirSync(B2B_UPLOAD_TMP_DIR, { recursive: true });
+  }
+};
+
+const removeB2BTempFile = async (file: Express.Multer.File | undefined) => {
+  if (!file?.path) {
+    return;
+  }
+
+  try {
+    await fs.promises.unlink(file.path);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code !== 'ENOENT') {
+      console.error('Failed to remove temporary B2B file', error);
+    }
+  }
+};
+
 const getRequestIp = (req: Request) => {
   const fromExpress = typeof req.ip === 'string' ? req.ip : undefined;
   return normalizeIp(fromExpress ?? req.socket.remoteAddress ?? undefined);
@@ -245,6 +278,18 @@ const EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
 const EMAIL_VERIFY_RATE_LIMIT_MAX = parsePositiveEnvInt(
   process.env.EMAIL_VERIFY_RATE_LIMIT_MAX,
   10
+);
+const PUBLIC_FORM_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.PUBLIC_FORM_RATE_LIMIT_WINDOW_SECONDS,
+  600
+);
+const NEED_PART_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.NEED_PART_RATE_LIMIT_MAX,
+  5
+);
+const B2B_REQUEST_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.B2B_REQUEST_RATE_LIMIT_MAX,
+  3
 );
 
 type RateLimitState = {
@@ -332,6 +377,14 @@ const otpVerifyRateLimiter = createScopedRateLimiter(
 const emailVerifyRateLimiter = createScopedRateLimiter(
   EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
   EMAIL_VERIFY_RATE_LIMIT_MAX
+);
+const needPartRateLimiter = createScopedRateLimiter(
+  PUBLIC_FORM_RATE_LIMIT_WINDOW_SECONDS,
+  NEED_PART_RATE_LIMIT_MAX
+);
+const b2bRequestRateLimiter = createScopedRateLimiter(
+  PUBLIC_FORM_RATE_LIMIT_WINDOW_SECONDS,
+  B2B_REQUEST_RATE_LIMIT_MAX
 );
 
 const parsePriceCents = (value?: string) => {
@@ -558,13 +611,23 @@ const attachCdekQuoteTokens = (
 };
 
 const b2bUpload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      ensureB2BUploadTempDir();
+      cb(null, B2B_UPLOAD_TMP_DIR);
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${randomUUID()}${ext}`);
+    }
+  }),
   limits: {
     fileSize: B2B_CARD_MAX_FILE_SIZE,
     files: 1
   },
   fileFilter: (_req, file, cb) => {
-    if (B2B_CARD_ALLOWED_MIME.has(file.mimetype)) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (B2B_CARD_ALLOWED_MIME.has(file.mimetype) && B2B_CARD_ALLOWED_EXTENSIONS.has(ext)) {
       cb(null, true);
       return;
     }
@@ -2452,8 +2515,19 @@ export const createApp = () => {
   });
 
   app.post('/api/requests/b2b', (req: Request, res: Response) => {
+    const requestIp = getRequestIp(req);
+    const uploadRateLimit = b2bRequestRateLimiter.consume('b2b_upload', requestIp, 'public');
+    if (!uploadRateLimit.allowed) {
+      res.setHeader('Retry-After', String(uploadRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many requests. Try again in ${uploadRateLimit.retryAfterSeconds} sec.`
+      });
+      return;
+    }
+
     b2bUpload.single('enterpriseCard')(req, res, async (uploadError) => {
       if (uploadError) {
+        await removeB2BTempFile(req.file as Express.Multer.File | undefined);
         res.status(400).json({
           error:
             uploadError instanceof Error
@@ -2470,6 +2544,8 @@ export const createApp = () => {
       const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
       const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
       const comment = typeof req.body.comment === 'string' ? req.body.comment.trim() : '';
+      const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+      const file = req.file as Express.Multer.File | undefined;
 
       const errors: string[] = [];
       if (!companyName) {
@@ -2483,11 +2559,23 @@ export const createApp = () => {
       }
 
       if (errors.length > 0) {
+        await removeB2BTempFile(file);
         res.status(400).json({ errors });
         return;
       }
 
-      const file = req.file as Express.Multer.File | undefined;
+      if (isTurnstileEnabled()) {
+        try {
+          await verifyTurnstileToken(captchaToken, requestIp, 'request_b2b');
+        } catch (error) {
+          await removeB2BTempFile(file);
+          res.status(400).json({
+            error: error instanceof Error ? error.message : 'Failed to validate captcha'
+          });
+          return;
+        }
+      }
+
       const messageLines = [
         '🏢 Новая заявка от юр. лица',
         `🧾 Компания / ФИО: ${companyName}`,
@@ -2499,20 +2587,26 @@ export const createApp = () => {
       ].filter(Boolean);
 
       try {
-        await sendB2BTelegramMessage(
-          messageLines.join('\n'),
-          file
+        const document =
+          file &&
+          file.path
             ? {
-                bytes: file.buffer,
-                fileName: file.originalname || 'enterprise-card',
+                bytes: await fs.promises.readFile(file.path),
+                fileName: file.originalname || path.basename(file.path),
                 mimeType: file.mimetype
               }
-            : undefined
+            : undefined;
+
+        await sendB2BTelegramMessage(
+          messageLines.join('\n'),
+          document
         );
         res.json({ ok: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to send request';
         res.status(500).json({ error: message });
+      } finally {
+        await removeB2BTempFile(file);
       }
     });
   });
@@ -2522,6 +2616,8 @@ export const createApp = () => {
     const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
     const productId =
       typeof req.body.productId === 'string' ? req.body.productId.trim() : '';
+    const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+    const requestIp = getRequestIp(req);
 
     const errors: string[] = [];
     if (!fullName) {
@@ -2537,6 +2633,30 @@ export const createApp = () => {
     if (errors.length > 0) {
       res.status(400).json({ errors });
       return;
+    }
+
+    const needPartRateLimit = needPartRateLimiter.consume(
+      'need_part',
+      requestIp,
+      `${normalizePhone(phone)}:${productId}`
+    );
+    if (!needPartRateLimit.allowed) {
+      res.setHeader('Retry-After', String(needPartRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Too many requests. Try again in ${needPartRateLimit.retryAfterSeconds} sec.`
+      });
+      return;
+    }
+
+    if (isTurnstileEnabled()) {
+      try {
+        await verifyTurnstileToken(captchaToken, requestIp, 'request_need_part');
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'Failed to validate captcha'
+        });
+        return;
+      }
     }
 
     const product = await findProductById(productId);
