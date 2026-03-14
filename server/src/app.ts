@@ -1849,9 +1849,11 @@ export const createApp = () => {
     const includeHidden = req.query.includeHidden === 'true';
     const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
     const offsetRaw = typeof req.query.offset === 'string' ? req.query.offset.trim() : '';
-    const parsedLimit = limitRaw
-      ? parsePositiveInt(limitRaw, 1, PRODUCTS_PAGE_LIMIT_MAX)
-      : PRODUCTS_PAGE_LIMIT_DEFAULT;
+    const requestedLimit = limitRaw ? parsePositiveInt(limitRaw, 1, 1_000_000) : PRODUCTS_PAGE_LIMIT_DEFAULT;
+    const parsedLimit =
+      requestedLimit === null
+        ? null
+        : Math.min(requestedLimit, PRODUCTS_PAGE_LIMIT_MAX);
     const parsedOffset = offsetRaw ? parsePositiveInt(offsetRaw, 0, 1_000_000) : 0;
 
     if (parsedLimit === null || parsedOffset === null) {
@@ -1901,7 +1903,11 @@ export const createApp = () => {
     const sku = typeof req.query.sku === 'string' ? req.query.sku.trim() : '';
     const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
     const offsetRaw = typeof req.query.offset === 'string' ? req.query.offset.trim() : '';
-    const limit = limitRaw ? parsePositiveInt(limitRaw, 1, PRODUCTS_PAGE_LIMIT_MAX) : undefined;
+    const requestedLimit = limitRaw ? parsePositiveInt(limitRaw, 1, 1_000_000) : undefined;
+    const limit =
+      typeof requestedLimit === 'number'
+        ? Math.min(requestedLimit, PRODUCTS_PAGE_LIMIT_MAX)
+        : requestedLimit;
     const offset = offsetRaw ? parsePositiveInt(offsetRaw, 0, 1_000_000) : 0;
 
     if ((limitRaw && limit === null) || offset === null) {
