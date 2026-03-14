@@ -1,9 +1,49 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchOrder } from '../api.ts';
 import type { Order } from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+
+const resolvePaymentStatusLabel = (order: Order) => {
+  const paymentStatus = (order.paymentStatus ?? '').trim().toLowerCase();
+  const orderStatus = (order.status ?? '').trim().toLowerCase();
+
+  if (orderStatus === 'paid' || paymentStatus === 'succeeded') {
+    return 'Оплачен';
+  }
+
+  if (paymentStatus === 'pending') {
+    return 'Ожидает оплаты';
+  }
+
+  if (paymentStatus === 'waiting_for_capture') {
+    return 'Ожидает подтверждения платежа';
+  }
+
+  if (paymentStatus === 'canceled') {
+    return 'Оплата отменена';
+  }
+
+  if (paymentStatus === 'rejected') {
+    return 'Оплата отклонена';
+  }
+
+  if (orderStatus === 'pending') {
+    return 'Ожидает оплаты';
+  }
+
+  if (orderStatus === 'canceled') {
+    return 'Заказ отменен';
+  }
+
+  const fallback = paymentStatus || orderStatus;
+  if (!fallback) {
+    return 'Статус уточняется';
+  }
+
+  return fallback.replace(/_/g, ' ');
+};
 
 const OrderSuccessPage = () => {
   const { orderId } = useParams<{ orderId: string }>();
@@ -105,18 +145,33 @@ const OrderSuccessPage = () => {
     );
   }
 
+  const paymentStatusLabel = resolvePaymentStatusLabel(order);
+
   return (
     <div className="page">
       <header className="page-header">
         <div>
           <p className="eyebrow">Спасибо за заказ</p>
           <h1>Заказ №{order.orderNumber} оформлен</h1>
-          <p className="muted">Мы свяжемся с вами, когда заказ будет готов.</p>
         </div>
       </header>
       <div className="card">
+        <div className="need-part-success" role="status" aria-live="polite">
+          <div className="need-part-success-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="13" viewBox="0 0 17 13" fill="none">
+              <path
+                className="need-part-success-check"
+                d="M16.5 0.5L5.3 12.5L0.5 8"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <p className="status-text need-part-success-text">Спасибо за заказ.</p>
+        </div>
         <p className="muted">
-          Статус оплаты: <strong>{order.status}</strong>
+          Статус оплаты: <strong>{paymentStatusLabel}</strong>
         </p>
         <div className="button-row">
           <Link to="/account" className="primary-button">
