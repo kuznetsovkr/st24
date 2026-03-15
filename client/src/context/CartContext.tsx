@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchCart, mergeCart, syncCart } from '../api.ts';
 
@@ -72,10 +72,12 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const skipNextSync = useRef(true);
   const syncTimeout = useRef<number | null>(null);
 
-  const toSyncPayload = (entries: CartEntry[]) =>
-    entries.map((entry) => ({ productId: entry.id, quantity: entry.quantity }));
+  const toSyncPayload = useCallback(
+    (entries: CartEntry[]) => entries.map((entry) => ({ productId: entry.id, quantity: entry.quantity })),
+    []
+  );
 
-  const clampQuantity = (entry: CartEntry, nextQuantity: number) => {
+  const clampQuantity = useCallback((entry: CartEntry, nextQuantity: number) => {
     if (typeof entry.stock === 'number') {
       if (nextQuantity <= entry.stock) {
         return nextQuantity;
@@ -86,7 +88,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       return entry.stock;
     }
     return nextQuantity;
-  };
+  }, []);
 
   useEffect(() => {
     if (!hasCsrfCookie()) {
@@ -155,35 +157,38 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         window.clearTimeout(syncTimeout.current);
       }
     };
-  }, [hydrated, hasServerSession, items]);
+  }, [hydrated, hasServerSession, items, toSyncPayload]);
 
-  const addItem = (item: CartItem, quantity = 1) => {
-    if (quantity <= 0) {
-      return;
-    }
-    setItems((prev) => {
-      const existing = prev.find((entry) => entry.id === item.id);
-      if (!existing) {
-        const nextQuantity =
-          typeof item.stock === 'number' ? Math.min(quantity, item.stock) : quantity;
-        if (nextQuantity <= 0) {
-          return prev;
-        }
-        return [...prev, { ...item, quantity: nextQuantity }];
+  const addItem = useCallback(
+    (item: CartItem, quantity = 1) => {
+      if (quantity <= 0) {
+        return;
       }
-      return prev.map((entry) => {
-        if (entry.id !== item.id) {
-          return entry;
+      setItems((prev) => {
+        const existing = prev.find((entry) => entry.id === item.id);
+        if (!existing) {
+          const nextQuantity =
+            typeof item.stock === 'number' ? Math.min(quantity, item.stock) : quantity;
+          if (nextQuantity <= 0) {
+            return prev;
+          }
+          return [...prev, { ...item, quantity: nextQuantity }];
         }
-        const nextEntry =
-          typeof entry.stock === 'number' ? entry : { ...entry, stock: item.stock };
-        const nextQuantity = clampQuantity(nextEntry, entry.quantity + quantity);
-        return { ...nextEntry, quantity: nextQuantity };
+        return prev.map((entry) => {
+          if (entry.id !== item.id) {
+            return entry;
+          }
+          const nextEntry =
+            typeof entry.stock === 'number' ? entry : { ...entry, stock: item.stock };
+          const nextQuantity = clampQuantity(nextEntry, entry.quantity + quantity);
+          return { ...nextEntry, quantity: nextQuantity };
+        });
       });
-    });
-  };
+    },
+    [clampQuantity]
+  );
 
-  const setQuantity = (id: string, quantity: number) => {
+  const setQuantity = useCallback((id: string, quantity: number) => {
     if (quantity <= 0) {
       setItems((prev) => prev.filter((entry) => entry.id !== id));
       return;
@@ -192,19 +197,22 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     setItems((prev) =>
       prev.map((entry) => (entry.id === id ? { ...entry, quantity } : entry))
     );
-  };
+  }, []);
 
-  const increment = (id: string) => {
-    setItems((prev) =>
-      prev.map((entry) =>
-        entry.id === id
-          ? { ...entry, quantity: clampQuantity(entry, entry.quantity + 1) }
-          : entry
-      )
-    );
-  };
+  const increment = useCallback(
+    (id: string) => {
+      setItems((prev) =>
+        prev.map((entry) =>
+          entry.id === id
+            ? { ...entry, quantity: clampQuantity(entry, entry.quantity + 1) }
+            : entry
+        )
+      );
+    },
+    [clampQuantity]
+  );
 
-  const decrement = (id: string) => {
+  const decrement = useCallback((id: string) => {
     setItems((prev) =>
       prev
         .map((entry) =>
@@ -212,17 +220,27 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         )
         .filter((entry) => entry.quantity > 0)
     );
-  };
+  }, []);
 
-  const removeItem = (id: string) => {
+  const removeItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((entry) => entry.id !== id));
-  };
+  }, []);
 
-  const clear = () => setItems([]);
+  const clear = useCallback(() => {
+    setItems([]);
+  }, []);
 
-  const getQuantity = (id: string) => items.find((entry) => entry.id === id)?.quantity ?? 0;
+  const quantityById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of items) {
+      map.set(entry.id, entry.quantity);
+    }
+    return map;
+  }, [items]);
 
-  const mergeWithServer = async () => {
+  const getQuantity = useCallback((id: string) => quantityById.get(id) ?? 0, [quantityById]);
+
+  const mergeWithServer = useCallback(async () => {
     if (!hasCsrfCookie()) {
       setHasServerSession(false);
       setHydrated(true);
@@ -240,9 +258,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setHydrated(true);
     }
-  };
+  }, [items, toSyncPayload]);
 
-  const refreshFromServer = async () => {
+  const refreshFromServer = useCallback(async () => {
     if (!hasServerSession || !hasCsrfCookie()) {
       return items;
     }
@@ -257,9 +275,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       setHasServerSession(false);
       return items;
     }
-  };
+  }, [hasServerSession, items]);
 
-  const syncWithServer = async () => {
+  const syncWithServer = useCallback(async () => {
     if (!hasServerSession || !hasCsrfCookie()) {
       return items;
     }
@@ -274,7 +292,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       setHasServerSession(false);
       return items;
     }
-  };
+  }, [hasServerSession, items, toSyncPayload]);
 
   const totals = useMemo(() => {
     const totalCount = items.reduce((sum, entry) => sum + entry.quantity, 0);
@@ -285,21 +303,38 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     return { totalCount, totalPriceCents };
   }, [items]);
 
-  const value: CartContextValue = {
-    items,
-    addItem,
-    increment,
-    decrement,
-    setQuantity,
-    removeItem,
-    clear,
-    getQuantity,
-    mergeWithServer,
-    refreshFromServer,
-    syncWithServer,
-    totalCount: totals.totalCount,
-    totalPriceCents: totals.totalPriceCents
-  };
+  const value = useMemo<CartContextValue>(
+    () => ({
+      items,
+      addItem,
+      increment,
+      decrement,
+      setQuantity,
+      removeItem,
+      clear,
+      getQuantity,
+      mergeWithServer,
+      refreshFromServer,
+      syncWithServer,
+      totalCount: totals.totalCount,
+      totalPriceCents: totals.totalPriceCents
+    }),
+    [
+      items,
+      addItem,
+      increment,
+      decrement,
+      setQuantity,
+      removeItem,
+      clear,
+      getQuantity,
+      mergeWithServer,
+      refreshFromServer,
+      syncWithServer,
+      totals.totalCount,
+      totals.totalPriceCents
+    ]
+  );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 };

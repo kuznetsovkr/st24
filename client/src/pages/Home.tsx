@@ -359,53 +359,62 @@ const HomePage = () => {
     [clearAutoScrollTimeout, clearLoopResetTimeout, clearProgrammaticUnlockTimeout]
   );
 
-  const handleAddToCart = (product: Product) => {
-    addItem({
-      id: product.id,
-      name: product.name,
-      priceCents: product.priceCents,
-      image: product.images[0],
-      stock: product.stock,
-      weightGrams: product.weightGrams,
-      lengthCm: product.lengthCm,
-      widthCm: product.widthCm,
-      heightCm: product.heightCm
-    });
-  };
+  const handleAddToCart = useCallback(
+    (product: Product) => {
+      addItem({
+        id: product.id,
+        name: product.name,
+        priceCents: product.priceCents,
+        image: product.images[0],
+        stock: product.stock,
+        weightGrams: product.weightGrams,
+        lengthCm: product.lengthCm,
+        widthCm: product.widthCm,
+        heightCm: product.heightCm
+      });
+    },
+    [addItem]
+  );
 
-  const handleOpenProduct = (product: Product) => {
-    openProductModal({
-      id: product.id,
-      name: product.name,
-      priceCents: product.priceCents,
-      description: product.description,
-      sku: product.sku,
-      image: product.images[0],
-      images: product.images,
-      weightGrams: product.weightGrams,
-      lengthCm: product.lengthCm,
-      widthCm: product.widthCm,
-      heightCm: product.heightCm,
-      stock: product.stock
-    });
-  };
+  const handleOpenProduct = useCallback(
+    (product: Product) => {
+      openProductModal({
+        id: product.id,
+        name: product.name,
+        priceCents: product.priceCents,
+        description: product.description,
+        sku: product.sku,
+        image: product.images[0],
+        images: product.images,
+        weightGrams: product.weightGrams,
+        lengthCm: product.lengthCm,
+        widthCm: product.widthCm,
+        heightCm: product.heightCm,
+        stock: product.stock
+      });
+    },
+    [openProductModal]
+  );
 
-  const handleNeedPart = (product: Product) => {
-    openNeedPartModal({
-      id: product.id,
-      name: product.name,
-      priceCents: product.priceCents,
-      description: product.description,
-      sku: product.sku,
-      image: product.images[0],
-      images: product.images,
-      weightGrams: product.weightGrams,
-      lengthCm: product.lengthCm,
-      widthCm: product.widthCm,
-      heightCm: product.heightCm,
-      stock: product.stock
-    });
-  };
+  const handleNeedPart = useCallback(
+    (product: Product) => {
+      openNeedPartModal({
+        id: product.id,
+        name: product.name,
+        priceCents: product.priceCents,
+        description: product.description,
+        sku: product.sku,
+        image: product.images[0],
+        images: product.images,
+        weightGrams: product.weightGrams,
+        lengthCm: product.lengthCm,
+        widthCm: product.widthCm,
+        heightCm: product.heightCm,
+        stock: product.stock
+      });
+    },
+    [openNeedPartModal]
+  );
 
   return (
     <div className="page">

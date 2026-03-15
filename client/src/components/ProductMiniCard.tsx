@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Product } from '../api';
 import { formatPrice } from '../utils/formatPrice.ts';
 import ProductImageSlider from './ProductImageSlider.tsx';
@@ -123,4 +124,7 @@ const ProductMiniCard = ({
   );
 };
 
-export default ProductMiniCard;
+const MemoizedProductMiniCard = memo(ProductMiniCard);
+MemoizedProductMiniCard.displayName = 'ProductMiniCard';
+
+export default MemoizedProductMiniCard;

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 type ProductPreview = {
@@ -45,17 +45,54 @@ export const UIProvider = ({ children }: { children: ReactNode }) => {
   const [productModal, setProductModal] = useState<ProductModalState>({ open: false });
   const [needPartModal, setNeedPartModal] = useState<NeedPartModalState>({ open: false });
 
-  const value: UIContextValue = {
-    authModalOpen,
-    productModal,
-    needPartModal,
-    openAuthModal: () => setAuthModalOpen(true),
-    closeAuthModal: () => setAuthModalOpen(false),
-    openProductModal: (product: ProductPreview) => setProductModal({ open: true, product }),
-    closeProductModal: () => setProductModal({ open: false }),
-    openNeedPartModal: (product: ProductPreview) => setNeedPartModal({ open: true, product }),
-    closeNeedPartModal: () => setNeedPartModal({ open: false })
-  };
+  const openAuthModal = useCallback(() => {
+    setAuthModalOpen(true);
+  }, []);
+
+  const closeAuthModal = useCallback(() => {
+    setAuthModalOpen(false);
+  }, []);
+
+  const openProductModal = useCallback((product: ProductPreview) => {
+    setProductModal({ open: true, product });
+  }, []);
+
+  const closeProductModal = useCallback(() => {
+    setProductModal({ open: false });
+  }, []);
+
+  const openNeedPartModal = useCallback((product: ProductPreview) => {
+    setNeedPartModal({ open: true, product });
+  }, []);
+
+  const closeNeedPartModal = useCallback(() => {
+    setNeedPartModal({ open: false });
+  }, []);
+
+  const value = useMemo<UIContextValue>(
+    () => ({
+      authModalOpen,
+      productModal,
+      needPartModal,
+      openAuthModal,
+      closeAuthModal,
+      openProductModal,
+      closeProductModal,
+      openNeedPartModal,
+      closeNeedPartModal
+    }),
+    [
+      authModalOpen,
+      productModal,
+      needPartModal,
+      openAuthModal,
+      closeAuthModal,
+      openProductModal,
+      closeProductModal,
+      openNeedPartModal,
+      closeNeedPartModal
+    ]
+  );
 
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
 };
