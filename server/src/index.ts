@@ -4,6 +4,7 @@ import { initDb } from './db/init';
 import { assertPhoneVerificationConfiguration } from './phoneVerification';
 import { assertTurnstileConfiguration } from './turnstile';
 import { ensureUploadsDir } from './uploads';
+import { startLogRetentionScheduler } from './logRetention';
 import {
   startTelegramB2BPolling,
   startTelegramOrderPolling,
@@ -20,6 +21,7 @@ const app = createApp();
 const start = async () => {
   await initDb();
   ensureUploadsDir();
+  startLogRetentionScheduler();
   startTelegramPolling();
   startTelegramOrderPolling();
   startTelegramB2BPolling();
