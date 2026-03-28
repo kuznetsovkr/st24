@@ -6,13 +6,15 @@ type ProductImageSliderProps = {
   alt: string;
   className?: string;
   reserveControlsSpace?: boolean;
+  resetToFirstOnMouseLeave?: boolean;
 };
 
 const ProductImageSlider = ({
   images = [],
   alt,
   className,
-  reserveControlsSpace = true
+  reserveControlsSpace = true,
+  resetToFirstOnMouseLeave = false
 }: ProductImageSliderProps) => {
   const slides = images.filter(Boolean);
   const hasSlides = slides.length > 0;
@@ -61,6 +63,13 @@ const ProductImageSlider = ({
     setActiveIndex((prev) => (prev === index ? prev : index));
   };
 
+  const handleMouseLeave = () => {
+    if (!canSlide || !resetToFirstOnMouseLeave) {
+      return;
+    }
+    setActiveIndex(0);
+  };
+
   const activeSrc = slides[activeIndex];
 
   return (
@@ -74,6 +83,7 @@ const ProductImageSlider = ({
                 className="product-image-hotspots"
                 onMouseMove={handleHover}
                 onMouseEnter={handleHover}
+                onMouseLeave={handleMouseLeave}
                 aria-hidden="true"
               />
             )}

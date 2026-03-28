@@ -33,7 +33,12 @@ const ProductMiniCard = ({
 
   return (
     <article className={className} onClick={() => onOpen(product)}>
-      <ProductImageSlider className="product-photo" images={product.images} alt={product.name} />
+      <ProductImageSlider
+        className="product-photo"
+        images={product.images}
+        alt={product.name}
+        resetToFirstOnMouseLeave
+      />
       <div className="product-info">
         <h3>{product.name}</h3>
         <p className="price">{formatPrice(product.priceCents)}</p>

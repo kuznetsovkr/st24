@@ -210,9 +210,11 @@ const CategoryPage = () => {
         <div className="card">
           <h3>В этом разделе пока нет товаров</h3>
           <p className="muted">Добавьте позиции в админке, и они появятся здесь.</p>
-          <Link to="/admin" className="primary-button">
-            Перейти в админку
-          </Link>
+          {isAdmin && (
+            <Link to="/admin" className="primary-button">
+              Перейти в админку
+            </Link>
+          )}
         </div>
       )}
       {status === 'ready' && products.length > 0 && (
