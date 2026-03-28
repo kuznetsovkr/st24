@@ -965,6 +965,37 @@ h3 {
   color: var(--muted);
 }
 
+.legal-doc-list {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.legal-doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.legal-doc-download {
+  font-size: 14px;
+}
+
+.legal-doc-viewer {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.legal-doc-frame {
+  display: block;
+  width: 100%;
+  min-height: 720px;
+  border: 0;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2872,6 +2903,12 @@ input[type='file'] {
     flex-direction: column;
   }
 
+}
+
+@media (max-width: 767px) {
+  .legal-doc-frame {
+    min-height: 540px;
+  }
 }
 
 /* iPad / tablet Safari hardening for product cards */
