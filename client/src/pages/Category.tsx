@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchCategories, fetchProductsPage } from '../api';
 import type { Product } from '../api';
@@ -6,8 +6,75 @@ import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const PRODUCTS_PAGE_SIZE = 24;
+
+type CategorySeo = {
+  title: string;
+  description: string;
+  h1: string;
+  subtitle: string;
+};
+
+const normalizeSeoKey = (value: string) =>
+  value.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+
+const hasAnyKeyword = (value: string, keywords: string[]) =>
+  keywords.some((keyword) => value.includes(keyword));
+
+const resolveCategorySeo = (slug: string, categoryTitle: string): CategorySeo => {
+  const key = normalizeSeoKey(`${slug} ${categoryTitle}`);
+
+  if (hasAnyKeyword(key, ['bytov', 'бытов'])) {
+    return {
+      title: 'Запчасти для бытовой техники Karcher — купить запчасти | СТ-24',
+      description:
+        'Запчасти для бытовой техники Karcher от производителя СТ-24. Детали выполнены из качественных материалов.Запчасти для аппаратов Karcher K3,K4,K5,K7. Гарантия качества и доступные цены.',
+      h1: 'Запчасти для бытовых аппаратов',
+      subtitle: 'Подберите нужные детали и оформите заказ с доставкой по России.'
+    };
+  }
+
+  if (hasAnyKeyword(key, ['prof', 'проф', 'professional'])) {
+    return {
+      title: 'Запчасти для профессиональной техники Karcher — купить запчасти | СТ-24',
+      description:
+        'Запчасти для профессиональной техники Karcher от производителя СТ-24. Детали выполнены из качественных материалов.Запчасти для аппаратов Karcher HD 9/20,HD10/21,HD10/22,HD10/23,HD10/25. Гарантия качества и доступные цены.',
+      h1: 'Запчасти для профессиональных аппаратов',
+      subtitle: 'Подберите нужные детали и оформите заказ с доставкой по России.'
+    };
+  }
+
+  if (hasAnyKeyword(key, ['оригин', 'origin'])) {
+    return {
+      title: 'Оригинальные запчасти для техники Karcher — купить запчасти',
+      description: 'Оригинальные запчасти для техники Karcher от производителя.',
+      h1: 'Каталог запчастей для Karcher',
+      subtitle: 'Подберите нужные детали и оформите заказ с доставкой по России.'
+    };
+  }
+
+  if (hasAnyKeyword(key, ['резин', 'манжет', 'сальн', 'уплот', 'seal'])) {
+    return {
+      title:
+        'Резиновые изделия для аппаратов Karcher - манжеты, сальники и уплотнительные кольца',
+      description:
+        'Манжеты, сальники и уплотнительные кольца для Karcher. Всё для удобной работы с техникой. Доставка по России.',
+      h1: 'Каталог манжет и уплотнительных колец',
+      subtitle: 'Подберите нужные детали и оформите заказ с доставкой по России.'
+    };
+  }
+
+  const fallbackTitle = categoryTitle.trim() || slug.trim() || 'Категория';
+  return {
+    title: `${fallbackTitle} — запчасти для Karcher | СТ-24`,
+    description:
+      'Запчасти для техники Karcher от производителя СТ-24. Надежные комплектующие и доставка по России.',
+    h1: fallbackTitle,
+    subtitle: 'Выберите товар и добавьте его в корзину.'
+  };
+};
 
 const CategoryPage = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -24,6 +91,10 @@ const CategoryPage = () => {
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+
+  const seo = useMemo(() => resolveCategorySeo(slug ?? '', categoryTitle), [categoryTitle, slug]);
+
+  usePageSeo(seo.title, seo.description);
 
   useEffect(() => {
     if (!slug) {
@@ -196,8 +267,8 @@ const CategoryPage = () => {
       <header className="page-header">
         <div>
           <p className="eyebrow">Раздел каталога</p>
-          <h1>{slug ? `${categoryTitle || slug}` : 'Категория'}</h1>
-          <p className="muted">Выберите товар и добавьте его в корзину.</p>
+          <h1>{seo.h1}</h1>
+          <p className="muted">{seo.subtitle}</p>
         </div>
         <Link to="/catalog" className="link-button">
           Назад к каталогу
@@ -236,7 +307,7 @@ const CategoryPage = () => {
             ))}
           </div>
           {hasMore ? <div ref={loadMoreTriggerRef} style={{ height: 1 }} aria-hidden="true" /> : null}
-          {isLoadingMore ? <p className="muted">Загружаем ещё товары...</p> : null}
+          {isLoadingMore ? <p className="muted">Загружаем еще товары...</p> : null}
           {loadMoreError ? <p className="muted">{loadMoreError}</p> : null}
         </>
       )}

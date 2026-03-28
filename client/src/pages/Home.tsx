@@ -6,6 +6,7 @@ import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const AUTO_SCROLL_INTERVAL_MS = 10000;
 const AUTO_SCROLL_BATCH_SIZE = 5;
@@ -19,6 +20,11 @@ const HomePage = () => {
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+
+  usePageSeo(
+    'Купить запчасти для Karcher',
+    'Купить запчасти для Karcher с доставкой по России. Оригинальные и аналоговые комплектующие от производителя.'
+  );
 
   const sliderRef = useRef<HTMLDivElement | null>(null);
   const autoScrollTimeoutRef = useRef<number | null>(null);
@@ -420,7 +426,7 @@ const HomePage = () => {
     <div className="page">
       <div className="slider-header">
         <div>
-          <h1>{'\u041f\u043e\u0434\u0431\u043e\u0440\u043a\u0430 \u0442\u043e\u0432\u0430\u0440\u043e\u0432'}</h1>
+          <h1>Запчасти для аппаратов от СТ-24</h1>
         </div>
       </div>
 

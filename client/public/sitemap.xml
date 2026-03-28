@@ -16,6 +16,11 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://xn---24-3edf.xn--p1ai/about</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://xn---24-3edf.xn--p1ai/b2b</loc>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>

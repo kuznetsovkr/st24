@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCategories } from '../api';
 import type { Category } from '../api';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const CatalogCartIcon = () => (
   <svg
@@ -19,6 +20,11 @@ const CatalogCartIcon = () => (
 const CatalogPage = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  usePageSeo(
+    'Запчасти для Karcher — купить комплектующие и аксессуары | СТ-24',
+    'Запчасти для Karcher от производителя СТ-24. Комплектующие, аксессуары и ремонтные детали. Гарантия качества и доступные цены.'
+  );
 
   useEffect(() => {
     let active = true;
@@ -50,7 +56,12 @@ const CatalogPage = () => {
       <header className="page-header">
         <div>
           <p className="eyebrow">Каталог</p>
-          <h1>Разделы каталога</h1>
+          <h1>Каталог запчастей</h1>
+          <p className="muted">
+            В нашем каталоге представлены различные типы деталей для аппаратов Karcher. Вы можете
+            купить любую деталь или уплотнитель для мойки высокого давления с доставкой по всей
+            России.
+          </p>
         </div>
       </header>
       {status === 'loading' && <p className="muted">Загрузка категорий...</p>}

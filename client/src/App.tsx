@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import AppLayout from './layout/AppLayout.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import { CartProvider } from './context/CartContext.tsx';
@@ -9,6 +9,7 @@ import AuthModal from './components/AuthModal.tsx';
 import NeedPartModal from './components/NeedPartModal.tsx';
 
 const ContactsPage = lazy(() => import('./pages/Contacts.tsx'));
+const AboutPage = lazy(() => import('./pages/About.tsx'));
 const AdminPage = lazy(() => import('./pages/Admin.tsx'));
 const B2BPage = lazy(() => import('./pages/B2B.tsx'));
 const CartPage = lazy(() => import('./pages/Cart.tsx'));
@@ -47,7 +48,7 @@ const App = () => (
                 <Route path="/payment/:orderId" element={<PaymentPage />} />
                 <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
                 <Route path="/contacts" element={<ContactsPage />} />
-                <Route path="/about" element={<Navigate to="/contacts" replace />} />
+                <Route path="/about" element={<AboutPage />} />
                 <Route path="/b2b" element={<B2BPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
