@@ -141,6 +141,8 @@ a {
   letter-spacing: 0.02em;
   color: var(--text);
   text-decoration: none;
+  display: flex;
+  text-wrap: nowrap;
 }
 
 .nav {
@@ -1190,6 +1192,17 @@ h3 {
   cursor: pointer;
   transition: color 0.2s ease, box-shadow 0.2s ease;
 }
+
+@media (max-width: 520px) {
+  .product-page-tab {
+    padding:0;
+  }
+  .product-page-buy-row{
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
 
 .product-page-tab::before {
   content: '';
@@ -2346,6 +2359,7 @@ input[type='file'] {
   padding: 8px 10px;
   font-size: 16px;
   white-space: nowrap;
+  text-align: center;
 }
 
 .qty-control {
