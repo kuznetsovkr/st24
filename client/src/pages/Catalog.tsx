@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCategories } from '../api';
 import type { Category } from '../api';
-import { usePageSeo } from '../utils/usePageSeo.ts';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const CatalogCartIcon = () => (
   <svg
@@ -20,10 +20,34 @@ const CatalogCartIcon = () => (
 const CatalogPage = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const breadcrumbJsonLd = useMemo(
+    () => ({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Главная',
+          item: `${SITE_URL}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'Каталог запчастей',
+          item: `${SITE_URL}/catalog`
+        }
+      ]
+    }),
+    []
+  );
 
   usePageSeo(
     'Запчасти для Karcher — купить комплектующие и аксессуары | СТ-24',
-    'Запчасти для Karcher от производителя СТ-24. Комплектующие, аксессуары и ремонтные детали. Гарантия качества и доступные цены.'
+    'Запчасти для Karcher от производителя СТ-24. Комплектующие, аксессуары и ремонтные детали. Гарантия качества и доступные цены.',
+    {
+      jsonLd: breadcrumbJsonLd
+    }
   );
 
   useEffect(() => {

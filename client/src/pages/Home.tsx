@@ -6,7 +6,7 @@ import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
-import { usePageSeo } from '../utils/usePageSeo.ts';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const AUTO_SCROLL_INTERVAL_MS = 10000;
 const AUTO_SCROLL_BATCH_SIZE = 5;
@@ -20,12 +20,37 @@ const HomePage = () => {
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-
-  usePageSeo(
-    'Купить запчасти для Karcher',
-    'Купить запчасти для Karcher с доставкой по России. Оригинальные и аналоговые комплектующие от производителя.'
+  const homeJsonLd = useMemo(
+    () => [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: 'СТ-24',
+        url: SITE_URL,
+        logo: `${SITE_URL}/android-chrome-512x512.png`,
+        email: 'st-karcher24@mail.ru',
+        telephone: '+79959089597',
+        sameAs: ['https://t.me/+79959089597'],
+        contactPoint: [
+          {
+            '@type': 'ContactPoint',
+            contactType: 'customer support',
+            telephone: '+79959089597',
+            email: 'st-karcher24@mail.ru',
+            areaServed: 'RU',
+            availableLanguage: ['ru']
+          }
+        ]
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: 'СТ-24',
+        url: SITE_URL
+      }
+    ],
+    []
   );
-
   const sliderRef = useRef<HTMLDivElement | null>(null);
   const autoScrollTimeoutRef = useRef<number | null>(null);
   const programmaticUnlockTimeoutRef = useRef<number | null>(null);
@@ -35,6 +60,14 @@ const HomePage = () => {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [homeBanner, setHomeBanner] = useState<HomeBanner | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  usePageSeo(
+    'Купить запчасти для Karcher',
+    'Купить запчасти для Karcher с доставкой по России. Оригинальные и аналоговые комплектующие от производителя.',
+    {
+      jsonLd: homeJsonLd
+    }
+  );
 
   useEffect(() => {
     let active = true;
@@ -502,3 +535,4 @@ const HomePage = () => {
 };
 
 export default HomePage;
+

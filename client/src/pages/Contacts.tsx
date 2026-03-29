@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { STORE_EMAIL, STORE_EMAIL_HREF, TELEGRAM_LINK } from '../constants/contacts.ts';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const MAP_CONTAINER_ID = 'contacts-map';
 const MAP_SCRIPT_ID = 'yandex-maps-script';
@@ -57,11 +58,40 @@ const ContactsPage = () => {
   const mapRef = useRef<InstanceType<YandexMapsApi['Map']> | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
+  const breadcrumbJsonLd = useMemo(
+    () => ({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Главная',
+          item: `${SITE_URL}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'Контакты',
+          item: `${SITE_URL}/contacts`
+        }
+      ]
+    }),
+    []
+  );
 
   const mapLink = useMemo(() => {
     const [lat, lon] = STORE_COORDS;
     return `https://yandex.ru/maps/?ll=${lon}%2C${lat}&z=${MAP_ZOOM}&pt=${lon},${lat},pm2blk`;
   }, []);
+
+  usePageSeo(
+    'Контакты | СТ-24',
+    'Контакты СТ-24: адрес, телефон, email и Telegram. Доставка запчастей для техники Karcher по России.',
+    {
+      jsonLd: breadcrumbJsonLd
+    }
+  );
 
   useEffect(() => {
     const key = typeof apiKey === 'string' ? apiKey.trim() : '';

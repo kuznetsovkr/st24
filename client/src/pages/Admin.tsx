@@ -36,6 +36,7 @@ import {
   setStoredFontTheme,
   type FontTheme
 } from '../utils/fontTheme';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const MAX_IMAGES = 5;
 const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
@@ -257,6 +258,10 @@ const LogoutIcon = () => (
 );
 
 const AdminPage = () => {
+  usePageSeo('Админ-панель | СТ-24', 'Административная панель управления СТ-24.', {
+    robots: 'noindex,nofollow'
+  });
+
   const [authStatus, setAuthStatus] = useState<'checking' | 'guest' | 'auth'>('checking');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [phone, setPhone] = useState('');

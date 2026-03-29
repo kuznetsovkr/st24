@@ -1,6 +1,11 @@
 import { Link } from 'react-router-dom';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const NotFoundPage = () => {
+  usePageSeo('Страница не найдена | СТ-24', 'Запрошенная страница не найдена.', {
+    robots: 'noindex,nofollow'
+  });
+
   return (
     <div className="page page--center">
       <div className="card">

@@ -17,6 +17,7 @@ import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
 import { formatPhone } from '../utils/formatPhone.ts';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
 const isPhoneReadyForCaptcha = (value: string) => {
@@ -42,6 +43,9 @@ const AccountPage = () => {
   const { user, status, setUser, logout } = useAuth();
   const { clear } = useCart();
   const { openAuthModal } = useUI();
+  usePageSeo('Личный кабинет | СТ-24', 'Личный кабинет пользователя СТ-24.', {
+    robots: 'noindex,follow'
+  });
   const [isEditing, setIsEditing] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');

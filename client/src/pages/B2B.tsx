@@ -1,7 +1,8 @@
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import TurnstileWidget from '../components/TurnstileWidget.tsx';
 import { requestB2BInquiry } from '../api';
 import { formatPhone } from '../utils/formatPhone.ts';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const isCaptchaValidationError = (value: string) => {
   const normalized = value.toLowerCase();
@@ -25,6 +26,35 @@ const B2BPage = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+  const breadcrumbJsonLd = useMemo(
+    () => ({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Главная',
+          item: `${SITE_URL}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'B2B',
+          item: `${SITE_URL}/b2b`
+        }
+      ]
+    }),
+    []
+  );
+
+  usePageSeo(
+    'Запрос для юридических лиц | СТ-24',
+    'Заполните форму B2B-запроса в СТ-24, чтобы получить коммерческое предложение на запчасти для техники Karcher.',
+    {
+      jsonLd: breadcrumbJsonLd
+    }
+  );
 
   const handleCaptchaTokenChange = useCallback((token: string | null) => {
     setCaptchaToken(token);

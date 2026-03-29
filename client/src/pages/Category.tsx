@@ -6,9 +6,10 @@ import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
-import { usePageSeo } from '../utils/usePageSeo.ts';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const PRODUCTS_PAGE_SIZE = 24;
+const PRODUCT_SCHEMA_LIMIT = 12;
 
 type CategorySeo = {
   title: string;
@@ -93,8 +94,82 @@ const CategoryPage = () => {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const seo = useMemo(() => resolveCategorySeo(slug ?? '', categoryTitle), [categoryTitle, slug]);
+  const categoryPath = slug ? `/catalog/${slug}` : '/catalog';
+  const categoryUrl = `${SITE_URL}${categoryPath}`;
+  const breadcrumbJsonLd = useMemo(
+    () => ({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Главная',
+          item: `${SITE_URL}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'Каталог запчастей',
+          item: `${SITE_URL}/catalog`
+        },
+        {
+          '@type': 'ListItem',
+          position: 3,
+          name: seo.h1,
+          item: categoryUrl
+        }
+      ]
+    }),
+    [categoryUrl, seo.h1]
+  );
+  const productListJsonLd = useMemo(() => {
+    const listedProducts = products.slice(0, PRODUCT_SCHEMA_LIMIT);
+    if (listedProducts.length === 0) {
+      return null;
+    }
 
-  usePageSeo(seo.title, seo.description);
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      name: seo.h1,
+      itemListElement: listedProducts.map((product, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        item: {
+          '@type': 'Product',
+          name: product.name,
+          description: product.description,
+          sku: product.sku,
+          image: product.images[0] ?? undefined,
+          brand: {
+            '@type': 'Brand',
+            name: 'Karcher'
+          },
+          offers: {
+            '@type': 'Offer',
+            priceCurrency: 'RUB',
+            price: (product.priceCents / 100).toFixed(2),
+            availability:
+              product.stock > 0
+                ? 'https://schema.org/InStock'
+                : 'https://schema.org/OutOfStock',
+            url: categoryUrl
+          }
+        }
+      }))
+    };
+  }, [categoryUrl, products, seo.h1]);
+  const pageJsonLd = useMemo(() => {
+    if (!productListJsonLd) {
+      return [breadcrumbJsonLd];
+    }
+    return [breadcrumbJsonLd, productListJsonLd];
+  }, [breadcrumbJsonLd, productListJsonLd]);
+
+  usePageSeo(seo.title, seo.description, {
+    jsonLd: pageJsonLd
+  });
 
   useEffect(() => {
     if (!slug) {

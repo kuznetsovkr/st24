@@ -23,6 +23,7 @@ import {
   type PackingDebugFallbackParcel
 } from '../utils/parcelPacking.ts';
 import { formatPrice } from '../utils/formatPrice.ts';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const CDEK_WIDGET_SCRIPT_ID = 'cdek-widget-script';
 const CDEK_WIDGET_SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/@cdek-it/widget@3';
@@ -191,6 +192,10 @@ const formatFallbackForLog = (fallback: PackingDebugFallbackParcel, index: numbe
 });
 
 const CheckoutPage = () => {
+  usePageSeo('Оформление заказа | СТ-24', 'Страница оформления заказа интернет-магазина СТ-24.', {
+    robots: 'noindex,follow'
+  });
+
   const navigate = useNavigate();
   const { user, status } = useAuth();
   const { items, totalCount, totalPriceCents, syncWithServer } = useCart();

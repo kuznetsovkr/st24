@@ -1,9 +1,35 @@
-import { usePageSeo } from '../utils/usePageSeo.ts';
+import { useMemo } from 'react';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const AboutPage = () => {
+  const breadcrumbJsonLd = useMemo(
+    () => ({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Главная',
+          item: `${SITE_URL}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'О компании',
+          item: `${SITE_URL}/about`
+        }
+      ]
+    }),
+    []
+  );
+
   usePageSeo(
     'О компании — производитель запчастей для Karcher в России | СТ-24',
-    'Информация о компании. Производство и продажа запчастей для техники Karcher. Опыт, качество и доставка по всей России.'
+    'Информация о компании. Производство и продажа запчастей для техники Karcher. Опыт, качество и доставка по всей России.',
+    {
+      jsonLd: breadcrumbJsonLd
+    }
   );
 
   return (

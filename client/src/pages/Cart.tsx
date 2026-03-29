@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
 import QuantityStepIcon from '../components/QuantityStepIcon.tsx';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const CartPage = () => {
   const navigate = useNavigate();
@@ -26,6 +27,9 @@ const CartPage = () => {
   const [expandedCartItemIds, setExpandedCartItemIds] = useState<Set<string>>(
     () => new Set()
   );
+  usePageSeo('Корзина | СТ-24', 'Корзина интернет-магазина СТ-24.', {
+    robots: 'noindex,follow'
+  });
 
   const hasStockIssues = items.some(
     (item) => typeof item.stock === 'number' && item.quantity > item.stock

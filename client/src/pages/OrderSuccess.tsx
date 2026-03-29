@@ -4,6 +4,7 @@ import { fetchOrder } from '../api.ts';
 import type { Order } from '../api.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const resolvePaymentStatusLabel = (order: Order) => {
   const paymentStatus = (order.paymentStatus ?? '').trim().toLowerCase();
@@ -46,6 +47,10 @@ const resolvePaymentStatusLabel = (order: Order) => {
 };
 
 const OrderSuccessPage = () => {
+  usePageSeo('Статус заказа | СТ-24', 'Страница статуса и подтверждения заказа СТ-24.', {
+    robots: 'noindex,follow'
+  });
+
   const { orderId } = useParams<{ orderId: string }>();
   const { status } = useAuth();
   const { openAuthModal } = useUI();

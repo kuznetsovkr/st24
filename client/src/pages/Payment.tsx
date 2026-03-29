@@ -6,8 +6,13 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const PaymentPage = () => {
+  usePageSeo('Оплата заказа | СТ-24', 'Страница оплаты заказа интернет-магазина СТ-24.', {
+    robots: 'noindex,follow'
+  });
+
   const { orderId } = useParams<{ orderId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

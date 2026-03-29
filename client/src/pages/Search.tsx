@@ -6,12 +6,16 @@ import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import { usePageSeo } from '../utils/usePageSeo.ts';
 
 const SEARCH_PAGE_SIZE = 24;
 
 const SearchPage = () => {
   const [searchParams] = useSearchParams();
   const query = (searchParams.get('q') ?? '').trim();
+  usePageSeo('Поиск по артикулу | СТ-24', 'Страница поиска товаров по SKU в каталоге СТ-24.', {
+    robots: 'noindex,follow'
+  });
   const { openProductModal, openNeedPartModal } = useUI();
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
