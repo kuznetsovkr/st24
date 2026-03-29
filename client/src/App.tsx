@@ -4,7 +4,7 @@ import AppLayout from './layout/AppLayout.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import { CartProvider } from './context/CartContext.tsx';
 import { UIProvider } from './context/UIContext.tsx';
-import ProductQuickViewModal from './components/ProductQuickViewModal.tsx';
+// import ProductQuickViewModal from './components/ProductQuickViewModal.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import NeedPartModal from './components/NeedPartModal.tsx';
 
@@ -21,6 +21,7 @@ const CheckoutPage = lazy(() => import('./pages/Checkout.tsx'));
 const NotFoundPage = lazy(() => import('./pages/NotFound.tsx'));
 const OrderSuccessPage = lazy(() => import('./pages/OrderSuccess.tsx'));
 const PaymentPage = lazy(() => import('./pages/Payment.tsx'));
+const ProductPage = lazy(() => import('./pages/Product.tsx'));
 const SearchPage = lazy(() => import('./pages/Search.tsx'));
 const PrivacyPage = lazy(() => import('./pages/Privacy.tsx'));
 const TermsPage = lazy(() => import('./pages/Terms.tsx'));
@@ -46,6 +47,7 @@ const App = () => (
                 <Route path="/checkout" element={<CheckoutPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/payment/:orderId" element={<PaymentPage />} />
+                <Route path="/product/:id" element={<ProductPage />} />
                 <Route path="/order-success/:orderId" element={<OrderSuccessPage />} />
                 <Route path="/contacts" element={<ContactsPage />} />
                 <Route path="/about" element={<AboutPage />} />
@@ -57,7 +59,7 @@ const App = () => (
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
-            <ProductQuickViewModal />
+            {/* <ProductQuickViewModal /> */}
             <AuthModal />
             <NeedPartModal />
           </AppLayout>

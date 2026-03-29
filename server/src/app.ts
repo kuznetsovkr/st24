@@ -1946,6 +1946,44 @@ export const createApp = () => {
     }
   });
 
+  app.get('/api/products/:id', (req: Request, res: Response) => {
+    const id = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+    const includeHidden = req.query.includeHidden === 'true';
+
+    if (!id) {
+      res.status(400).json({ error: 'Invalid request data' });
+      return;
+    }
+
+    if (includeHidden) {
+      const { token } = getRequestAuthToken(req);
+      if (!token) {
+        res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
+        return;
+      }
+      try {
+        const payload = verifyToken(token);
+        if (payload.role !== 'admin') {
+          res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
+          return;
+        }
+      } catch {
+        res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
+        return;
+      }
+    }
+
+    findProductById(id)
+      .then((item) => {
+        if (!item || (item.is_hidden && !includeHidden)) {
+          res.status(404).json({ error: 'РўРѕРІР°СЂ РЅРµ РЅР°Р№РґРµРЅ' });
+          return;
+        }
+        res.json(mapProduct(item));
+      })
+      .catch(() => res.status(500).json({ error: 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С‚РѕРІР°СЂ' }));
+  });
+
   app.post('/api/products', authenticate, requireAdmin, upload.array('images', 5), async (req, res) => {
     const actorUserId = req.user?.userId ?? null;
     const files = (req.files ?? []) as Express.Multer.File[];

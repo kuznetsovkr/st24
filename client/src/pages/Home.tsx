@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchHomeBanner, fetchProducts } from '../api';
 import type { HomeBanner, Product } from '../api';
 import ProductMiniCard from '../components/ProductMiniCard.tsx';
@@ -16,7 +16,8 @@ const FALLBACK_DESKTOP_BANNER = '/banners/16_9.png';
 const FALLBACK_MOBILE_BANNER = '/banners/4_3.png';
 
 const HomePage = () => {
-  const { openProductModal, openNeedPartModal } = useUI();
+  const navigate = useNavigate();
+  const { openNeedPartModal } = useUI();
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -417,22 +418,9 @@ const HomePage = () => {
 
   const handleOpenProduct = useCallback(
     (product: Product) => {
-      openProductModal({
-        id: product.id,
-        name: product.name,
-        priceCents: product.priceCents,
-        description: product.description,
-        sku: product.sku,
-        image: product.images[0],
-        images: product.images,
-        weightGrams: product.weightGrams,
-        lengthCm: product.lengthCm,
-        widthCm: product.widthCm,
-        heightCm: product.heightCm,
-        stock: product.stock
-      });
+      navigate(`/product/${product.id}`);
     },
-    [openProductModal]
+    [navigate]
   );
 
   const handleNeedPart = useCallback(

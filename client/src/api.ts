@@ -378,6 +378,23 @@ export const fetchProducts = async (options?: {
   return page.items;
 };
 
+export const fetchProductById = async (id: string, options?: { includeHidden?: boolean }) => {
+  const productId = id.trim();
+  if (!productId) {
+    throw new Error('Invalid request data');
+  }
+
+  const url = new URL(`${API_BASE}/api/products/${productId}`);
+  if (options?.includeHidden) {
+    url.searchParams.set('includeHidden', 'true');
+  }
+
+  const product = await fetchJson<Product>(url.toString(), {
+    headers: options?.includeHidden ? authHeaders() : undefined
+  });
+  return normalizeProduct(product);
+};
+
 export const searchProductsBySku = async (
   sku: string,
   options?: number | { limit?: number; offset?: number }

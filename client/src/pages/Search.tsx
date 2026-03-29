@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { searchProductsBySku } from '../api';
 import type { Product } from '../api';
 import ProductMiniCard from '../components/ProductMiniCard.tsx';
@@ -16,7 +16,8 @@ const SearchPage = () => {
   usePageSeo('Поиск по артикулу | СТ-24', 'Страница поиска товаров по SKU в каталоге СТ-24.', {
     robots: 'noindex,follow'
   });
-  const { openProductModal, openNeedPartModal } = useUI();
+  const navigate = useNavigate();
+  const { openNeedPartModal } = useUI();
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -170,22 +171,9 @@ const SearchPage = () => {
 
   const handleOpenProduct = useCallback(
     (product: Product) => {
-      openProductModal({
-        id: product.id,
-        name: product.name,
-        priceCents: product.priceCents,
-        description: product.description,
-        sku: product.sku,
-        image: product.images[0],
-        images: product.images,
-        weightGrams: product.weightGrams,
-        lengthCm: product.lengthCm,
-        widthCm: product.widthCm,
-        heightCm: product.heightCm,
-        stock: product.stock
-      });
+      navigate(`/product/${product.id}`);
     },
-    [openProductModal]
+    [navigate]
   );
 
   const handleNeedPart = useCallback(
