@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { Link } from 'react-router-dom';
 import type { Product } from '../api';
 import { formatPrice } from '../utils/formatPrice.ts';
 import ProductImageSlider from './ProductImageSlider.tsx';
@@ -30,6 +31,7 @@ const ProductMiniCard = ({
   onSetQuantity
 }: ProductMiniCardProps) => {
   const isOutOfStock = product.stock === 0;
+  const productLink = `/product/${product.id}`;
 
   return (
     <article className={className} onClick={() => onOpen(product)}>
@@ -40,19 +42,29 @@ const ProductMiniCard = ({
         resetToFirstOnMouseLeave
       />
       <div className="product-info">
-        <h3>{product.name}</h3>
+        <h3>
+          <Link
+            to={productLink}
+            className="product-card-link"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            {product.name}
+          </Link>
+        </h3>
         <p className="price">{formatPrice(product.priceCents)}</p>
         {isAdmin && <p className="stock-text">Остаток: {product.stock}</p>}
         <div className="product-actions">
-          <button
+          <Link
+            to={productLink}
             className="ghost-button"
             onClick={(event) => {
               event.stopPropagation();
-              onOpen(product);
             }}
           >
             Подробнее
-          </button>
+          </Link>
           {quantity === 0 ? (
             isOutOfStock ? (
               <span className="stock-badge">Нет в наличии</span>

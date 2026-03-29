@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchCategories, fetchProductById } from '../api.ts';
 import type { Product } from '../api.ts';
@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
 import { formatPrice } from '../utils/formatPrice.ts';
-import { usePageSeo } from '../utils/usePageSeo.ts';
+import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 type ProductTab = 'description' | 'specs';
 
@@ -23,12 +23,76 @@ const ProductPage = () => {
   const [categoryName, setCategoryName] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [activeTab, setActiveTab] = useState<ProductTab>('description');
+  const productPath = id ? `/product/${id}` : '/catalog';
+  const productUrl = `${SITE_URL}${productPath}`;
+
+  const pageJsonLd = useMemo(() => {
+    if (!product) {
+      return null;
+    }
+
+    const breadcrumb = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Главная',
+          item: `${SITE_URL}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: categoryName || product.category,
+          item: `${SITE_URL}/catalog/${product.category}`
+        },
+        {
+          '@type': 'ListItem',
+          position: 3,
+          name: product.name,
+          item: productUrl
+        }
+      ]
+    };
+
+    const productSchema = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.name,
+      sku: product.sku,
+      mpn: product.sku,
+      description: product.description || undefined,
+      image: product.images,
+      category: categoryName || product.category,
+      brand: {
+        '@type': 'Brand',
+        name: 'Karcher'
+      },
+      offers: {
+        '@type': 'Offer',
+        priceCurrency: 'RUB',
+        price: (product.priceCents / 100).toFixed(2),
+        availability:
+          product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        itemCondition: 'https://schema.org/NewCondition',
+        url: productUrl
+      }
+    };
+
+    return [breadcrumb, productSchema];
+  }, [categoryName, product, productUrl]);
 
   usePageSeo(
-    product ? `${product.name} | СТ-24` : 'Карточка товара | СТ-24',
+    product ? `${product.name} — артикул ${product.sku} | СТ-24` : 'Карточка товара | СТ-24',
     product
       ? `${product.name}, артикул ${product.sku}. Цена и наличие в каталоге СТ-24.`
-      : 'Страница товара в каталоге СТ-24.'
+      : 'Страница товара в каталоге СТ-24.',
+    {
+      canonicalPath: productPath,
+      robots: 'index,follow',
+      jsonLd: pageJsonLd ?? undefined
+    }
   );
 
   useEffect(() => {
@@ -156,7 +220,7 @@ const ProductPage = () => {
           </div>
 
           <div className="product-page-right">
-            <h2 className="product-page-title">{product.name}</h2>
+            <h1 className="product-page-title">{product.name}</h1>
             <p className="product-page-meta">
               <span className="product-page-meta-label">Артикул:</span>
               <span className="product-page-meta-value">{product.sku || '—'}</span>

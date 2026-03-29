@@ -397,6 +397,13 @@ const PRODUCTS_PAGE_LIMIT_MAX = parsePositiveEnvInt(
   process.env.PRODUCTS_PAGE_LIMIT_MAX,
   100
 );
+const SITEMAP_PRODUCTS_PAGE_SIZE = parsePositiveEnvInt(
+  process.env.SITEMAP_PRODUCTS_PAGE_SIZE,
+  5000
+);
+const PUBLIC_SITE_URL = (process.env.PUBLIC_SITE_URL ?? 'https://xn---24-3edf.xn--p1ai')
+  .trim()
+  .replace(/\/+$/, '');
 
 const phoneCodeRequestRateLimiter = createScopedRateLimiter(
   PHONE_CODE_RATE_LIMIT_WINDOW_SECONDS,
@@ -690,6 +697,64 @@ const mapProduct = (row: ProductRow) => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
+
+const escapeXml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const toProductPublicUrl = (productId: string) => `${PUBLIC_SITE_URL}/product/${productId}`;
+
+const formatLastMod = (value: string) => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return new Date(timestamp).toISOString();
+};
+
+const buildProductsSitemapXml = (products: ProductRow[]) => {
+  const urlsetBody = products
+    .map((product) => {
+      const loc = escapeXml(toProductPublicUrl(product.id));
+      const lastMod = formatLastMod(product.updated_at);
+      const lastModTag = lastMod ? `\n    <lastmod>${lastMod}</lastmod>` : '';
+      return `  <url>\n    <loc>${loc}</loc>${lastModTag}\n  </url>`;
+    })
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlsetBody}\n</urlset>\n`;
+};
+
+const listAllVisibleProducts = async () => {
+  const items: ProductRow[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await listProducts({
+      includeHidden: false,
+      limit: SITEMAP_PRODUCTS_PAGE_SIZE,
+      offset
+    });
+
+    if (page.items.length === 0) {
+      break;
+    }
+
+    items.push(...page.items);
+
+    if (!page.hasMore || page.nextOffset === null) {
+      break;
+    }
+
+    offset = page.nextOffset;
+  }
+
+  return items;
+};
 
 const mapBoxType = (row: BoxTypeRow) => ({
   id: row.id,
@@ -1131,6 +1196,17 @@ export const createApp = () => {
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
+  });
+
+  app.get('/api/sitemaps/products.xml', async (_req: Request, res: Response) => {
+    try {
+      const products = await listAllVisibleProducts();
+      const xml = buildProductsSitemapXml(products);
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+      res.status(200).send(xml);
+    } catch {
+      res.status(500).type('text/plain; charset=utf-8').send('Failed to generate sitemap');
+    }
   });
 
   app.post('/api/telegram-gateway/report', (req: Request, res: Response) => {

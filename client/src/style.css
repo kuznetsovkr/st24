@@ -777,6 +777,15 @@ a {
   overflow: hidden;
 }
 
+.product-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.product-card-link:hover {
+  text-decoration: underline;
+}
+
 .price {
   margin: 0;
   font-weight: var(--weight-semibold);
