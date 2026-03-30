@@ -1030,6 +1030,14 @@ h3 {
   gap: 12px;
 }
 
+.modal-card--catalog-need-part {
+  max-height: 90vh;
+  max-height: 90svh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .modal-card--product {
   width: min(720px, 100%);
   max-height: 90vh;

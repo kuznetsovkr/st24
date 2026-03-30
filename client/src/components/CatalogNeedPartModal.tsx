@@ -148,7 +148,10 @@ const CatalogNeedPartModal = ({ open, onClose, categoryName }: CatalogNeedPartMo
 
   return (
     <div className="modal-backdrop" onClick={handleClose}>
-      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="modal-card modal-card--catalog-need-part"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="modal-header">
           <div>
             <p className="eyebrow">Нужна деталь</p>
