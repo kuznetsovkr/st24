@@ -149,6 +149,9 @@ const CODE_TTL_MINUTES = 5;
 const PHONE_CODE_LENGTH = 4;
 const EMAIL_CODE_LENGTH = 6;
 const B2B_CARD_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const NEED_PART_IMAGE_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const NEED_PART_IMAGE_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const NEED_PART_IMAGE_ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const B2B_CARD_ALLOWED_MIME = new Set([
   'application/pdf',
   'application/msword',
@@ -675,6 +678,25 @@ const b2bUpload = multer({
         'Допустимы только PDF, DOC, DOCX, XLS, XLSX, JPG или PNG файлы карточки предприятия.'
       )
     );
+  }
+});
+
+const needPartImagesUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: NEED_PART_IMAGE_MAX_FILE_SIZE,
+    files: 3
+  },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (
+      NEED_PART_IMAGE_ALLOWED_MIME.has(file.mimetype) &&
+      NEED_PART_IMAGE_ALLOWED_EXTENSIONS.has(ext)
+    ) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error('Допустимы только JPG, PNG или WEBP изображения.'));
   }
 });
 
@@ -3179,6 +3201,97 @@ export const createApp = () => {
       const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       res.status(500).json({ error: message });
     }
+  });
+
+  app.post('/api/requests/need-part/catalog', async (req: Request, res: Response) => {
+    needPartImagesUpload.array('images', 3)(req, res, async (uploadError) => {
+      if (uploadError) {
+        res.status(400).json({
+          error:
+            uploadError instanceof Error
+              ? uploadError.message
+              : 'Не удалось обработать загруженные файлы'
+        });
+        return;
+      }
+
+      const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim() : '';
+      const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+      const productQuery =
+        typeof req.body.productQuery === 'string' ? req.body.productQuery.trim() : '';
+      const categoryName =
+        typeof req.body.categoryName === 'string' ? req.body.categoryName.trim() : '';
+      const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+      const requestIp = getRequestIp(req);
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+
+      const errors: string[] = [];
+      if (!fullName) {
+        errors.push('ФИО обязательно');
+      }
+      if (!phone) {
+        errors.push('Телефон обязателен');
+      }
+      if (!productQuery) {
+        errors.push('Укажите название товара и доп. информацию');
+      }
+      if (files.length > 3) {
+        errors.push('Можно загрузить не более 3 фото');
+      }
+
+      if (errors.length > 0) {
+        res.status(400).json({ errors });
+        return;
+      }
+
+      const needPartRateLimit = await needPartRateLimiter.consume(
+        'need_part_catalog',
+        requestIp,
+        `${normalizePhone(phone)}:${productQuery.toLowerCase().slice(0, 100)}`
+      );
+      if (!needPartRateLimit.allowed) {
+        res.setHeader('Retry-After', String(needPartRateLimit.retryAfterSeconds));
+        res.status(429).json({
+          error: `Слишком много запросов. Повторите через ${needPartRateLimit.retryAfterSeconds} сек.`
+        });
+        return;
+      }
+
+      if (isTurnstileEnabled()) {
+        try {
+          await verifyTurnstileToken(captchaToken, requestIp, 'request_need_part');
+        } catch (error) {
+          res.status(400).json({
+            error: error instanceof Error ? error.message : 'Не удалось выполнить запрос'
+          });
+          return;
+        }
+      }
+
+      const normalizedPhone = formatPhoneE164(phone);
+      const lines = [
+        '🆘 Новая заявка: нужна деталь (из каталога)',
+        categoryName ? `📂 Раздел: ${categoryName}` : null,
+        `🧩 Запрос: ${productQuery}`,
+        `👤 ФИО: ${fullName}`,
+        `📞 Телефон: ${normalizedPhone}`,
+        files.length > 0 ? `🖼 Фото: ${files.length}` : '🖼 Фото: не приложены'
+      ].filter(Boolean);
+
+      const documents = files.map((file, index) => ({
+        bytes: file.buffer,
+        fileName: file.originalname || `image-${index + 1}.jpg`,
+        mimeType: file.mimetype
+      }));
+
+      try {
+        await sendTelegramMessage(lines.join('\n'), documents);
+        res.json({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+        res.status(500).json({ error: message });
+      }
+    });
   });
 
   app.post('/api/auth/request-code', async (req: Request, res: Response) => {

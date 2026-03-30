@@ -1632,6 +1632,47 @@ input[type='file'] {
   animation: need-part-success-fade 0.35s ease-out 0.2s both;
 }
 
+.need-part-images-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.need-part-image-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 88px;
+}
+
+.need-part-image-item img {
+  width: 88px;
+  height: 88px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.category-need-help {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.category-need-help p {
+  margin: 0;
+  color: var(--text);
+  font-weight: var(--weight-regular);
+  font-size: 24px;
+}
+
+.category-need-help-link {
+  font-size: 18px;
+}
+
 @keyframes need-part-success-pop {
   from {
     opacity: 0;

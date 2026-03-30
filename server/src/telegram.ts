@@ -324,7 +324,10 @@ export const handleTelegramB2BUpdate = async (update: unknown) => {
   });
 };
 
-export const sendTelegramMessage = async (text: string) => {
+export const sendTelegramMessage = async (
+  text: string,
+  documents?: TelegramDocumentInput[]
+) => {
   const { token } = getTelegramConfig();
   const subscribers = await listTelegramSubscribers();
   if (subscribers.length === 0) {
@@ -338,6 +341,14 @@ export const sendTelegramMessage = async (text: string) => {
     subscribers.map(async (subscriber) => {
       try {
         await sendToChat(token, subscriber.chat_id, text);
+        if (Array.isArray(documents) && documents.length > 0) {
+          for (let index = 0; index < documents.length; index += 1) {
+            const document = documents[index];
+            const caption =
+              documents.length > 1 ? `Фото ${index + 1}: ${document.fileName}` : document.fileName;
+            await sendDocumentToChat(token, subscriber.chat_id, document, caption);
+          }
+        }
         successCount += 1;
       } catch (error) {
         const err = error instanceof Error ? error : new Error('Не удалось отправить');

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { fetchCategories, fetchProductsPage } from '../api';
 import type { Product } from '../api';
+import CatalogNeedPartModal from '../components/CatalogNeedPartModal.tsx';
 import ProductMiniCard from '../components/ProductMiniCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
@@ -93,6 +94,7 @@ const CategoryPage = () => {
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [isCatalogNeedPartModalOpen, setCatalogNeedPartModalOpen] = useState(false);
 
   const seo = useMemo(() => resolveCategorySeo(slug ?? '', categoryTitle), [categoryTitle, slug]);
   const categoryPath = slug ? `/catalog/${slug}` : '/catalog';
@@ -374,6 +376,25 @@ const CategoryPage = () => {
           {loadMoreError ? <p className="muted">{loadMoreError}</p> : null}
         </>
       )}
+
+      {status === 'ready' && (
+        <div className="category-need-help">
+          <p>Не нашли нужную деталь?</p>
+          <button
+            type="button"
+            className="link-button category-need-help-link"
+            onClick={() => setCatalogNeedPartModalOpen(true)}
+          >
+            Спросить о наличии
+          </button>
+        </div>
+      )}
+
+      <CatalogNeedPartModal
+        open={isCatalogNeedPartModalOpen}
+        onClose={() => setCatalogNeedPartModalOpen(false)}
+        categoryName={categoryTitle || seo.h1}
+      />
     </div>
   );
 };

@@ -675,6 +675,13 @@ export const requestNeedPart = async (payload: {
   });
 };
 
+export const requestNeedPartCatalog = async (payload: FormData) => {
+  return fetchJson<{ ok: boolean }>(`${API_BASE}/api/requests/need-part/catalog`, {
+    method: 'POST',
+    body: payload
+  });
+};
+
 export const requestB2BInquiry = async (payload: FormData) => {
   return fetchJson<{ ok: boolean }>(`${API_BASE}/api/requests/b2b`, {
     method: 'POST',
