@@ -50,6 +50,8 @@ const DEFAULT_PARCEL: ShippingParcel = {
 };
 
 const BOX_VOLUME_OVERFLOW_RATIO = 0.1;
+const VOLUMETRIC_DIVISOR_CM3_PER_KG = 5000;
+const SOFT_PACKAGE_MAX_VOLUMETRIC_KG = 1;
 
 const DEFAULT_BOX_TYPES: BoxType[] = [
   {
@@ -253,6 +255,19 @@ const toFallbackParcel = (unit: UnitItem): ShippingParcel => ({
   weight: Math.max(1, unit.weightGrams + 150)
 });
 
+const toUnitParcel = (unit: UnitItem): ShippingParcel => ({
+  length: unit.lengthCm,
+  width: unit.widthCm,
+  height: unit.heightCm,
+  weight: unit.weightGrams
+});
+
+const shouldShipInSoftPackage = (units: UnitItem[]) => {
+  const totalVolumeCm3 = units.reduce((sum, unit) => sum + unit.volumeCm3, 0);
+  const volumetricWeightKg = totalVolumeCm3 / VOLUMETRIC_DIVISOR_CM3_PER_KG;
+  return volumetricWeightKg < SOFT_PACKAGE_MAX_VOLUMETRIC_KG;
+};
+
 const normalizeParcel = (parcel: ShippingParcel): ShippingParcel => ({
   length: normalizePositiveInt(parcel.length, DEFAULT_PARCEL.length),
   width: normalizePositiveInt(parcel.width, DEFAULT_PARCEL.width),
@@ -297,6 +312,10 @@ export const buildShippingParcelsFromCart = (
   const units = normalizeCartUnits(items);
   if (units.length === 0) {
     return [DEFAULT_PARCEL];
+  }
+
+  if (shouldShipInSoftPackage(units)) {
+    return units.map(toUnitParcel).sort(parcelSort);
   }
 
   const availableBoxTypes = normalizeBoxTypes(boxTypes);

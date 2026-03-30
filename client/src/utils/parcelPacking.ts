@@ -71,7 +71,7 @@ export type PackingDebugBox = {
 export type PackingDebugFallbackParcel = {
   parcel: ShippingParcel;
   item: UnitItem;
-  reason: 'no_matching_box_type';
+  reason: 'no_matching_box_type' | 'soft_package_small_volume';
 };
 
 export type PackingDebugResult = {
@@ -90,6 +90,8 @@ const DEFAULT_ITEM = {
 };
 
 const BOX_VOLUME_OVERFLOW_RATIO = 0.1;
+const VOLUMETRIC_DIVISOR_CM3_PER_KG = 5000;
+const SOFT_PACKAGE_MAX_VOLUMETRIC_KG = 1;
 
 const DEFAULT_BOX_TYPES: BoxType[] = [
   {
@@ -287,6 +289,19 @@ const toFallbackParcel = (unit: UnitItem): ShippingParcel => ({
   weight: Math.max(1, unit.weightGrams + 150)
 });
 
+const toUnitParcel = (unit: UnitItem): ShippingParcel => ({
+  length: unit.lengthCm,
+  width: unit.widthCm,
+  height: unit.heightCm,
+  weight: unit.weightGrams
+});
+
+const shouldShipInSoftPackage = (units: UnitItem[]) => {
+  const totalVolumeCm3 = units.reduce((sum, unit) => sum + unit.volumeCm3, 0);
+  const volumetricWeightKg = totalVolumeCm3 / VOLUMETRIC_DIVISOR_CM3_PER_KG;
+  return volumetricWeightKg < SOFT_PACKAGE_MAX_VOLUMETRIC_KG;
+};
+
 export const buildShippingPackingDebug = (
   items: PackableCartItem[],
   boxTypes?: ShippingBoxType[]
@@ -317,6 +332,21 @@ export const buildShippingPackingDebug = (
       boxes: [],
       fallbackParcels: [],
       parcels: [defaultParcel]
+    };
+  }
+
+  if (shouldShipInSoftPackage(units)) {
+    const softPackageParcels = units.map((unit) => ({
+      parcel: toUnitParcel(unit),
+      item: unit,
+      reason: 'soft_package_small_volume' as const
+    }));
+    return {
+      boxTypes: availableBoxTypes,
+      units,
+      boxes: [],
+      fallbackParcels: softPackageParcels,
+      parcels: softPackageParcels.map((item) => item.parcel)
     };
   }
 
