@@ -1020,7 +1020,7 @@ h3 {
 }
 
 .modal-card {
-  width: min(460px, 100%);
+  width: min(500px, 100%);
   background: var(--panel);
   border-radius: var(--radius);
   border: 1px solid var(--border);
@@ -1467,6 +1467,7 @@ textarea {
   outline: none;
   resize: vertical;
   font-family: inherit;
+  font-size: 16px;
 }
 
 textarea:focus {
