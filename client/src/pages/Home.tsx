@@ -511,10 +511,10 @@ const HomePage = () => {
       )}
 
       <div className="home-actions">
-        <Link to="/catalog/prof-zapchasti" className="primary-button">
+        <Link to="/catalog/zapchasti-dlya-professionalnyh-apparatov" className="primary-button">
           {'\u041f\u0440\u043e\u0444. \u0437\u0430\u043f\u0447\u0430\u0441\u0442\u0438'}
         </Link>
-        <Link to="/catalog/bytovye" className="ghost-button">
+        <Link to="/catalog/zapchasti-dlya-bytovyh-apparatov" className="ghost-button">
           {'\u0411\u044b\u0442\u043e\u0432\u044b\u0435'}
         </Link>
       </div>
