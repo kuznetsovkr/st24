@@ -1,3 +1,5 @@
+import { fetch as undiciFetch } from 'undici';
+
 type CircuitState = {
   consecutiveFailures: number;
   openedUntilMs: number;
@@ -42,6 +44,9 @@ export type ResilientFetchOptions = {
 type NodeRequestInit = RequestInit & {
   dispatcher?: unknown;
 };
+
+const doFetch = (input: string | URL | Request, init: NodeRequestInit): Promise<Response> =>
+  undiciFetch(input as never, init as never) as unknown as Promise<Response>;
 
 const parsePositiveIntEnv = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
@@ -180,7 +185,7 @@ const fetchWithTimeout = async (
   timeoutMs: number
 ) => {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return fetch(input, init as RequestInit);
+    return doFetch(input, init);
   }
 
   const timeoutController = new AbortController();
@@ -192,13 +197,10 @@ const fetchWithTimeout = async (
 
   try {
     const signal = mergeSignals(init.signal ?? null, timeoutController.signal);
-    return await fetch(
-      input,
-      {
-        ...init,
-        signal
-      } as RequestInit
-    );
+    return await doFetch(input, {
+      ...init,
+      signal
+    });
   } catch (error) {
     if (timedOut && isAbortError(error)) {
       throw new HttpTimeoutError(timeoutMs);
