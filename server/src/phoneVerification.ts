@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { logPhoneCodeDeliveryEvent } from './phoneCodeDeliveryLogs';
 import { resilientFetch } from './httpClient';
+import { getTelegramOutboundDispatcher } from './telegramProxy';
 
 export type PhoneVerificationChannel = 'telegram_gateway' | 'sms_ru' | 'debug';
 
@@ -155,19 +156,25 @@ const callTelegramGateway = async <T>(
     throw new Error('Токен Telegram Gateway не настроен');
   }
 
-  const response = await resilientFetch(`${getTelegramGatewayBaseUrl().replace(/\/$/, '')}/${method}`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
+  const url = `${getTelegramGatewayBaseUrl().replace(/\/$/, '')}/${method}`;
+  const response = await resilientFetch(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      dispatcher: getTelegramOutboundDispatcher()
     },
-    body: JSON.stringify(payload)
-  }, {
-    circuitKey: `phone_verification:telegram_gateway:${method}`,
-    timeoutMs: 10_000,
-    maxRetries: 2
-  });
+    {
+      circuitKey: `phone_verification:telegram_gateway:${method}`,
+      timeoutMs: 10_000,
+      maxRetries: 2
+    }
+  );
 
   const data = await parseJsonResponse<TelegramGatewayResponse<T>>(response);
   if (!response.ok || !data?.ok || !data.result) {

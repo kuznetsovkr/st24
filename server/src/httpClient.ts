@@ -39,6 +39,10 @@ export type ResilientFetchOptions = {
   circuitOpenMs?: number;
 };
 
+type NodeRequestInit = RequestInit & {
+  dispatcher?: unknown;
+};
+
 const parsePositiveIntEnv = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -172,11 +176,11 @@ const mergeSignals = (
 
 const fetchWithTimeout = async (
   input: string | URL | Request,
-  init: RequestInit,
+  init: NodeRequestInit,
   timeoutMs: number
 ) => {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return fetch(input, init);
+    return fetch(input, init as RequestInit);
   }
 
   const timeoutController = new AbortController();
@@ -188,10 +192,13 @@ const fetchWithTimeout = async (
 
   try {
     const signal = mergeSignals(init.signal ?? null, timeoutController.signal);
-    return await fetch(input, {
-      ...init,
-      signal
-    });
+    return await fetch(
+      input,
+      {
+        ...init,
+        signal
+      } as RequestInit
+    );
   } catch (error) {
     if (timedOut && isAbortError(error)) {
       throw new HttpTimeoutError(timeoutMs);
@@ -247,7 +254,7 @@ const toStatusSet = (statuses: number[] | undefined, fallback: Set<number>) => {
 
 export const resilientFetch = async (
   input: string | URL | Request,
-  init: RequestInit,
+  init: NodeRequestInit,
   options: ResilientFetchOptions
 ): Promise<Response> => {
   const timeoutMs = normalizePositiveInt(options.timeoutMs, DEFAULT_TIMEOUT_MS);
