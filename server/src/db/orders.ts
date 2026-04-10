@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import type { PoolClient } from 'pg';
 import { query, withClient } from '../db';
 
 export type OrderRow = {
@@ -62,32 +63,121 @@ type CreateOrderInput = {
   items: OrderItemInput[];
 };
 
+const ORDER_SELECT_FIELDS = `
+  id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+`;
+
+type StockItem = {
+  productId: string;
+  quantity: number;
+};
+
+const loadStockMapForItems = async (
+  client: PoolClient,
+  items: StockItem[],
+  lockRows: boolean
+) => {
+  if (items.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const productIds = items.map((item) => item.productId);
+  const lockClause = lockRows ? ' FOR UPDATE' : '';
+  const stockResult = await client.query(
+    `SELECT id, stock FROM products WHERE id = ANY($1::uuid[])${lockClause};`,
+    [productIds]
+  );
+
+  return new Map<string, number>(stockResult.rows.map((row) => [row.id as string, row.stock as number]));
+};
+
+const collectStockIssues = (
+  stockMap: Map<string, number>,
+  items: StockItem[]
+) => {
+  const issues: StockIssue[] = [];
+  for (const item of items) {
+    const available = stockMap.get(item.productId) ?? 0;
+    if (available < item.quantity) {
+      issues.push({
+        productId: item.productId,
+        available,
+        requested: item.quantity
+      });
+    }
+  }
+  return issues;
+};
+
+const debitStockForOrder = async (
+  client: PoolClient,
+  orderId: string
+) => {
+  const orderItemsResult = await client.query(
+    `
+      SELECT product_id, quantity
+      FROM order_items
+      WHERE order_id = $1;
+    `,
+    [orderId]
+  );
+
+  const items = orderItemsResult.rows.map((row) => ({
+    productId: row.product_id as string,
+    quantity: row.quantity as number
+  }));
+
+  const stockMap = await loadStockMapForItems(client, items, true);
+  const issues = collectStockIssues(stockMap, items);
+  if (issues.length > 0) {
+    throw new InsufficientStockError(issues);
+  }
+
+  for (const item of items) {
+    await client.query(
+      `
+        UPDATE products
+        SET stock = stock - $2
+        WHERE id = $1;
+      `,
+      [item.productId, item.quantity]
+    );
+  }
+};
+
+const markOrderPaidTransactional = async (
+  client: PoolClient,
+  order: OrderRow
+) => {
+  if (order.status === 'paid') {
+    return null;
+  }
+
+  await debitStockForOrder(client, order.id);
+
+  const result = await client.query(
+    `
+      UPDATE orders
+      SET status = 'paid',
+          payment_status = 'succeeded',
+          payment_confirmed_at = COALESCE(payment_confirmed_at, NOW()),
+          updated_at = NOW()
+      WHERE id = $1 AND status <> 'paid'
+      RETURNING ${ORDER_SELECT_FIELDS};
+    `,
+    [order.id]
+  );
+
+  return (result.rows[0] as OrderRow | undefined) ?? null;
+};
+
 export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
   withClient(async (client) => {
     await client.query('BEGIN');
     try {
-      const productIds = input.items.map((item) => item.productId);
-      if (productIds.length > 0) {
-        const stockResult = await client.query(
-          `SELECT id, stock FROM products WHERE id = ANY($1::uuid[]) FOR UPDATE;`,
-          [productIds]
-        );
-        const stockMap = new Map<string, number>(
-          stockResult.rows.map((row) => [row.id as string, row.stock as number])
-        );
-        const issues: StockIssue[] = [];
-
-        for (const item of input.items) {
-          const available = stockMap.get(item.productId) ?? 0;
-          if (available < item.quantity) {
-            issues.push({
-              productId: item.productId,
-              available,
-              requested: item.quantity
-            });
-          }
-        }
-
+      if (input.items.length > 0) {
+        const stockMap = await loadStockMapForItems(client, input.items, false);
+        const issues = collectStockIssues(stockMap, input.items);
         if (issues.length > 0) {
           throw new InsufficientStockError(issues);
         }
@@ -132,17 +222,6 @@ export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
           `,
           values
         );
-
-        for (const item of input.items) {
-          await client.query(
-            `
-              UPDATE products
-              SET stock = stock - $2
-              WHERE id = $1;
-            `,
-            [item.productId, item.quantity]
-          );
-        }
       }
 
       await client.query('COMMIT');
@@ -238,39 +317,61 @@ export const listOrderItemsForUser = async (
 export const markOrderPaid = async (
   id: string,
   userId: string
-): Promise<OrderRow | null> => {
-  const result = await query(
-    `
-      UPDATE orders
-      SET status = 'paid',
-          payment_status = 'succeeded',
-          payment_confirmed_at = COALESCE(payment_confirmed_at, NOW()),
-          updated_at = NOW()
-      WHERE id = $1 AND user_id = $2 AND status <> 'paid'
-      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
-    `,
-    [id, userId]
-  );
+): Promise<OrderRow | null> =>
+  withClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      const orderResult = await client.query(
+        `
+          SELECT ${ORDER_SELECT_FIELDS}
+          FROM orders
+          WHERE id = $1 AND user_id = $2
+          FOR UPDATE;
+        `,
+        [id, userId]
+      );
+      const order = (orderResult.rows[0] as OrderRow | undefined) ?? null;
+      if (!order) {
+        await client.query('COMMIT');
+        return null;
+      }
 
-  return (result.rows[0] as OrderRow | undefined) ?? null;
-};
+      const updated = await markOrderPaidTransactional(client, order);
+      await client.query('COMMIT');
+      return updated;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });
 
-export const markOrderPaidById = async (id: string): Promise<OrderRow | null> => {
-  const result = await query(
-    `
-      UPDATE orders
-      SET status = 'paid',
-          payment_status = 'succeeded',
-          payment_confirmed_at = COALESCE(payment_confirmed_at, NOW()),
-          updated_at = NOW()
-      WHERE id = $1 AND status <> 'paid'
-      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
-    `,
-    [id]
-  );
+export const markOrderPaidById = async (id: string): Promise<OrderRow | null> =>
+  withClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      const orderResult = await client.query(
+        `
+          SELECT ${ORDER_SELECT_FIELDS}
+          FROM orders
+          WHERE id = $1
+          FOR UPDATE;
+        `,
+        [id]
+      );
+      const order = (orderResult.rows[0] as OrderRow | undefined) ?? null;
+      if (!order) {
+        await client.query('COMMIT');
+        return null;
+      }
 
-  return (result.rows[0] as OrderRow | undefined) ?? null;
-};
+      const updated = await markOrderPaidTransactional(client, order);
+      await client.query('COMMIT');
+      return updated;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });
 
 type UpdateOrderPaymentInput = {
   provider: string;
