@@ -155,19 +155,19 @@ const getApiErrorMessage = (message: string) => {
 const toFriendlyCategorySectionError = (message: string) => {
   const normalizedMessage = getApiErrorMessage(message);
   if (!normalizedMessage) {
-    return '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.';
+    return 'Не удалось сохранить раздел.';
   }
   if (normalizedMessage.includes('File is too large')) {
-    return '\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c 5 \u041c\u0411.';
+    return 'Файл слишком большой. Максимум 5 МБ.';
   }
   if (normalizedMessage.includes('Only images allowed')) {
-    return '\u041c\u043e\u0436\u043d\u043e \u0437\u0430\u0433\u0440\u0443\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f.';
+    return 'Можно загружать только изображения.';
   }
   if (normalizedMessage.includes('Category URL already exists')) {
-    return '\u0422\u0430\u043a\u043e\u0439 URL \u0443\u0436\u0435 \u0437\u0430\u043d\u044f\u0442. \u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u043e\u0439.';
+    return 'Такой URL уже занят. Укажите другой.';
   }
   if (normalizedMessage.includes('Category slug must contain only latin letters')) {
-    return 'URL \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0443, \u0446\u0438\u0444\u0440\u044b \u0438 \u0434\u0435\u0444\u0438\u0441.';
+    return 'URL должен содержать только латиницу, цифры и дефис.';
   }
   return normalizedMessage;
 };
@@ -985,7 +985,7 @@ const AdminPage = () => {
               updatedAt: ''
             })),
           status: null,
-          error: '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.'
+          error: 'Не удалось прочитать изображение категории.'
         }
       }));
     }
@@ -1037,7 +1037,7 @@ const AdminPage = () => {
         [categoryItem.slug]: {
           ...editor,
           status: null,
-          error: '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.'
+          error: 'Укажите название категории.'
         }
       }));
       return;
@@ -1049,7 +1049,7 @@ const AdminPage = () => {
         [categoryItem.slug]: {
           ...editor,
           status: null,
-          error: 'URL \u0434\u043e\u043b\u0436\u0435\u043d \u0441\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0443, \u0446\u0438\u0444\u0440\u044b \u0438 \u0434\u0435\u0444\u0438\u0441.'
+          error: 'URL должен содержать только латиницу, цифры и дефис.'
         }
       }));
       return;
@@ -1091,7 +1091,7 @@ const AdminPage = () => {
         delete next[categoryItem.slug];
         next[updated.slug] = {
           ...createCategorySectionEditorState(updated),
-          status: '\u0420\u0430\u0437\u0434\u0435\u043b \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d.'
+          status: 'Раздел сохранен.'
         };
         return next;
       });
@@ -1105,7 +1105,7 @@ const AdminPage = () => {
           error:
             submitError instanceof Error
               ? toFriendlyCategorySectionError(submitError.message)
-              : '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b.'
+              : 'Не удалось сохранить раздел.'
         }
       }));
     }

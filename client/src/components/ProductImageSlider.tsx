@@ -89,7 +89,7 @@ const ProductImageSlider = ({
             )}
           </>
         ) : (
-          <span>{'\u0424\u043e\u0442\u043e'}</span>
+          <span>{'Фото'}</span>
         )}
       </div>
 
@@ -98,7 +98,7 @@ const ProductImageSlider = ({
           <button
             type="button"
             className="product-image-arrow product-image-arrow--prev"
-            aria-label={'\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u0435 \u0444\u043e\u0442\u043e'}
+            aria-label={'Предыдущее фото'}
             onClick={handlePrev}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="9" height="17" viewBox="0 0 9 17" fill="none" aria-hidden="true">
@@ -111,7 +111,7 @@ const ProductImageSlider = ({
                 key={`dot-${index}`}
                 type="button"
                 className={`product-image-dot${index === activeIndex ? ' is-active' : ''}`}
-                aria-label={`\u0424\u043e\u0442\u043e ${index + 1}`}
+                aria-label={`Фото ${index + 1}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   showIndex(index);
@@ -122,7 +122,7 @@ const ProductImageSlider = ({
           <button
             type="button"
             className="product-image-arrow product-image-arrow--next"
-            aria-label={'\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0435 \u0444\u043e\u0442\u043e'}
+            aria-label={'Следующее фото'}
             onClick={handleNext}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="9" height="17" viewBox="0 0 9 17" fill="none" aria-hidden="true">

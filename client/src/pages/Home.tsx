@@ -472,7 +472,7 @@ const HomePage = () => {
             handleSlide('prev');
           }}
         >
-          {'\u043d\u0430\u0437\u0430\u0434'}
+          {'назад'}
         </a>
         <a
           href="#featured-slider"
@@ -482,14 +482,14 @@ const HomePage = () => {
             handleSlide('next');
           }}
         >
-          {'\u0432\u043f\u0435\u0440\u0451\u0434'}
+          {'вперёд'}
         </a>
       </div>
 
-      {status === 'loading' && <p className="muted">{'\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c \u0442\u043e\u0432\u0430\u0440\u044b...'}</p>}
-      {status === 'error' && <p className="muted">{'\u041d\u0435 \u043f\u043e\u043b\u0443\u0447\u0438\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0442\u043e\u0432\u0430\u0440\u044b.'}</p>}
+      {status === 'loading' && <p className="muted">{'Загружаем товары...'}</p>}
+      {status === 'error' && <p className="muted">{'Не получилось загрузить товары.'}</p>}
       {status === 'ready' && featuredProducts.length === 0 && (
-        <p className="muted">{'\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0442\u043e\u0432\u0430\u0440\u043e\u0432 \u0434\u043b\u044f \u0441\u043b\u0430\u0439\u0434\u0435\u0440\u0430. \u041e\u0442\u043c\u0435\u0442\u044c\u0442\u0435 \u0442\u043e\u0432\u0430\u0440\u044b \u0432 \u0430\u0434\u043c\u0438\u043d\u043a\u0435.'}</p>
+        <p className="muted">{'Пока нет товаров для слайдера. Отметьте товары в админке.'}</p>
       )}
       {status === 'ready' && renderedFeaturedProducts.length > 0 && (
         <div id="featured-slider" className="slider-track" ref={sliderRef}>
@@ -512,10 +512,10 @@ const HomePage = () => {
 
       <div className="home-actions">
         <Link to="/catalog/zapchasti-dlya-professionalnyh-apparatov" className="primary-button">
-          {'\u041f\u0440\u043e\u0444. \u0437\u0430\u043f\u0447\u0430\u0441\u0442\u0438'}
+          {'Проф. запчасти'}
         </Link>
         <Link to="/catalog/zapchasti-dlya-bytovyh-apparatov" className="ghost-button">
-          {'\u0411\u044b\u0442\u043e\u0432\u044b\u0435'}
+          {'Бытовые'}
         </Link>
       </div>
     </div>

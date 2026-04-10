@@ -1599,14 +1599,14 @@ export const createApp = () => {
     const slug = typeof req.params.slug === 'string' ? req.params.slug.trim() : '';
     const actorUserId = req.user?.userId ?? null;
     if (!slug) {
-      res.status(400).json({ error: '\u0423\u043a\u0430\u0436\u0438\u0442\u0435 URL \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438.' });
+      res.status(400).json({ error: 'Укажите URL категории.' });
       return;
     }
 
     try {
       const current = await findCategoryBySlug(slug);
       if (!current) {
-        res.status(404).json({ error: '\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430.' });
+        res.status(404).json({ error: 'Категория не найдена.' });
         return;
       }
 
@@ -1614,14 +1614,14 @@ export const createApp = () => {
       if (productsCount > 0) {
         res.status(409).json({
           error:
-            '\u041d\u0435\u043b\u044c\u0437\u044f \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044e: \u0432 \u043d\u0435\u0439 \u0435\u0441\u0442\u044c \u0442\u043e\u0432\u0430\u0440\u044b.'
+            'Нельзя удалить категорию: в ней есть товары.'
         });
         return;
       }
 
       const deleted = await deleteCategory(slug);
       if (!deleted) {
-        res.status(404).json({ error: '\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430.' });
+        res.status(404).json({ error: 'Категория не найдена.' });
         return;
       }
 
@@ -1642,7 +1642,7 @@ export const createApp = () => {
     } catch {
       res.status(500).json({
         error:
-          '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044e.'
+          'Не удалось удалить категорию.'
       });
     }
   });
