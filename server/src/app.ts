@@ -177,6 +177,7 @@ const B2B_CARD_ALLOWED_EXTENSIONS = new Set([
   '.png'
 ]);
 const B2B_UPLOAD_TMP_DIR = path.resolve(process.cwd(), 'tmp', 'b2b-requests');
+const NEED_PART_UPLOAD_TMP_DIR = path.resolve(process.cwd(), 'tmp', 'need-part-requests');
 
 type RawBodyRequest = Request & {
   rawBody?: string;
@@ -286,25 +287,30 @@ const parseOriginList = (value: string | undefined) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+const isProduction = () =>
+  (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+
+const DEFAULT_DEV_CORS_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
 const resolveCorsAllowedOrigins = () => {
   const allowed = [
     ...parseOriginList(process.env.CORS_ALLOWED_ORIGINS),
-    ...parseOriginList(
-    process.env.CORS_ORIGIN ?? process.env.CLIENT_URL ?? process.env.FRONTEND_URL
-    )
+    ...parseOriginList(process.env.CORS_ORIGIN),
+    ...parseOriginList(process.env.CLIENT_URL),
+    ...parseOriginList(process.env.FRONTEND_URL)
   ];
 
-  if (allowed.length > 0) {
-    return new Set(allowed);
+  if (allowed.length === 0 && !isProduction()) {
+    allowed.push(...DEFAULT_DEV_CORS_ORIGINS);
   }
 
-  return null;
+  return new Set(allowed);
 };
 
 const CORS_ALLOWED_ORIGINS = resolveCorsAllowedOrigins();
 
 const isCorsOriginAllowed = (origin: string) =>
-  !CORS_ALLOWED_ORIGINS || CORS_ALLOWED_ORIGINS.has(origin);
+  CORS_ALLOWED_ORIGINS.has(origin);
 
 const normalizeIp = (value: string | undefined) => {
   if (!value) {
@@ -330,6 +336,12 @@ const ensureB2BUploadTempDir = () => {
   }
 };
 
+const ensureNeedPartUploadTempDir = () => {
+  if (!fs.existsSync(NEED_PART_UPLOAD_TMP_DIR)) {
+    fs.mkdirSync(NEED_PART_UPLOAD_TMP_DIR, { recursive: true });
+  }
+};
+
 const removeB2BTempFile = async (file: Express.Multer.File | undefined) => {
   if (!file?.path) {
     return;
@@ -343,6 +355,28 @@ const removeB2BTempFile = async (file: Express.Multer.File | undefined) => {
       console.error('Failed to remove temporary B2B file', error);
     }
   }
+};
+
+const removeNeedPartTempFiles = async (files: Express.Multer.File[] | undefined) => {
+  if (!files || files.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    files.map(async (file) => {
+      if (!file?.path) {
+        return;
+      }
+      try {
+        await fs.promises.unlink(file.path);
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== 'ENOENT') {
+          console.error('Failed to remove temporary need-part file', error);
+        }
+      }
+    })
+  );
 };
 
 const getRequestIp = (req: Request) => {
@@ -687,7 +721,16 @@ const b2bUpload = multer({
 });
 
 const needPartImagesUpload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      ensureNeedPartUploadTempDir();
+      cb(null, NEED_PART_UPLOAD_TMP_DIR);
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${randomUUID()}${ext}`);
+    }
+  }),
   limits: {
     fileSize: NEED_PART_IMAGE_MAX_FILE_SIZE,
     files: 3
@@ -3283,8 +3326,24 @@ export const createApp = () => {
   });
 
   app.post('/api/requests/need-part/catalog', async (req: Request, res: Response) => {
+    const requestIp = getRequestIp(req);
+    const uploadRateLimit = await needPartRateLimiter.consume(
+      'need_part_catalog_upload',
+      requestIp,
+      'public'
+    );
+    if (!uploadRateLimit.allowed) {
+      res.setHeader('Retry-After', String(uploadRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Слишком много запросов. Повторите через ${uploadRateLimit.retryAfterSeconds} сек.`
+      });
+      return;
+    }
+
     needPartImagesUpload.array('images', 3)(req, res, async (uploadError) => {
+      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
       if (uploadError) {
+        await removeNeedPartTempFiles(files);
         res.status(400).json({
           error:
             uploadError instanceof Error
@@ -3301,8 +3360,6 @@ export const createApp = () => {
       const categoryName =
         typeof req.body.categoryName === 'string' ? req.body.categoryName.trim() : '';
       const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
-      const requestIp = getRequestIp(req);
-      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
 
       const errors: string[] = [];
       if (!fullName) {
@@ -3319,6 +3376,7 @@ export const createApp = () => {
       }
 
       if (errors.length > 0) {
+        await removeNeedPartTempFiles(files);
         res.status(400).json({ errors });
         return;
       }
@@ -3329,6 +3387,7 @@ export const createApp = () => {
         `${normalizePhone(phone)}:${productQuery.toLowerCase().slice(0, 100)}`
       );
       if (!needPartRateLimit.allowed) {
+        await removeNeedPartTempFiles(files);
         res.setHeader('Retry-After', String(needPartRateLimit.retryAfterSeconds));
         res.status(429).json({
           error: `Слишком много запросов. Повторите через ${needPartRateLimit.retryAfterSeconds} сек.`
@@ -3340,6 +3399,7 @@ export const createApp = () => {
         try {
           await verifyTurnstileToken(captchaToken, requestIp, 'request_need_part');
         } catch (error) {
+          await removeNeedPartTempFiles(files);
           res.status(400).json({
             error: error instanceof Error ? error.message : 'Не удалось выполнить запрос'
           });
@@ -3356,12 +3416,6 @@ export const createApp = () => {
         `📞 Телефон: ${normalizedPhone}`,
         files.length > 0 ? `🖼 Фото: ${files.length}` : '🖼 Фото: не приложены'
       ].filter(Boolean);
-
-      const documents = files.map((file, index) => ({
-        bytes: file.buffer,
-        fileName: file.originalname || `image-${index + 1}.jpg`,
-        mimeType: file.mimetype
-      }));
 
       let leadRequestId: string | null = null;
 
@@ -3388,6 +3442,13 @@ export const createApp = () => {
       }
 
       try {
+        const documents = await Promise.all(
+          files.map(async (file, index) => ({
+            bytes: await fs.promises.readFile(file.path),
+            fileName: file.originalname || path.basename(file.path) || `image-${index + 1}.jpg`,
+            mimeType: file.mimetype
+          }))
+        );
         await sendTelegramMessage(lines.join('\n'), documents);
         await markLeadTelegramSentSafe(leadRequestId);
         res.json({ ok: true });
@@ -3395,6 +3456,8 @@ export const createApp = () => {
         const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
         await markLeadTelegramFailedSafe(leadRequestId, message);
         res.status(500).json({ error: message });
+      } finally {
+        await removeNeedPartTempFiles(files);
       }
     });
   });
