@@ -76,6 +76,7 @@ import {
   findProductById,
   findProductBySku,
   listProducts,
+  listVisibleProductsPage,
   searchProductsBySku,
   updateProduct,
   type ProductRow
@@ -804,8 +805,7 @@ const listAllVisibleProducts = async () => {
   let offset = 0;
 
   while (true) {
-    const page = await listProducts({
-      includeHidden: false,
+    const page = await listVisibleProductsPage({
       limit: SITEMAP_PRODUCTS_PAGE_SIZE,
       offset
     });

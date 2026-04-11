@@ -41,10 +41,23 @@ export type ProductListResult = {
   nextOffset: number | null;
 };
 
+export type ProductPageSliceResult = {
+  items: ProductRow[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
 type ListProductsInput = {
   category?: string;
   featured?: boolean;
   includeHidden?: boolean;
+  limit: number;
+  offset: number;
+};
+
+type ListVisibleProductsPageInput = {
   limit: number;
   offset: number;
 };
@@ -64,6 +77,20 @@ type ProductInput = {
   heightCm: number;
   stock: number;
   isHidden: boolean;
+};
+
+const normalizePageLimit = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.max(1, Math.trunc(value));
+};
+
+const normalizePageOffset = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(value));
 };
 
 export const listProducts = async ({
@@ -130,6 +157,38 @@ export const listProducts = async ({
     offset,
     hasMore,
     nextOffset: hasMore ? nextOffset : null
+  };
+};
+
+export const listVisibleProductsPage = async ({
+  limit,
+  offset
+}: ListVisibleProductsPageInput): Promise<ProductPageSliceResult> => {
+  const safeLimit = normalizePageLimit(limit);
+  const safeOffset = normalizePageOffset(offset);
+  const result = await query(
+    `
+      SELECT id, name, sku, description, price_cents, category_slug, images, show_in_slider, slider_order, weight_grams, length_cm, width_cm, height_cm, stock, is_hidden, created_at, updated_at
+      FROM products
+      WHERE is_hidden = FALSE
+      ORDER BY created_at DESC
+      LIMIT $1
+      OFFSET $2;
+    `,
+    [safeLimit + 1, safeOffset]
+  );
+
+  const rows = result.rows as ProductRow[];
+  const hasMore = rows.length > safeLimit;
+  const items = hasMore ? rows.slice(0, safeLimit) : rows;
+  const nextOffset = hasMore ? safeOffset + items.length : null;
+
+  return {
+    items,
+    limit: safeLimit,
+    offset: safeOffset,
+    hasMore,
+    nextOffset
   };
 };
 
