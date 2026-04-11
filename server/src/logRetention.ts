@@ -92,6 +92,13 @@ const buildRetentionTables = (): RetentionTableConfig[] => [
       process.env.PHONE_CODE_DELIVERY_EVENTS_RETENTION_DAYS,
       LOG_RETENTION_DEFAULT_DAYS
     )
+  },
+  {
+    table: 'lead_requests',
+    retentionDays: parseNonNegativeIntEnv(
+      process.env.LEAD_REQUESTS_RETENTION_DAYS,
+      LOG_RETENTION_DEFAULT_DAYS
+    )
   }
 ];
 

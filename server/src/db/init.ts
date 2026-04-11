@@ -378,6 +378,22 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS lead_requests (
+      id UUID PRIMARY KEY,
+      kind TEXT NOT NULL,
+      full_name TEXT,
+      phone TEXT,
+      email TEXT,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      telegram_status TEXT NOT NULL DEFAULT 'pending',
+      telegram_error TEXT,
+      telegram_sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS auth_codes (
       phone TEXT PRIMARY KEY,
       code TEXT NOT NULL,
@@ -555,6 +571,10 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_events_phone_created_idx ON phone_code_delivery_events (phone, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_events_channel_created_idx ON phone_code_delivery_events (channel, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS phone_code_delivery_stats_updated_idx ON phone_code_delivery_stats (updated_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS lead_requests_created_idx ON lead_requests (created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS lead_requests_kind_created_idx ON lead_requests (kind, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS lead_requests_telegram_status_created_idx ON lead_requests (telegram_status, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS lead_requests_phone_created_idx ON lead_requests (phone, created_at DESC);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)

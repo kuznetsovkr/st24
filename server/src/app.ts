@@ -66,6 +66,11 @@ import {
   type OrderRow
 } from './db/orders';
 import {
+  createLeadRequest,
+  markLeadRequestTelegramFailed,
+  markLeadRequestTelegramSent
+} from './db/leadRequests';
+import {
   createProduct,
   deleteProduct,
   findProductById,
@@ -1113,6 +1118,28 @@ const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPa
 
   const refreshed = await findOrderById(order.id);
   return refreshed ?? order;
+};
+
+const markLeadTelegramSentSafe = async (leadRequestId: string | null) => {
+  if (!leadRequestId) {
+    return;
+  }
+  try {
+    await markLeadRequestTelegramSent(leadRequestId);
+  } catch (error) {
+    console.error('Failed to mark lead request as telegram_sent', error);
+  }
+};
+
+const markLeadTelegramFailedSafe = async (leadRequestId: string | null, message: string) => {
+  if (!leadRequestId) {
+    return;
+  }
+  try {
+    await markLeadRequestTelegramFailed(leadRequestId, message);
+  } catch (error) {
+    console.error('Failed to mark lead request as telegram_failed', error);
+  }
 };
 
 const normalizeCartItems = (input: unknown): CartSyncItem[] => {
@@ -3105,6 +3132,34 @@ export const createApp = () => {
         file ? `📎 Карточка предприятия: ${file.originalname || 'прикреплена'}` : '📎 Карточка предприятия: не приложена'
       ].filter(Boolean);
 
+      let leadRequestId: string | null = null;
+
+      try {
+        const lead = await createLeadRequest({
+          kind: 'b2b',
+          fullName: contactPerson || companyName,
+          phone,
+          email: email || null,
+          payload: {
+            companyName,
+            contactPerson: contactPerson || null,
+            comment: comment || null,
+            requestIp: requestIp ?? null,
+            enterpriseCard:
+              file && file.originalname
+                ? {
+                    fileName: file.originalname,
+                    mimeType: file.mimetype,
+                    sizeBytes: file.size
+                  }
+                : null
+          }
+        });
+        leadRequestId = lead.id;
+      } catch (error) {
+        console.error('Failed to persist B2B lead request', error);
+      }
+
       try {
         const document =
           file &&
@@ -3120,9 +3175,11 @@ export const createApp = () => {
           messageLines.join('\n'),
           document
         );
+        await markLeadTelegramSentSafe(leadRequestId);
         res.json({ ok: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+        await markLeadTelegramFailedSafe(leadRequestId, message);
         res.status(500).json({ error: message });
       } finally {
         await removeB2BTempFile(file);
@@ -3194,11 +3251,33 @@ export const createApp = () => {
       `📞 Телефон: ${normalizedPhone}`
     ].filter(Boolean);
 
+    let leadRequestId: string | null = null;
+
+    try {
+      const lead = await createLeadRequest({
+        kind: 'need_part',
+        fullName,
+        phone,
+        payload: {
+          productId: product.id,
+          productName: product.name,
+          productSku: product.sku,
+          productStockSnapshot: product.stock,
+          requestIp: requestIp ?? null
+        }
+      });
+      leadRequestId = lead.id;
+    } catch (error) {
+      console.error('Failed to persist need-part lead request', error);
+    }
+
     try {
       await sendTelegramMessage(lines.join('\n'));
+      await markLeadTelegramSentSafe(leadRequestId);
       res.json({ ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+      await markLeadTelegramFailedSafe(leadRequestId, message);
       res.status(500).json({ error: message });
     }
   });
@@ -3284,11 +3363,37 @@ export const createApp = () => {
         mimeType: file.mimetype
       }));
 
+      let leadRequestId: string | null = null;
+
+      try {
+        const lead = await createLeadRequest({
+          kind: 'need_part_catalog',
+          fullName,
+          phone,
+          payload: {
+            categoryName: categoryName || null,
+            productQuery,
+            requestIp: requestIp ?? null,
+            imagesCount: files.length,
+            images: files.map((file) => ({
+              fileName: file.originalname || null,
+              mimeType: file.mimetype || null,
+              sizeBytes: file.size
+            }))
+          }
+        });
+        leadRequestId = lead.id;
+      } catch (error) {
+        console.error('Failed to persist need-part-catalog lead request', error);
+      }
+
       try {
         await sendTelegramMessage(lines.join('\n'), documents);
+        await markLeadTelegramSentSafe(leadRequestId);
         res.json({ ok: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+        await markLeadTelegramFailedSafe(leadRequestId, message);
         res.status(500).json({ error: message });
       }
     });

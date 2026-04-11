@@ -8,6 +8,7 @@ export const SUPER_ADMIN_LOG_KINDS = [
   'error',
   'phone_code_delivery_events',
   'phone_code_delivery_stats',
+  'lead_requests',
   'telegram_subscribers',
   'telegram_order_subscribers',
   'telegram_b2b_subscribers'
@@ -136,6 +137,23 @@ const LOG_SOURCES: Record<SuperAdminLogKind, LogSourceDefinition> = {
       'last_context',
       'last_event_status',
       'last_event_at',
+      'updated_at',
+      'created_at'
+    ]
+  },
+  lead_requests: {
+    table: 'lead_requests',
+    orderByColumn: 'created_at',
+    columns: [
+      'id',
+      'kind',
+      'full_name',
+      'phone',
+      'email',
+      'payload',
+      'telegram_status',
+      'telegram_error',
+      'telegram_sent_at',
       'updated_at',
       'created_at'
     ]
