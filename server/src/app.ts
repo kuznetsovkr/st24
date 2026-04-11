@@ -108,11 +108,10 @@ import { removeUploadedFiles, toPublicUrl, upload, UploadValidationError } from 
 import {
   PickupPointProxyError,
   searchDellinPickupPoints,
-  searchRussianPostPickupPoints
+  searchRussianPostPickupPoints,
+  type PickupPointOption
 } from './pickupPoints';
-import {
-  type ShippingEstimateProvider
-} from './shippingEstimate';
+import { type ShippingEstimateProvider } from './shippingEstimate';
 import {
   calculateShippingWithProviderApi,
   getShippingProviderApiDebug
@@ -444,6 +443,38 @@ const SITEMAP_PRODUCTS_PAGE_SIZE = parsePositiveEnvInt(
   process.env.SITEMAP_PRODUCTS_PAGE_SIZE,
   5000
 );
+const PICKUP_POINTS_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.PICKUP_POINTS_RATE_LIMIT_WINDOW_SECONDS,
+  60
+);
+const PICKUP_POINTS_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.PICKUP_POINTS_RATE_LIMIT_MAX,
+  30
+);
+const SHIPPING_ESTIMATE_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.SHIPPING_ESTIMATE_RATE_LIMIT_WINDOW_SECONDS,
+  60
+);
+const SHIPPING_ESTIMATE_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.SHIPPING_ESTIMATE_RATE_LIMIT_MAX,
+  20
+);
+const PICKUP_POINTS_CACHE_TTL_SECONDS = parsePositiveEnvInt(
+  process.env.PICKUP_POINTS_CACHE_TTL_SECONDS,
+  300
+);
+const PICKUP_POINTS_CACHE_MAX_ENTRIES = parsePositiveEnvInt(
+  process.env.PICKUP_POINTS_CACHE_MAX_ENTRIES,
+  2000
+);
+const SHIPPING_ESTIMATE_CACHE_TTL_SECONDS = parsePositiveEnvInt(
+  process.env.SHIPPING_ESTIMATE_CACHE_TTL_SECONDS,
+  120
+);
+const SHIPPING_ESTIMATE_CACHE_MAX_ENTRIES = parsePositiveEnvInt(
+  process.env.SHIPPING_ESTIMATE_CACHE_MAX_ENTRIES,
+  1000
+);
 const PUBLIC_SITE_URL = (process.env.PUBLIC_SITE_URL ?? 'https://xn---24-3edf.xn--p1ai')
   .trim()
   .replace(/\/+$/, '');
@@ -467,6 +498,14 @@ const needPartRateLimiter = createScopedRateLimiter(
 const b2bRequestRateLimiter = createScopedRateLimiter(
   PUBLIC_FORM_RATE_LIMIT_WINDOW_SECONDS,
   B2B_REQUEST_RATE_LIMIT_MAX
+);
+const pickupPointsRateLimiter = createScopedRateLimiter(
+  PICKUP_POINTS_RATE_LIMIT_WINDOW_SECONDS,
+  PICKUP_POINTS_RATE_LIMIT_MAX
+);
+const shippingEstimateRateLimiter = createScopedRateLimiter(
+  SHIPPING_ESTIMATE_RATE_LIMIT_WINDOW_SECONDS,
+  SHIPPING_ESTIMATE_RATE_LIMIT_MAX
 );
 
 const parsePriceCents = (value?: string) => {
@@ -537,6 +576,115 @@ const parsePositiveInt = (value?: string, min = 1, max = 100000) => {
   }
   return parsed;
 };
+
+type InMemoryTtlCacheEntry<T> = {
+  value: T;
+  expiresAtMs: number;
+};
+
+type InMemoryTtlCache<T> = {
+  get: (key: string) => T | null;
+  getOrCreate: (key: string, loader: () => Promise<T>) => Promise<T>;
+};
+
+const createInMemoryTtlCache = <T>(
+  ttlSeconds: number,
+  maxEntries: number
+): InMemoryTtlCache<T> => {
+  const entries = new Map<string, InMemoryTtlCacheEntry<T>>();
+  const inFlight = new Map<string, Promise<T>>();
+  const ttlMs = Math.max(1, ttlSeconds) * 1000;
+  const safeMaxEntries = Math.max(1, maxEntries);
+  let operationCount = 0;
+
+  const cleanupExpired = () => {
+    const now = Date.now();
+    for (const [entryKey, entry] of entries.entries()) {
+      if (entry.expiresAtMs <= now) {
+        entries.delete(entryKey);
+      }
+    }
+  };
+
+  const maybeCleanup = () => {
+    operationCount += 1;
+    if (operationCount % 256 !== 0) {
+      return;
+    }
+    cleanupExpired();
+  };
+
+  const enforceMaxEntries = () => {
+    while (entries.size > safeMaxEntries) {
+      const oldestKey = entries.keys().next().value;
+      if (!oldestKey) {
+        return;
+      }
+      entries.delete(oldestKey);
+    }
+  };
+
+  const get = (key: string): T | null => {
+    maybeCleanup();
+    const entry = entries.get(key);
+    if (!entry) {
+      return null;
+    }
+    if (entry.expiresAtMs <= Date.now()) {
+      entries.delete(key);
+      return null;
+    }
+    entries.delete(key);
+    entries.set(key, entry);
+    return entry.value;
+  };
+
+  const getOrCreate = async (key: string, loader: () => Promise<T>) => {
+    const cached = get(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    const pending = inFlight.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = (async () => {
+      const value = await loader();
+      entries.set(key, {
+        value,
+        expiresAtMs: Date.now() + ttlMs
+      });
+      enforceMaxEntries();
+      maybeCleanup();
+      return value;
+    })();
+
+    inFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      inFlight.delete(key);
+    }
+  };
+
+  return {
+    get,
+    getOrCreate
+  };
+};
+
+type ShippingEstimateApiResult = Awaited<ReturnType<typeof calculateShippingWithProviderApi>>;
+
+const pickupPointsSearchCache = createInMemoryTtlCache<PickupPointOption[]>(
+  PICKUP_POINTS_CACHE_TTL_SECONDS,
+  PICKUP_POINTS_CACHE_MAX_ENTRIES
+);
+const shippingEstimateCache = createInMemoryTtlCache<ShippingEstimateApiResult>(
+  SHIPPING_ESTIMATE_CACHE_TTL_SECONDS,
+  SHIPPING_ESTIMATE_CACHE_MAX_ENTRIES
+);
 
 const generateNumericCode = (length: number) => {
   const safeLength = Math.max(1, Math.floor(length));
@@ -1366,6 +1514,20 @@ export const createApp = () => {
       return;
     }
 
+    const requestIp = getRequestIp(req);
+    const rateLimit = await pickupPointsRateLimiter.consume(
+      'pickup_points_search',
+      requestIp,
+      'lookup'
+    );
+    if (!rateLimit.allowed) {
+      res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ С‡РµСЂРµР· ${rateLimit.retryAfterSeconds} СЃРµРє.`
+      });
+      return;
+    }
+
     try {
       const providerEnabled = await isDeliveryProviderEnabled('dellin');
       if (!providerEnabled) {
@@ -1373,7 +1535,10 @@ export const createApp = () => {
         return;
       }
 
-      const items = await searchDellinPickupPoints(query);
+      const cacheKey = `dellin:${query.toLowerCase()}`;
+      const items = await pickupPointsSearchCache.getOrCreate(cacheKey, () =>
+        searchDellinPickupPoints(query)
+      );
       res.json({ items });
     } catch (error) {
       if (error instanceof PickupPointProxyError) {
@@ -1392,6 +1557,20 @@ export const createApp = () => {
       return;
     }
 
+    const requestIp = getRequestIp(req);
+    const rateLimit = await pickupPointsRateLimiter.consume(
+      'pickup_points_search',
+      requestIp,
+      'lookup'
+    );
+    if (!rateLimit.allowed) {
+      res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ С‡РµСЂРµР· ${rateLimit.retryAfterSeconds} СЃРµРє.`
+      });
+      return;
+    }
+
     try {
       const providerEnabled = await isDeliveryProviderEnabled('russian_post');
       if (!providerEnabled) {
@@ -1399,7 +1578,10 @@ export const createApp = () => {
         return;
       }
 
-      const items = await searchRussianPostPickupPoints(query);
+      const cacheKey = `russian_post:${query.toLowerCase()}`;
+      const items = await pickupPointsSearchCache.getOrCreate(cacheKey, () =>
+        searchRussianPostPickupPoints(query)
+      );
       res.json({ items });
     } catch (error) {
       if (error instanceof PickupPointProxyError) {
@@ -1419,6 +1601,20 @@ export const createApp = () => {
         : null;
     if (!provider) {
       res.status(400).json({ error: 'Некорректные данные запроса' });
+      return;
+    }
+
+    const requestIp = getRequestIp(req);
+    const rateLimit = await shippingEstimateRateLimiter.consume(
+      'shipping_estimate',
+      requestIp,
+      'estimate'
+    );
+    if (!rateLimit.allowed) {
+      res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ С‡РµСЂРµР· ${rateLimit.retryAfterSeconds} СЃРµРє.`
+      });
       return;
     }
 
@@ -1451,11 +1647,22 @@ export const createApp = () => {
       });
 
     const destinationCity =
-      typeof req.body?.destinationCity === 'string' ? req.body.destinationCity : '';
+      typeof req.body?.destinationCity === 'string' ? req.body.destinationCity.trim() : '';
     const destinationCode =
-      typeof req.body?.destinationCode === 'string' ? req.body.destinationCode : '';
+      typeof req.body?.destinationCode === 'string' ? req.body.destinationCode.trim() : '';
     const destinationAddress =
-      typeof req.body?.destinationAddress === 'string' ? req.body.destinationAddress : '';
+      typeof req.body?.destinationAddress === 'string'
+        ? req.body.destinationAddress.trim()
+        : '';
+    const normalizedParcels = normalizeShippingParcels(parcels);
+    const parcelsHash = hashShippingParcels(normalizedParcels);
+    const cacheKey = JSON.stringify({
+      provider,
+      parcelsHash,
+      destinationCode: destinationCode.toLowerCase(),
+      destinationCity: destinationCity.toLowerCase(),
+      destinationAddress: destinationAddress.toLowerCase()
+    });
 
     try {
       const providerEnabled = await isDeliveryProviderEnabled(provider);
@@ -1464,19 +1671,20 @@ export const createApp = () => {
         return;
       }
 
-      const estimate = await calculateShippingWithProviderApi({
-        provider,
-        parcels,
-        destinationCity,
-        destinationCode,
-        destinationAddress
-      });
-      const parcelsHash = hashShippingParcels(normalizeShippingParcels(parcels));
+      const estimate = await shippingEstimateCache.getOrCreate(cacheKey, () =>
+        calculateShippingWithProviderApi({
+          provider,
+          parcels: normalizedParcels,
+          destinationCity,
+          destinationCode,
+          destinationAddress
+        })
+      );
       const quoteToken = createDeliveryQuoteToken({
         provider,
         costCents: estimate.estimatedCostCents,
         parcelsHash,
-        destinationCode: destinationCode.trim() || undefined
+        destinationCode: destinationCode || undefined
       });
       const debug = getShippingProviderApiDebug(estimate);
       console.log('[SHIPPING]', {
