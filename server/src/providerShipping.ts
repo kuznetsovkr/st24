@@ -2,7 +2,6 @@ import {
   estimateShippingCost,
   type ShippingEstimateInput,
   type ShippingEstimateParcel,
-  type ShippingEstimateProvider,
   type ShippingEstimateResult
 } from './shippingEstimate';
 import { logIntegrationEvent } from './integrationEvents';
