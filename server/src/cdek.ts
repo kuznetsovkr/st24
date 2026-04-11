@@ -85,10 +85,23 @@ export class CdekProxyError extends Error {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const pickFirstNonEmpty = (...values: Array<string | undefined>) => {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return '';
+};
+
 const getCdekCredentials = (): CdekCredentials => {
-  const clientId = process.env.CDEK_CLIENT_ID ?? process.env.CDEK_ACCOUNT ?? '';
-  const clientSecret =
-    process.env.CDEK_CLIENT_SECRET ?? process.env.CDEK_PASSWORD ?? '';
+  const clientId = pickFirstNonEmpty(process.env.CDEK_CLIENT_ID, process.env.CDEK_ACCOUNT);
+  const clientSecret = pickFirstNonEmpty(
+    process.env.CDEK_CLIENT_SECRET,
+    process.env.CDEK_PASSWORD
+  );
+  const baseUrl = pickFirstNonEmpty(process.env.CDEK_API_BASE_URL, 'https://api.cdek.ru/v2');
 
   if (!clientId || !clientSecret) {
     throw new CdekProxyError({
@@ -100,7 +113,7 @@ const getCdekCredentials = (): CdekCredentials => {
   return {
     clientId,
     clientSecret,
-    baseUrl: process.env.CDEK_API_BASE_URL ?? 'https://api.cdek.ru/v2'
+    baseUrl
   };
 };
 
@@ -215,17 +228,19 @@ const fetchCdekAccessToken = async () => {
 
   const { clientId, clientSecret, baseUrl } = getCdekCredentials();
   const tokenUrl = new URL(`${baseUrl.replace(/\/$/, '')}/oauth/token`);
-  const payload = new FormData();
-  payload.append('grant_type', 'client_credentials');
-  payload.append('client_id', clientId);
-  payload.append('client_secret', clientSecret);
+  const payload = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret
+  });
 
   const response = await resilientFetch(tokenUrl.toString(), {
     method: 'POST',
     headers: {
-      Accept: 'application/json'
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded'
     },
-    body: payload
+    body: payload.toString()
   }, {
     circuitKey: 'cdek:auth_token',
     timeoutMs: 10_000,
@@ -240,9 +255,14 @@ const fetchCdekAccessToken = async () => {
   if (!response.ok || !body || typeof body === 'string' || !body.access_token) {
     const description =
       typeof body === 'string' ? body : JSON.stringify(body ?? {});
+    const normalizedDescription = description.toLowerCase();
+    const isEduBase = baseUrl.includes('api.edu.cdek.ru');
     const baseHint =
-      baseUrl.includes('api.cdek.ru')
-      && description.includes('No such account secure')
+      !isEduBase
+      && (
+        normalizedDescription.includes('no such account secure')
+        || normalizedDescription.includes('invalid_client')
+      )
         ? ' Проверьте CDEK_API_BASE_URL. Для тестовых ключей используйте https://api.edu.cdek.ru/v2.'
         : '';
     throw new CdekProxyError({
