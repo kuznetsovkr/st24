@@ -500,8 +500,13 @@ export const searchRussianPostPickupPoints = async (query: string) => {
       .filter((item): item is PickupPointOption => Boolean(item))
   );
 
-  if (parsed.length === 0 && postalCodes.length > 0) {
-    const fallback = postalCodes.slice(0, 30).map((postalCode) => ({
+  const filteredParsed = filterPickupOptions(parsed, normalizedQuery, 30);
+  if (filteredParsed.length > 0) {
+    return filteredParsed;
+  }
+
+  if (postalCodes.length > 0) {
+    return postalCodes.slice(0, 30).map((postalCode) => ({
       provider: 'russian_post' as const,
       code: postalCode,
       name: `ОПС ${postalCode}`,
@@ -509,8 +514,11 @@ export const searchRussianPostPickupPoints = async (query: string) => {
       address: '',
       label: `${normalizedQuery}, ${postalCode}`
     }));
-    return filterPickupOptions(fallback, normalizedQuery, 30);
   }
 
-  return filterPickupOptions(parsed, normalizedQuery, 30);
+  if (parsed.length > 0) {
+    return parsed.slice(0, 30);
+  }
+
+  return [];
 };
