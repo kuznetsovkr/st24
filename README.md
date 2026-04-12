@@ -1,6 +1,6 @@
-# ST24 — интернет-магазин запчастей
+# СТ24 — интернет-магазин запчастей
 
-Монорепозиторий проекта `st-24.рф` с фронтендом на React/Vite и backend API на Node.js/Express + PostgreSQL.
+Монорепозиторий проекта `ст-24.рф` с фронтендом на React/Vite и backend API на Node.js/Express + PostgreSQL.
 
 ## Что в проекте
 
