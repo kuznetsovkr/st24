@@ -202,10 +202,33 @@ const formatPhoneE164 = (value: string) => {
   }
   return `+${normalized}`;
 };
+
+type PrivilegedRole = 'admin' | 'superadmin';
+
 const getAdminPhone = () => normalizePhone(process.env.ADMIN_PHONE ?? '79964292550');
+const getSuperAdminPhone = () => normalizePhone(process.env.SUPER_ADMIN_PHONE ?? '');
 const getAdminPassword = () => process.env.ADMIN_PASSWORD ?? '';
+const getSuperAdminPassword = () => process.env.SUPER_ADMIN_PASSWORD ?? '';
 const getAdminAuthMode = () =>
   (process.env.ADMIN_AUTH_MODE ?? '').trim().toLowerCase() === 'code' ? 'code' : 'password';
+const getPrivilegedRoleByPhone = (phone: string): PrivilegedRole | null => {
+  const superAdminPhone = getSuperAdminPhone();
+  if (superAdminPhone && phone === superAdminPhone) {
+    return 'superadmin';
+  }
+  if (phone === getAdminPhone()) {
+    return 'admin';
+  }
+  return null;
+};
+const getRoleByPhone = (phone: string): 'user' | PrivilegedRole =>
+  getPrivilegedRoleByPhone(phone) ?? 'user';
+const getPrivilegedPassword = (role: PrivilegedRole) =>
+  role === 'superadmin' ? getSuperAdminPassword() : getAdminPassword();
+const getPrivilegedPasswordEnvName = (role: PrivilegedRole) =>
+  role === 'superadmin' ? 'SUPER_ADMIN_PASSWORD' : 'ADMIN_PASSWORD';
+const hasAdminRole = (role: string | undefined | null) =>
+  role === 'admin' || role === 'superadmin';
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const getTelegramWebhookSecret = () => process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -2245,7 +2268,7 @@ export const createApp = () => {
       }
       try {
         const payload = verifyToken(token);
-        if (payload.role !== 'admin') {
+        if (!hasAdminRole(payload.role)) {
           res.status(403).json({ error: 'Доступ запрещен' });
           return;
         }
@@ -2339,7 +2362,7 @@ export const createApp = () => {
       }
       try {
         const payload = verifyToken(token);
-        if (payload.role !== 'admin') {
+        if (!hasAdminRole(payload.role)) {
           res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
           return;
         }
@@ -3716,10 +3739,11 @@ export const createApp = () => {
       }
     }
 
-    if (phone === getAdminPhone() && adminAuthMode === 'password') {
-      const adminPassword = getAdminPassword();
-      if (!adminPassword) {
-        res.status(500).json({ error: 'ADMIN_PASSWORD не настроен' });
+    const privilegedRole = getPrivilegedRoleByPhone(phone);
+    if (privilegedRole && adminAuthMode === 'password') {
+      const privilegedPassword = getPrivilegedPassword(privilegedRole);
+      if (!privilegedPassword) {
+        res.status(500).json({ error: `${getPrivilegedPasswordEnvName(privilegedRole)} не настроен` });
         return;
       }
       res.json({ ok: true, expiresInMinutes: 0, requiresPassword: true });
@@ -3772,10 +3796,11 @@ export const createApp = () => {
       return;
     }
 
-    if (phone === getAdminPhone() && adminAuthMode === 'password') {
-      const adminPassword = getAdminPassword();
-      if (!adminPassword) {
-        res.status(500).json({ error: 'ADMIN_PASSWORD не настроен' });
+    const privilegedRole = getPrivilegedRoleByPhone(phone);
+    if (privilegedRole && adminAuthMode === 'password') {
+      const privilegedPassword = getPrivilegedPassword(privilegedRole);
+      if (!privilegedPassword) {
+        res.status(500).json({ error: `${getPrivilegedPasswordEnvName(privilegedRole)} не настроен` });
         return;
       }
       if (!password.trim()) {
@@ -3790,12 +3815,12 @@ export const createApp = () => {
         });
         return;
       }
-      if (password !== adminPassword) {
+      if (password !== privilegedPassword) {
         res.status(400).json({ error: 'Неверный пароль' });
         return;
       }
       await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
-      const user = await upsertUser(phone, 'admin');
+      const user = await upsertUser(phone, privilegedRole);
       const csrfToken = createCsrfToken();
       const token = signToken({
         userId: user.id,
@@ -3839,7 +3864,7 @@ export const createApp = () => {
     await deleteAuthCode(phone);
     await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
 
-    const role = phone === getAdminPhone() ? 'admin' : 'user';
+    const role = getRoleByPhone(phone);
     const user = await upsertUser(phone, role);
     const csrfToken = createCsrfToken();
     const token = signToken({

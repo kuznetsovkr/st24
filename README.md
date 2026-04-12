@@ -141,6 +141,8 @@ npm run build --workspace server
 - `ADMIN_PHONE`
 - `ADMIN_AUTH_MODE` (`password` | `code`)
 - `ADMIN_PASSWORD` (если `ADMIN_AUTH_MODE=password`)
+- `SUPER_ADMIN_PHONE` (опционально, отдельный номер суперадмина)
+- `SUPER_ADMIN_PASSWORD` (если `ADMIN_AUTH_MODE=password` и используется `SUPER_ADMIN_PHONE`)
 
 ### Авторизация по телефону
 

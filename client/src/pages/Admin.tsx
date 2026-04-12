@@ -401,7 +401,7 @@ const AdminPage = () => {
   };
 
   useEffect(() => {
-    if (authStatus === 'auth' && authUser?.role === 'admin') {
+    if (authStatus === 'auth' && (authUser?.role === 'admin' || authUser?.role === 'superadmin')) {
       loadData();
     }
   }, [authStatus, authUser]);
@@ -1389,7 +1389,7 @@ const AdminPage = () => {
     );
   }
 
-  if (authUser.role !== 'admin') {
+  if (authUser.role !== 'admin' && authUser.role !== 'superadmin') {
     return (
       <div className="page">
         <header className="page-header">

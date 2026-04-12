@@ -487,7 +487,7 @@ const AccountPage = () => {
           <p className="muted">Управляйте контактами и просматривайте историю заказов.</p>
         </div>
         <div className="button-row">
-          {user.role === 'admin' && (
+          {(user.role === 'admin' || user.role === 'superadmin') && (
             <Link className="link-button account-admin-link" to="/admin">
               <span>Админ</span>
             </Link>

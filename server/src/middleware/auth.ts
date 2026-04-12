@@ -77,7 +77,10 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
 };
 
 export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user || req.user.role !== 'admin') {
+  const hasAdminAccess =
+    Boolean(req.user) && (req.user?.role === 'admin' || req.user?.role === 'superadmin');
+
+  if (!hasAdminAccess) {
     logSecurityEventFromRequest(req, {
       eventType: 'auth_forbidden',
       reason: 'admin_role_required',
@@ -94,11 +97,12 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction) =>
 export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
   const superAdminPhone = getSuperAdminPhone();
   const userPhone = normalizePhone(req.user?.phone);
+  const hasSuperAdminRole = req.user?.role === 'superadmin';
+  const hasLegacySuperAdminAccess =
+    req.user?.role === 'admin' && Boolean(superAdminPhone) && userPhone === superAdminPhone;
   const hasSuperAdminAccess =
     Boolean(req.user) &&
-    req.user?.role === 'admin' &&
-    Boolean(superAdminPhone) &&
-    userPhone === superAdminPhone;
+    (hasSuperAdminRole || hasLegacySuperAdminAccess);
 
   if (!hasSuperAdminAccess) {
     logSecurityEventFromRequest(req, {

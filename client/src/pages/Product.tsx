@@ -15,7 +15,7 @@ type ProductTab = 'description' | 'specs';
 const ProductPage = () => {
   const { id } = useParams<{ id: string }>();
   const { status: authStatus, user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
   const { openNeedPartModal } = useUI();
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
 

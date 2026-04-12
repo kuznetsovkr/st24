@@ -84,7 +84,7 @@ const CategoryPage = () => {
   const { openNeedPartModal } = useUI();
   const { addItem, decrement, getQuantity, increment, setQuantity } = useCart();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
   const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
