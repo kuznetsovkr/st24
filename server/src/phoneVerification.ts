@@ -98,6 +98,16 @@ const isProduction = () => (process.env.NODE_ENV ?? '').trim().toLowerCase() ===
 const getPhoneVerificationBrand = () =>
   trimToUndefined(process.env.PHONE_VERIFICATION_BRAND) ?? 'ST24';
 
+type PhoneVerificationMode = 'telegram_then_sms' | 'sms_only';
+
+const getPhoneVerificationMode = (): PhoneVerificationMode => {
+  const raw = (process.env.PHONE_VERIFICATION_MODE ?? '').trim().toLowerCase();
+  if (raw === 'sms_only' || raw === 'sms' || raw === 'sms_ru_only') {
+    return 'sms_only';
+  }
+  return 'telegram_then_sms';
+};
+
 const isDebugCodeEnabled = () => {
   if (process.env.PHONE_VERIFICATION_DEBUG_CODE === 'true') {
     return true;
@@ -111,6 +121,14 @@ const isDebugCodeEnabled = () => {
 export const assertPhoneVerificationConfiguration = () => {
   if (isProduction() && process.env.PHONE_VERIFICATION_DEBUG_CODE === 'true') {
     throw new Error('PHONE_VERIFICATION_DEBUG_CODE must be false in production');
+  }
+
+  if (
+    isProduction() &&
+    getPhoneVerificationMode() === 'sms_only' &&
+    !getSmsRuApiId()
+  ) {
+    throw new Error('PHONE_VERIFICATION_MODE=sms_only requires SMS_RU_API_ID in production');
   }
 };
 
@@ -303,8 +321,13 @@ export const sendPhoneVerificationCode = async (
 ): Promise<PhoneVerificationDeliveryResult> => {
   const errors: string[] = [];
   const preferredChannel = input.preferredChannel;
+  const mode = getPhoneVerificationMode();
 
-  if (preferredChannel !== 'sms_ru' && getTelegramGatewayToken()) {
+  if (
+    mode !== 'sms_only' &&
+    preferredChannel !== 'sms_ru' &&
+    getTelegramGatewayToken()
+  ) {
     try {
       const delivery = await sendViaTelegramGateway(input);
       await logPhoneCodeDeliveryEvent({
@@ -405,6 +428,9 @@ export const sendPhoneVerificationCode = async (
     error: 'telegram_and_sms_providers_not_configured',
     ip: input.ip
   });
+  if (mode === 'sms_only') {
+    throw new Error('SMS.RU не настроен для отправки кодов');
+  }
   throw new Error('Не настроены Telegram Gateway и SMS.RU для отправки кодов');
 };
 

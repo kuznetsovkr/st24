@@ -1189,7 +1189,7 @@ const AdminPage = () => {
         return;
       }
       setAuthMode('code');
-      setAuthMessage('Код отправлен.');
+      setAuthMessage('Код отправлен по SMS.');
     } catch {
       setAuthMessage('Не удалось отправить код.');
     } finally {
@@ -1316,8 +1316,8 @@ const AdminPage = () => {
             <p className="eyebrow">Админ-панель</p>
             <h1>Вход по телефону</h1>
             <p className="muted">
-              Для обычного номера код покажем в alert как тестовое SMS. Роль администратора выдаётся для номера
-              +79964292550.
+              Для обычного номера отправляем код по SMS. Для номера администратора используется вход по
+              паролю.
             </p>
           </div>
         </header>
@@ -1366,7 +1366,7 @@ const AdminPage = () => {
             </div>
             )}
             <label className="field">
-              <span>{authMode === 'password' ? 'Пароль администратора' : 'Код из консоли'}</span>
+              <span>{authMode === 'password' ? 'Пароль администратора' : 'Код из SMS'}</span>
               <input
                 type={authMode === 'password' ? 'password' : 'text'}
                 inputMode={authMode === 'password' ? undefined : 'numeric'}

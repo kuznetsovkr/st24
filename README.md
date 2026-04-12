@@ -144,8 +144,9 @@ npm run build --workspace server
 
 ### Авторизация по телефону
 
+- `PHONE_VERIFICATION_MODE` (`telegram_then_sms` | `sms_only`)
 - `TELEGRAM_GATEWAY_TOKEN`
-- `SMS_RU_API_ID` (fallback)
+- `SMS_RU_API_ID` (обязателен при `PHONE_VERIFICATION_MODE=sms_only`)
 - `SMS_RU_SENDER` (если требуется аккаунтом SMS.ru)
 - `PHONE_VERIFICATION_BRAND`
 

@@ -8,8 +8,6 @@ import { useUI } from '../context/UIContext.tsx';
 import { formatPhone } from '../utils/formatPhone.ts';
 
 const RESEND_TIMEOUT_SECONDS = 30;
-const SMS_FALLBACK_TIMEOUT_SECONDS = 60;
-type AuthDeliveryChannel = 'telegram_gateway' | 'sms_ru' | 'debug' | null;
 
 const getPhoneDigits = (value: string) => value.replace(/\D/g, '');
 
@@ -78,10 +76,8 @@ const AuthModal = () => {
   const [isCodeRequested, setIsCodeRequested] = useState(false);
   const [isRequestButtonHidden, setIsRequestButtonHidden] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
-  const [smsFallbackSeconds, setSmsFallbackSeconds] = useState(0);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [deliveryChannel, setDeliveryChannel] = useState<AuthDeliveryChannel>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
@@ -110,20 +106,6 @@ const AuthModal = () => {
   }, [resendSeconds]);
 
   useEffect(() => {
-    if (smsFallbackSeconds <= 0) {
-      return;
-    }
-
-    const timerId = window.setTimeout(() => {
-      setSmsFallbackSeconds((prev) => Math.max(prev - 1, 0));
-    }, 1000);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, [smsFallbackSeconds]);
-
-  useEffect(() => {
     if (authModalOpen) {
       return;
     }
@@ -139,10 +121,8 @@ const AuthModal = () => {
     setIsCodeRequested(false);
     setIsRequestButtonHidden(false);
     setResendSeconds(0);
-    setSmsFallbackSeconds(0);
     setIsRequesting(false);
     setIsVerifying(false);
-    setDeliveryChannel(null);
     if (captchaToken) {
       setCaptchaToken(null);
       setCaptchaResetKey((prev) => prev + 1);
@@ -162,12 +142,6 @@ const AuthModal = () => {
     showRequestCodeButton && isCodeRequested && authMode === 'code' && resendSeconds > 0
       ? `Получить новый код можно через ${resendSeconds} сек.`
       : null;
-  const showSmsFallbackLink = authMode === 'code' && deliveryChannel === 'telegram_gateway';
-  const smsFallbackHint = showSmsFallbackLink
-    ? smsFallbackSeconds > 0
-      ? `Нет доступа к Telegram? Получить код по SMS можно через ${smsFallbackSeconds} сек.`
-      : null
-    : null;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -219,7 +193,6 @@ const AuthModal = () => {
         setRequestStatus(null);
         setRequestError(null);
         setResendSeconds(0);
-        setSmsFallbackSeconds(0);
         setCode('');
         return;
       }
@@ -249,7 +222,7 @@ const AuthModal = () => {
     }
   };
 
-  const handleRequestCode = async (preferredChannel?: 'sms_ru') => {
+  const handleRequestCode = async () => {
     setRequestStatus(null);
     setRequestError(null);
     setVerifyMessage(null);
@@ -272,18 +245,12 @@ const AuthModal = () => {
 
     setIsRequesting(true);
     try {
-      const result = await requestAuthCode(
-        phone.trim(),
-        preferredChannel,
-        captchaToken ?? undefined
-      );
+      const result = await requestAuthCode(phone.trim(), undefined, captchaToken ?? undefined);
 
       if (result.requiresPassword) {
         setAuthMode('password');
         setIsCodeRequested(true);
         setIsRequestButtonHidden(true);
-        setDeliveryChannel(null);
-        setSmsFallbackSeconds(0);
         setVerifyMessage('Введите пароль администратора.');
         setIsVerifyError(false);
         return;
@@ -294,13 +261,10 @@ const AuthModal = () => {
       setIsCodeRequested(true);
       setIsRequestButtonHidden(true);
       setResendSeconds(RESEND_TIMEOUT_SECONDS);
-      setDeliveryChannel(result.deliveryChannel ?? null);
-      setSmsFallbackSeconds(result.deliveryChannel === 'telegram_gateway' ? SMS_FALLBACK_TIMEOUT_SECONDS : 0);
-
-      if (preferredChannel === 'sms_ru' || result.deliveryChannel === 'sms_ru') {
+      if (result.deliveryChannel === 'sms_ru') {
         setRequestStatus('Код отправлен по SMS.');
-      } else if (result.deliveryChannel === 'telegram_gateway') {
-        setRequestStatus('Код отправлен в Telegram.');
+      } else if (result.deliveryChannel === 'debug') {
+        setRequestStatus('Код отправлен (тестовый режим).');
       } else {
         setRequestStatus('Код отправлен.');
       }
@@ -345,7 +309,7 @@ const AuthModal = () => {
         <p className="muted">
           {authMode === 'password'
             ? 'Для администратора используется пароль.'
-            : 'Сначала отправляем код в Telegram. Если Telegram недоступен, можно запросить код по SMS.'}
+            : 'Код для входа отправим по SMS.'}
         </p>
 
         <form className="stacked-form" onSubmit={handleSubmit}>
@@ -387,23 +351,6 @@ const AuthModal = () => {
                 <p className="status-text status-text--error auth-code-status">{requestError}</p>
               )}
               {resendStatusText && <p className="status-text auth-code-status">{resendStatusText}</p>}
-              {showSmsFallbackLink && (
-                <p className="status-text auth-code-status">
-                  {smsFallbackHint ?? (
-                    <>
-                      Нет доступа к Telegram?{' '}
-                      <button
-                        type="button"
-                        className="link-button auth-code-link"
-                        onClick={() => void handleRequestCode('sms_ru')}
-                        disabled={isRequesting}
-                      >
-                        Получить код по SMS
-                      </button>
-                    </>
-                  )}
-                </p>
-              )}
             </>
           )}
 
