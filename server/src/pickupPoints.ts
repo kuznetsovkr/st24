@@ -174,6 +174,69 @@ const getRussianPostUserKey = () => trimToUndefined(process.env.RUSSIAN_POST_USE
 const getRussianPostBaseUrl = () =>
   trimToUndefined(process.env.RUSSIAN_POST_API_BASE_URL) ?? 'https://otpravka-api.pochta.ru';
 
+const isPostalCode = (value: string) => /^\d{6}$/.test(value);
+
+const toPostalCode = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const normalized = String(Math.trunc(value));
+    return isPostalCode(normalized) ? normalized : null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (isPostalCode(normalized)) {
+      return normalized;
+    }
+  }
+
+  return null;
+};
+
+const extractPostalCodesFromPayload = (payload: unknown) => {
+  const found = new Set<string>();
+
+  const visit = (value: unknown): void => {
+    const directCode = toPostalCode(value);
+    if (directCode) {
+      found.add(directCode);
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item);
+      }
+      return;
+    }
+
+    if (!isRecord(value)) {
+      return;
+    }
+
+    const candidateFields: Array<unknown> = [
+      value.code,
+      value.index,
+      value.postoffice,
+      value['postal-code'],
+      value.postalCode
+    ];
+    for (const candidate of candidateFields) {
+      const code = toPostalCode(candidate);
+      if (code) {
+        found.add(code);
+      }
+    }
+
+    for (const nested of Object.values(value)) {
+      visit(nested);
+    }
+  };
+
+  visit(payload);
+
+  return Array.from(found);
+};
+
 const loadDellinDirectory = async (): Promise<PickupPointOption[]> => {
   const now = Date.now();
   if (
@@ -279,12 +342,31 @@ const getRussianPostHeaderVariants = (): RussianPostAuthHeaders[] => {
   ];
 };
 
-const requestRussianPostByAddress = async (query: string) => {
-  const url = `${getRussianPostBaseUrl().replace(
-    /\/$/,
-    ''
-  )}/postoffice/1.0/by-address?address=${encodeURIComponent(query)}&top=30`;
+type RussianPostRequestResult = {
+  status: number;
+  payload: unknown;
+};
 
+const requestRussianPost = async (
+  methodPath: string,
+  params: Record<string, string | number | boolean | undefined>,
+  circuitKey: string,
+  acceptedStatuses: number[] = []
+): Promise<RussianPostRequestResult> => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    query.set(key, String(value));
+  }
+  const queryString = query.toString();
+  const baseUrl = `${getRussianPostBaseUrl().replace(/\/$/, '')}/postoffice/1.0`;
+  const url = `${baseUrl}/${methodPath.replace(/^\//, '')}${
+    queryString ? `?${queryString}` : ''
+  }`;
+
+  const accepted = new Set(acceptedStatuses);
   let lastErrorPayload: unknown = null;
   let lastStatus = 502;
 
@@ -296,14 +378,17 @@ const requestRussianPostByAddress = async (query: string) => {
         ...headers
       }
     }, {
-      circuitKey: 'pickup_points:russian_post_by_address',
+      circuitKey,
       timeoutMs: 12_000,
       maxRetries: 2
     });
     const payload = await parseJson(response);
 
-    if (response.ok) {
-      return payload;
+    if (response.ok || accepted.has(response.status)) {
+      return {
+        status: response.status,
+        payload
+      };
     }
 
     lastStatus = response.status;
@@ -323,6 +408,47 @@ const requestRussianPostByAddress = async (query: string) => {
   );
 };
 
+const requestRussianPostByAddress = async (query: string) => {
+  const response = await requestRussianPost(
+    'by-address',
+    {
+      address: query,
+      top: 30
+    },
+    'pickup_points:russian_post_by_address'
+  );
+  return response.payload;
+};
+
+const requestRussianPostSettlementOfficeCodes = async (settlement: string) => {
+  const response = await requestRussianPost(
+    'settlement.offices.codes',
+    {
+      settlement
+    },
+    'pickup_points:russian_post_settlement_codes'
+  );
+  return response.payload;
+};
+
+const requestRussianPostOfficeByIndex = async (postalCode: string) => {
+  const response = await requestRussianPost(
+    postalCode,
+    {
+      'filter-by-office-type': true,
+      'ufps-postal-code': false
+    },
+    'pickup_points:russian_post_office_by_index',
+    [404]
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  return response.payload;
+};
+
 export const searchDellinPickupPoints = async (query: string) => {
   const normalizedQuery = query.trim();
   if (normalizedQuery.length < 2) {
@@ -338,13 +464,53 @@ export const searchRussianPostPickupPoints = async (query: string) => {
     return [];
   }
 
-  const payload = await requestRussianPostByAddress(normalizedQuery);
+  const byAddressPayload = await requestRussianPostByAddress(normalizedQuery);
+  let postalCodes = extractPostalCodesFromPayload(byAddressPayload);
+
+  if (postalCodes.length === 0) {
+    const settlementPayload = await requestRussianPostSettlementOfficeCodes(normalizedQuery);
+    postalCodes = extractPostalCodesFromPayload(settlementPayload);
+  }
+
+  if (postalCodes.length === 0 && !normalizedQuery.includes(',')) {
+    const extendedAddressPayload = await requestRussianPostByAddress(`${normalizedQuery}, Россия`);
+    postalCodes = extractPostalCodesFromPayload(extendedAddressPayload);
+  }
+
+  const officePayloads = await Promise.all(
+    postalCodes.slice(0, 30).map((postalCode) => requestRussianPostOfficeByIndex(postalCode))
+  );
+
   const records: Record<string, unknown>[] = [];
-  collectRecords(payload, records);
+  if (officePayloads.length > 0) {
+    for (const payload of officePayloads) {
+      if (payload) {
+        collectRecords(payload, records);
+      }
+    }
+  }
+
+  if (records.length === 0) {
+    collectRecords(byAddressPayload, records);
+  }
+
   const parsed = dedupePickupOptions(
     records
       .map((record) => mapToPickupOption('russian_post', record))
       .filter((item): item is PickupPointOption => Boolean(item))
   );
+
+  if (parsed.length === 0 && postalCodes.length > 0) {
+    const fallback = postalCodes.slice(0, 30).map((postalCode) => ({
+      provider: 'russian_post' as const,
+      code: postalCode,
+      name: `ОПС ${postalCode}`,
+      city: normalizedQuery,
+      address: '',
+      label: `${normalizedQuery}, ${postalCode}`
+    }));
+    return filterPickupOptions(fallback, normalizedQuery, 30);
+  }
+
   return filterPickupOptions(parsed, normalizedQuery, 30);
 };
