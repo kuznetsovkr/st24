@@ -14,6 +14,7 @@ const MAX_PHONE_COPY = '+79130491499';
 const MAX_PHONE_NOTE_DISPLAY = '+7\u00A0913\u00A0049-14-99';
 const TWO_GIS_REVIEWS_LINK = 'https://go.2gis.com/jyqVa';
 const MAP_ZOOM = 17;
+type CopyNoticeTarget = 'store' | 'max';
 
 type YandexMapsApi = {
   ready: (callback: () => void) => void;
@@ -68,7 +69,7 @@ const ContactsPage = () => {
   const mapRef = useRef<InstanceType<YandexMapsApi['Map']> | null>(null);
   const copyNoticeTimerRef = useRef<number | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
-  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<{ target: CopyNoticeTarget; message: string } | null>(null);
   const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
   const breadcrumbJsonLd = useMemo(
     () => ({
@@ -97,18 +98,18 @@ const ContactsPage = () => {
     return `https://yandex.ru/maps/?ll=${lon}%2C${lat}&z=${MAP_ZOOM}&pt=${lon},${lat},pm2blk`;
   }, []);
 
-  const showCopyNotice = useCallback((message: string) => {
+  const showCopyNotice = useCallback((target: CopyNoticeTarget, message: string) => {
     if (copyNoticeTimerRef.current) {
       window.clearTimeout(copyNoticeTimerRef.current);
     }
-    setCopyNotice(message);
+    setCopyNotice({ target, message });
     copyNoticeTimerRef.current = window.setTimeout(() => {
       setCopyNotice(null);
       copyNoticeTimerRef.current = null;
     }, 1800);
   }, []);
 
-  const handleCopyPhone = useCallback(async (phone: string) => {
+  const handleCopyPhone = useCallback(async (target: CopyNoticeTarget, phone: string) => {
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(phone);
@@ -123,9 +124,9 @@ const ContactsPage = () => {
         document.execCommand('copy');
         document.body.removeChild(textArea);
       }
-      showCopyNotice('Номер скопирован');
+      showCopyNotice(target, 'Номер скопирован');
     } catch {
-      showCopyNotice('Не удалось скопировать номер');
+      showCopyNotice(target, 'Не удалось скопировать');
     }
   }, [showCopyNotice]);
 
@@ -333,20 +334,37 @@ const ContactsPage = () => {
           Заказы через сайт принимаем круглосуточно. Обрабатываем заявки в рабочее время: Пн — Пт 10:00–19:00, Сб
           10:00–16:00 (красноярское время), Вс — выходной. Связаться с нами по почте{' '}
           <a href={STORE_EMAIL_HREF}>{STORE_EMAIL}</a>, в <a href={TELEGRAM_LINK}>Telegram</a> по номеру{' '}
-          <button type="button" className="contacts-copy-link" onClick={() => void handleCopyPhone(STORE_PHONE_COPY)}>
-            {STORE_PHONE_NOTE_DISPLAY}
-          </button>{' '}
+          <span className="contacts-copy-wrap">
+            {copyNotice?.target === 'store' && (
+              <span className="contacts-copy-toast" role="status" aria-live="polite">
+                {copyNotice.message}
+              </span>
+            )}
+            <button
+              type="button"
+              className="contacts-copy-link"
+              onClick={() => void handleCopyPhone('store', STORE_PHONE_COPY)}
+            >
+              {STORE_PHONE_NOTE_DISPLAY}
+            </button>
+          </span>{' '}
           и в <a href={MAX_LINK}>MAX</a> по номеру{' '}
-          <button type="button" className="contacts-copy-link" onClick={() => void handleCopyPhone(MAX_PHONE_COPY)}>
-            {MAX_PHONE_NOTE_DISPLAY}
-          </button>
+          <span className="contacts-copy-wrap">
+            {copyNotice?.target === 'max' && (
+              <span className="contacts-copy-toast" role="status" aria-live="polite">
+                {copyNotice.message}
+              </span>
+            )}
+            <button
+              type="button"
+              className="contacts-copy-link"
+              onClick={() => void handleCopyPhone('max', MAX_PHONE_COPY)}
+            >
+              {MAX_PHONE_NOTE_DISPLAY}
+            </button>
+          </span>
           .
         </p>
-        {copyNotice && (
-          <p className="status-text contacts-copy-status" role="status" aria-live="polite">
-            {copyNotice}
-          </p>
-        )}
         <p>
           Информация о юридическом лице: ИП Булуков Александр Владимирович, ИНН 246009729921, ОГРНИП 321246800146178, г. Красноярск, ул. Калинина, 53а.
         </p>

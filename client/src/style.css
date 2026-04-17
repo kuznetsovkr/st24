@@ -653,8 +653,29 @@ a {
   outline-offset: 2px;
 }
 
-.contacts-copy-status {
-  align-self: flex-start;
+.contacts-copy-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.contacts-copy-toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .page--center {
