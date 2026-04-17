@@ -401,6 +401,9 @@ export const initDb = async () => {
       delivery_channel TEXT,
       provider_request_id TEXT,
       provider_message_id TEXT,
+      call_check_status TEXT,
+      call_check_status_text TEXT,
+      call_verified_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -418,6 +421,21 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE auth_codes
     ADD COLUMN IF NOT EXISTS provider_message_id TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE auth_codes
+    ADD COLUMN IF NOT EXISTS call_check_status TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE auth_codes
+    ADD COLUMN IF NOT EXISTS call_check_status_text TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE auth_codes
+    ADD COLUMN IF NOT EXISTS call_verified_at TIMESTAMPTZ;
   `);
 
   await query(`
@@ -575,6 +593,7 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS lead_requests_kind_created_idx ON lead_requests (kind, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS lead_requests_telegram_status_created_idx ON lead_requests (telegram_status, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS lead_requests_phone_created_idx ON lead_requests (phone, created_at DESC);`);
+  await query(`CREATE INDEX IF NOT EXISTS auth_codes_provider_request_idx ON auth_codes (provider_request_id);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
     ON users (email)

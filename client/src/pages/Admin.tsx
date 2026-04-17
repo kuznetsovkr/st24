@@ -12,6 +12,7 @@ import {
   fetchHomeBanner,
   fetchMe,
   fetchProducts,
+  fetchAuthCallStatus,
   logout as logoutAuth,
   requestAuthCode,
   updateCategorySection,
@@ -265,12 +266,14 @@ const AdminPage = () => {
   const [authStatus, setAuthStatus] = useState<'checking' | 'guest' | 'auth'>('checking');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'code' | 'password'>('code');
   const [password, setPassword] = useState('');
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isCallRequested, setIsCallRequested] = useState(false);
+  const [isRequestButtonHidden, setIsRequestButtonHidden] = useState(false);
+  const [isAutoCheckingCall, setIsAutoCheckingCall] = useState(false);
   const [authCaptchaToken, setAuthCaptchaToken] = useState<string | null>(null);
   const [authCaptchaResetKey, setAuthCaptchaResetKey] = useState(0);
   const [fontTheme, setFontTheme] = useState<FontTheme>(() => getStoredFontTheme());
@@ -405,6 +408,72 @@ const AdminPage = () => {
       loadData();
     }
   }, [authStatus, authUser]);
+
+  useEffect(() => {
+    if (authStatus !== 'guest' || authMode !== 'code' || !isCallRequested || !phone.trim()) {
+      return;
+    }
+
+    let cancelled = false;
+    let inFlight = false;
+    const normalizedPhone = phone.trim();
+
+    const pollCallStatus = async () => {
+      if (cancelled || inFlight) {
+        return;
+      }
+      inFlight = true;
+      setIsAutoCheckingCall(true);
+
+      try {
+        const status = await fetchAuthCallStatus(normalizedPhone);
+        if (cancelled) {
+          return;
+        }
+
+        if (status.status === 'confirmed') {
+          setIsVerifying(true);
+          const result = await verifyAuthCode(normalizedPhone, '');
+          if (cancelled) {
+            return;
+          }
+          setAuthUser(result.user);
+          setAuthStatus('auth');
+          setPassword('');
+          setAuthMessage(null);
+          setIsCallRequested(false);
+          setIsRequestButtonHidden(true);
+          return;
+        }
+
+        if (status.status === 'expired' || status.status === 'not_found') {
+          setAuthMessage('Время ожидания звонка истекло. Запросите новый номер.');
+          setIsCallRequested(false);
+          setIsRequestButtonHidden(false);
+        }
+      } catch {
+        if (cancelled) {
+          return;
+        }
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          setIsAutoCheckingCall(false);
+          setIsVerifying(false);
+        }
+      }
+    };
+
+    void pollCallStatus();
+    const intervalId = window.setInterval(() => {
+      void pollCallStatus();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [authMode, authStatus, isCallRequested, phone]);
 
   const resetForm = () => {
     setName('');
@@ -1185,13 +1254,23 @@ const AdminPage = () => {
       const result = await requestAuthCode(phone.trim(), undefined, authCaptchaToken ?? undefined);
       if (result.requiresPassword) {
         setAuthMode('password');
+        setIsCallRequested(false);
+        setIsRequestButtonHidden(true);
         setAuthMessage('Введите пароль администратора.');
         return;
       }
       setAuthMode('code');
-      setAuthMessage('Код отправлен по SMS.');
+      setIsCallRequested(true);
+      setIsRequestButtonHidden(true);
+      setAuthMessage(
+        result.callPhonePretty
+          ? `Позвоните на номер ${result.callPhonePretty}. Вход выполнится автоматически.`
+          : 'Проверка звонка запущена.'
+      );
     } catch {
-      setAuthMessage('Не удалось отправить код.');
+      setIsCallRequested(false);
+      setIsRequestButtonHidden(false);
+      setAuthMessage('Не удалось запросить номер для звонка.');
     } finally {
       setIsSendingCode(false);
       if (turnstileSiteKey) {
@@ -1219,24 +1298,26 @@ const AdminPage = () => {
         setAuthMessage('Введите пароль.');
         return;
       }
-    } else if (!code.trim()) {
-      setAuthMessage('Введите код.');
+    } else {
+      if (!isCallRequested) {
+        setAuthMessage('Сначала запросите номер для звонка.');
+      } else {
+        setAuthMessage('После звонка вход выполнится автоматически.');
+      }
       return;
     }
 
     setIsVerifying(true);
     try {
-      const result =
-        authMode === 'password'
-          ? await verifyAuthCode(phone.trim(), '', password.trim())
-          : await verifyAuthCode(phone.trim(), code.trim());
+      const result = await verifyAuthCode(phone.trim(), '', password.trim());
       setAuthUser(result.user);
       setAuthStatus('auth');
-      setCode('');
       setPassword('');
       setAuthMessage(null);
+      setIsCallRequested(false);
+      setIsRequestButtonHidden(true);
     } catch {
-      setAuthMessage(authMode === 'password' ? 'Неверный пароль.' : 'Неверный код.');
+      setAuthMessage('Неверный пароль.');
     } finally {
       setIsVerifying(false);
     }
@@ -1246,6 +1327,13 @@ const AdminPage = () => {
     void logoutAuth();
     setAuthUser(null);
     setAuthStatus('guest');
+    setPhone('');
+    setPassword('');
+    setAuthMode('code');
+    setAuthMessage(null);
+    setIsCallRequested(false);
+    setIsRequestButtonHidden(false);
+    setIsAutoCheckingCall(false);
   };
 
   const handleStockSortToggle = () => {
@@ -1316,7 +1404,7 @@ const AdminPage = () => {
             <p className="eyebrow">Админ-панель</p>
             <h1>Вход по телефону</h1>
             <p className="muted">
-              Для обычного номера отправляем код по SMS. Для номера администратора используется вход по
+              Для обычного номера подтверждение выполняется бесплатным звонком. Для номера администратора используется вход по
               паролю.
             </p>
           </div>
@@ -1332,8 +1420,10 @@ const AdminPage = () => {
                 onChange={(event) => {
                   setPhone(event.target.value);
                   setAuthMode('code');
-                  setCode('');
                   setPassword('');
+                  setIsCallRequested(false);
+                  setIsRequestButtonHidden(false);
+                  setIsAutoCheckingCall(false);
                   if (authCaptchaToken) {
                     setAuthCaptchaToken(null);
                     setAuthCaptchaResetKey((prev) => prev + 1);
@@ -1353,7 +1443,7 @@ const AdminPage = () => {
                 onTokenChange={handleAuthCaptchaTokenChange}
               />
             )}
-            {authMode === 'code' && (
+            {authMode === 'code' && !isRequestButtonHidden && (
             <div className="button-row">
               <button
                 type="button"
@@ -1361,27 +1451,33 @@ const AdminPage = () => {
                 onClick={handleRequestCode}
                 disabled={isSendingCode}
               >
-                {isSendingCode ? 'Отправляем...' : 'Получить код'}
+                {isSendingCode ? 'Отправляем...' : 'Получить номер для звонка'}
               </button>
             </div>
             )}
-            <label className="field">
-              <span>{authMode === 'password' ? 'Пароль администратора' : 'Код из SMS'}</span>
-              <input
-                type={authMode === 'password' ? 'password' : 'text'}
-                inputMode={authMode === 'password' ? undefined : 'numeric'}
-                value={authMode === 'password' ? password : code}
-                onChange={(event) =>
-                  authMode === 'password'
-                    ? setPassword(event.target.value)
-                    : setCode(event.target.value)
-                }
-                required
-              />
-            </label>
-            <button className="primary-button" type="submit" disabled={isVerifying}>
-              {isVerifying ? 'Проверяем...' : 'Войти'}
-            </button>
+            {authMode === 'code' && isCallRequested && (
+              <p className="status-text">
+                {isAutoCheckingCall
+                  ? 'Проверяем статус звонка...'
+                  : 'Ожидаем подтверждение звонка.'}
+              </p>
+            )}
+            {authMode === 'password' && (
+              <label className="field">
+                <span>Пароль администратора</span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </label>
+            )}
+            {authMode === 'password' && (
+              <button className="primary-button" type="submit" disabled={isVerifying}>
+                {isVerifying ? 'Проверяем...' : 'Войти'}
+              </button>
+            )}
             {authMessage && <p className="status-text">{authMessage}</p>}
           </form>
         </div>

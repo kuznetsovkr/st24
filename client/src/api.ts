@@ -705,7 +705,9 @@ export const requestAuthCode = async (
     ok: boolean;
     expiresInMinutes: number;
     requiresPassword?: boolean;
-    deliveryChannel?: 'telegram_gateway' | 'sms_ru' | 'debug';
+    deliveryChannel?: 'telegram_gateway' | 'sms_ru' | 'sms_ru_call' | 'debug';
+    callPhone?: string;
+    callPhonePretty?: string;
   }>(
     `${API_BASE}/api/auth/request-code`,
     {
@@ -714,6 +716,15 @@ export const requestAuthCode = async (
       body: JSON.stringify({ phone, preferredChannel, captchaToken })
     }
   );
+};
+
+export const fetchAuthCallStatus = async (phone: string) => {
+  const normalizedPhone = phone.trim();
+  const url = new URL(`${API_BASE}/api/auth/call-status`);
+  url.searchParams.set('phone', normalizedPhone);
+  return fetchJson<{
+    status: 'pending' | 'confirmed' | 'expired' | 'not_found';
+  }>(url.toString());
 };
 
 export const verifyAuthCode = async (phone: string, code: string, password?: string) => {

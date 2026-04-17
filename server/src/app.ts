@@ -15,7 +15,12 @@ import {
   verifyToken
 } from './auth';
 import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
-import { findAuthCode, saveAuthCode, deleteAuthCode } from './db/authCodes';
+import {
+  findAuthCode,
+  saveAuthCode,
+  deleteAuthCode,
+  updateAuthCodeCallStatusByRequestId
+} from './db/authCodes';
 import {
   createBoxType,
   deleteBoxType,
@@ -91,6 +96,8 @@ import {
 } from './db/users';
 import { authenticate, requireAdmin, requireSuperAdmin } from './middleware/auth';
 import {
+  checkPhoneVerificationCallStatus,
+  requestPhoneVerificationCall,
   reportTelegramVerificationStatus,
   sendPhoneVerificationCode,
   verifyTelegramGatewaySignature
@@ -211,6 +218,8 @@ const getAdminPassword = () => process.env.ADMIN_PASSWORD ?? '';
 const getSuperAdminPassword = () => process.env.SUPER_ADMIN_PASSWORD ?? '';
 const getAdminAuthMode = () =>
   (process.env.ADMIN_AUTH_MODE ?? '').trim().toLowerCase() === 'code' ? 'code' : 'password';
+const getSmsRuCallcheckWebhookSecret = () =>
+  (process.env.SMS_RU_CALLCHECK_WEBHOOK_SECRET ?? '').trim();
 const getPrivilegedRoleByPhone = (phone: string): PrivilegedRole | null => {
   const superAdminPhone = getSuperAdminPhone();
   if (superAdminPhone && phone === superAdminPhone) {
@@ -434,6 +443,14 @@ const OTP_VERIFY_RATE_LIMIT_MAX = parsePositiveEnvInt(
   process.env.OTP_VERIFY_RATE_LIMIT_MAX,
   10
 );
+const PHONE_CALL_STATUS_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
+  process.env.PHONE_CALL_STATUS_RATE_LIMIT_WINDOW_SECONDS,
+  600
+);
+const PHONE_CALL_STATUS_RATE_LIMIT_MAX = parsePositiveEnvInt(
+  process.env.PHONE_CALL_STATUS_RATE_LIMIT_MAX,
+  240
+);
 const EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS = parsePositiveEnvInt(
   process.env.EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
   600
@@ -509,6 +526,10 @@ const phoneCodeRequestRateLimiter = createScopedRateLimiter(
 const otpVerifyRateLimiter = createScopedRateLimiter(
   OTP_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
   OTP_VERIFY_RATE_LIMIT_MAX
+);
+const phoneCallStatusRateLimiter = createScopedRateLimiter(
+  PHONE_CALL_STATUS_RATE_LIMIT_WINDOW_SECONDS,
+  PHONE_CALL_STATUS_RATE_LIMIT_MAX
 );
 const emailVerifyRateLimiter = createScopedRateLimiter(
   EMAIL_VERIFY_RATE_LIMIT_WINDOW_SECONDS,
@@ -1489,6 +1510,83 @@ export const createApp = () => {
     console.log('[TELEGRAM GATEWAY] Delivery report', req.body);
     res.json({ ok: true });
   });
+
+  app.all(
+    '/api/smsru/callcheck/webhook',
+    express.urlencoded({ extended: false }),
+    async (req: Request, res: Response) => {
+      const getWebhookValue = (key: string) => {
+        const body =
+          req.body && typeof req.body === 'object'
+            ? (req.body as Record<string, unknown>)
+            : null;
+        const bodyValue = body?.[key];
+        if (typeof bodyValue === 'string' && bodyValue.trim()) {
+          return bodyValue.trim();
+        }
+        if (typeof bodyValue === 'number' && Number.isFinite(bodyValue)) {
+          return String(bodyValue);
+        }
+
+        const queryValue = req.query[key];
+        if (typeof queryValue === 'string' && queryValue.trim()) {
+          return queryValue.trim();
+        }
+        if (Array.isArray(queryValue)) {
+          const first = queryValue.find((item) => typeof item === 'string' && item.trim());
+          if (typeof first === 'string') {
+            return first.trim();
+          }
+        }
+        return '';
+      };
+
+      const expectedSecret = getSmsRuCallcheckWebhookSecret();
+      if (expectedSecret) {
+        const providedSecret =
+          getWebhookValue('secret') || req.header('x-smsru-webhook-secret')?.trim() || '';
+        if (!providedSecret || providedSecret !== expectedSecret) {
+          logSecurityEventFromRequest(req, {
+            eventType: 'webhook_signature_invalid',
+            reason: 'sms_ru_callcheck_secret_invalid'
+          });
+          res.status(401).json({ error: 'Требуется авторизация' });
+          return;
+        }
+      }
+
+      const checkId = getWebhookValue('check_id');
+      if (!checkId) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
+
+      const parsedStatusCode = Number.parseInt(getWebhookValue('check_status'), 10);
+      if (!Number.isFinite(parsedStatusCode)) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
+
+      const callStatus =
+        parsedStatusCode === 401
+          ? 'confirmed'
+          : parsedStatusCode === 402
+          ? 'expired'
+          : 'pending';
+      const statusText = getWebhookValue('check_status_text') || getWebhookValue('status_text');
+
+      try {
+        const matched = await updateAuthCodeCallStatusByRequestId(
+          checkId,
+          callStatus,
+          statusText || null
+        );
+        res.json({ ok: true, matched });
+      } catch {
+        res.status(500).json({ error: 'Не удалось выполнить запрос' });
+      }
+    }
+  );
 
   app.all('/api/cdek/widget', async (req: Request, res: Response) => {
     try {
@@ -3697,7 +3795,6 @@ export const createApp = () => {
     const rawPhone = typeof req.body.phone === 'string' ? req.body.phone : '';
     const phone = normalizePhone(rawPhone);
     const adminAuthMode = getAdminAuthMode();
-    const preferredChannel = req.body.preferredChannel === 'sms_ru' ? 'sms_ru' : undefined;
     const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
     const requestIp = getRequestIp(req);
     if (!phone) {
@@ -3719,16 +3816,7 @@ export const createApp = () => {
       return;
     }
 
-    const existingAuthCode = await findAuthCode(phone);
-    const isSmsFallbackRequest = preferredChannel === 'sms_ru';
-    const canSkipCaptchaForSmsFallback = Boolean(
-      isSmsFallbackRequest &&
-        existingAuthCode &&
-        existingAuthCode.delivery_channel === 'telegram_gateway' &&
-        new Date(existingAuthCode.expires_at).getTime() > Date.now()
-    );
-
-    if (isTurnstileEnabled() && !canSkipCaptchaForSmsFallback) {
+    if (isTurnstileEnabled()) {
       try {
         await verifyTurnstileToken(captchaToken, requestIp, 'request_phone_code');
       } catch (error) {
@@ -3750,34 +3838,110 @@ export const createApp = () => {
       return;
     }
 
-    const code = generateNumericCode(PHONE_CODE_LENGTH);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString();
-    await saveAuthCode(phone, code, expiresAt);
     try {
-      const delivery = await sendPhoneVerificationCode({
+      const callRequest = await requestPhoneVerificationCall({
         phone,
-        code,
-        ttlMinutes: CODE_TTL_MINUTES,
         context: 'auth',
-        ip: requestIp,
-        preferredChannel
+        ip: requestIp
       });
 
-      await saveAuthCode(phone, code, expiresAt, {
-        deliveryChannel: delivery.channel,
-        providerRequestId: delivery.providerRequestId ?? null,
-        providerMessageId: delivery.providerMessageId ?? null
+      await saveAuthCode(phone, callRequest.checkId, expiresAt, {
+        deliveryChannel: callRequest.channel,
+        providerRequestId: callRequest.checkId,
+        providerMessageId: callRequest.callPhone,
+        callCheckStatus: 'pending',
+        callCheckStatusText: 'Ожидание звонка'
       });
 
       res.json({
         ok: true,
         expiresInMinutes: CODE_TTL_MINUTES,
-        deliveryChannel: delivery.channel
+        deliveryChannel: callRequest.channel,
+        callPhone: callRequest.callPhone,
+        callPhonePretty: callRequest.callPhonePretty
       });
     } catch (error) {
       await deleteAuthCode(phone);
       res.status(502).json({
-        error: error instanceof Error ? error.message : 'Не удалось отправить код'
+        error: error instanceof Error ? error.message : 'Не удалось запросить номер для звонка'
+      });
+    }
+  });
+
+  app.get('/api/auth/call-status', async (req: Request, res: Response) => {
+    const rawPhone = typeof req.query.phone === 'string' ? req.query.phone : '';
+    const phone = normalizePhone(rawPhone);
+    if (!phone) {
+      res.status(400).json({ error: 'Некорректный телефон' });
+      return;
+    }
+
+    const requestIp = getRequestIp(req);
+    const statusRateLimit = await phoneCallStatusRateLimiter.consume(
+      'auth_call_status',
+      requestIp,
+      phone
+    );
+    if (!statusRateLimit.allowed) {
+      res.setHeader('Retry-After', String(statusRateLimit.retryAfterSeconds));
+      res.status(429).json({
+        error: `Слишком много запросов. Повторите через ${statusRateLimit.retryAfterSeconds} сек.`
+      });
+      return;
+    }
+
+    const stored = await findAuthCode(phone);
+    if (!stored) {
+      res.json({ status: 'not_found' as const });
+      return;
+    }
+
+    const expired = new Date(stored.expires_at).getTime() < Date.now();
+    if (expired) {
+      await deleteAuthCode(phone);
+      res.json({ status: 'expired' as const });
+      return;
+    }
+
+    const isCallCheckFlow =
+      stored.delivery_channel === 'sms_ru_call' || stored.delivery_channel === 'debug';
+    if (!isCallCheckFlow) {
+      res.json({ status: 'not_found' as const });
+      return;
+    }
+
+    const checkId = (stored.provider_request_id ?? stored.code ?? '').trim();
+    if (!checkId) {
+      res.json({ status: 'not_found' as const });
+      return;
+    }
+
+    const storedCallStatus = (stored.call_check_status ?? '').trim().toLowerCase();
+    if (storedCallStatus === 'confirmed') {
+      res.json({ status: 'confirmed' as const });
+      return;
+    }
+    if (storedCallStatus === 'expired') {
+      await deleteAuthCode(phone);
+      res.json({ status: 'expired' as const });
+      return;
+    }
+
+    try {
+      const callStatus = await checkPhoneVerificationCallStatus({ checkId });
+      await updateAuthCodeCallStatusByRequestId(
+        checkId,
+        callStatus.status,
+        callStatus.statusText || null
+      );
+      if (callStatus.status === 'expired') {
+        await deleteAuthCode(phone);
+      }
+      res.json({ status: callStatus.status });
+    } catch (error) {
+      res.status(502).json({
+        error: error instanceof Error ? error.message : 'Не удалось проверить статус звонка'
       });
     }
   });
@@ -3833,11 +3997,6 @@ export const createApp = () => {
       return;
     }
 
-    if (!code) {
-      res.status(400).json({ error: 'Телефон и код обязательны' });
-      return;
-    }
-
     const verifyRateLimit = await otpVerifyRateLimiter.consume(verifyScope, requestIp, phone);
     if (!verifyRateLimit.allowed) {
       res.setHeader('Retry-After', String(verifyRateLimit.retryAfterSeconds));
@@ -3846,19 +4005,82 @@ export const createApp = () => {
       });
       return;
     }
+
     const stored = await findAuthCode(phone);
-    if (stored?.delivery_channel === 'telegram_gateway' && stored.provider_request_id) {
-      void reportTelegramVerificationStatus(stored.provider_request_id, code);
-    }
-    if (!stored || stored.code !== code) {
-      res.status(400).json({ error: 'Неверный код' });
+    if (!stored) {
+      res.status(400).json({ error: 'Сначала запросите номер для звонка' });
       return;
     }
 
     const expired = new Date(stored.expires_at).getTime() < Date.now();
     if (expired) {
-      res.status(400).json({ error: 'Код истек' });
+      await deleteAuthCode(phone);
+      await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+      res.status(400).json({ error: 'Время ожидания звонка истекло. Запросите новый номер.' });
       return;
+    }
+
+    const isCallCheckFlow =
+      stored.delivery_channel === 'sms_ru_call' || stored.delivery_channel === 'debug';
+
+    if (isCallCheckFlow) {
+      const checkId = (stored.provider_request_id ?? stored.code ?? '').trim();
+      if (!checkId) {
+        res.status(400).json({ error: 'Сначала запросите номер для звонка' });
+        return;
+      }
+
+      const storedCallStatus = (stored.call_check_status ?? '').trim().toLowerCase();
+      if (storedCallStatus === 'expired') {
+        await deleteAuthCode(phone);
+        await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+        res.status(400).json({ error: 'Время ожидания звонка истекло. Запросите новый номер.' });
+        return;
+      }
+
+      if (storedCallStatus !== 'confirmed') {
+        try {
+          const callStatus = await checkPhoneVerificationCallStatus({ checkId });
+          await updateAuthCodeCallStatusByRequestId(
+            checkId,
+            callStatus.status,
+            callStatus.statusText || null
+          );
+
+          if (callStatus.status === 'pending') {
+            await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+            res.status(400).json({ error: 'Номер пока не подтвержден звонком' });
+            return;
+          }
+
+          if (callStatus.status === 'expired') {
+            await deleteAuthCode(phone);
+            await otpVerifyRateLimiter.reset(verifyScope, requestIp, phone);
+            res.status(400).json({
+              error: 'Время ожидания звонка истекло. Запросите новый номер.'
+            });
+            return;
+          }
+        } catch (error) {
+          res.status(502).json({
+            error: error instanceof Error ? error.message : 'Не удалось проверить статус звонка'
+          });
+          return;
+        }
+      }
+    } else {
+      if (!code) {
+        res.status(400).json({ error: 'Телефон и код обязательны' });
+        return;
+      }
+
+      if (stored.delivery_channel === 'telegram_gateway' && stored.provider_request_id) {
+        void reportTelegramVerificationStatus(stored.provider_request_id, code);
+      }
+      if (stored.code !== code) {
+        res.status(400).json({ error: 'Неверный код' });
+        return;
+      }
     }
 
     await deleteAuthCode(phone);

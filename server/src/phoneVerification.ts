@@ -3,7 +3,11 @@ import { logPhoneCodeDeliveryEvent } from './phoneCodeDeliveryLogs';
 import { resilientFetch } from './httpClient';
 import { getTelegramOutboundDispatcher } from './telegramProxy';
 
-export type PhoneVerificationChannel = 'telegram_gateway' | 'sms_ru' | 'debug';
+export type PhoneVerificationChannel =
+  | 'telegram_gateway'
+  | 'sms_ru'
+  | 'sms_ru_call'
+  | 'debug';
 
 export type PhoneVerificationContext = 'auth' | 'profile_phone';
 
@@ -13,7 +17,7 @@ export type PhoneVerificationDeliveryResult = {
   providerMessageId?: string;
 };
 
-type PreferredPhoneVerificationChannel = Exclude<PhoneVerificationChannel, 'debug'>;
+type PreferredPhoneVerificationChannel = 'telegram_gateway' | 'sms_ru';
 
 type SendPhoneVerificationCodeInput = {
   phone: string;
@@ -53,8 +57,43 @@ type SmsRuSendResponse = {
   >;
 };
 
+type SmsRuCallCheckAddResponse = {
+  status?: string;
+  status_code?: number;
+  status_text?: string;
+  check_id?: string;
+  call_phone?: string;
+  call_phone_pretty?: string;
+  call_phone_html?: string;
+};
+
+type SmsRuCallCheckStatusResponse = {
+  status?: string;
+  status_code?: number;
+  status_text?: string;
+  check_status?: number | string;
+  check_status_text?: string;
+};
+
+export type PhoneCallVerificationRequestResult = {
+  channel: 'sms_ru_call' | 'debug';
+  checkId: string;
+  callPhone: string;
+  callPhonePretty: string;
+  expiresInMinutes: number;
+};
+
+export type PhoneCallVerificationStatus = 'pending' | 'confirmed' | 'expired';
+
+export type PhoneCallVerificationStatusResult = {
+  status: PhoneCallVerificationStatus;
+  statusCode: number;
+  statusText: string;
+};
+
 const TELEGRAM_GATEWAY_BASE_URL = 'https://gatewayapi.telegram.org';
 const SMS_RU_BASE_URL = 'https://sms.ru';
+const SMS_RU_CALLCHECK_TTL_MINUTES = 5;
 
 const trimToUndefined = (value: string | undefined) => {
   const trimmed = value?.trim();
@@ -121,6 +160,10 @@ const isDebugCodeEnabled = () => {
 export const assertPhoneVerificationConfiguration = () => {
   if (isProduction() && process.env.PHONE_VERIFICATION_DEBUG_CODE === 'true') {
     throw new Error('PHONE_VERIFICATION_DEBUG_CODE must be false in production');
+  }
+
+  if (isProduction() && !getSmsRuApiId()) {
+    throw new Error('SMS_RU_API_ID is required in production');
   }
 
   if (
@@ -314,6 +357,215 @@ const sendViaSmsRu = async (
         ? String(smsResult.sms_id)
         : undefined
   };
+};
+
+type RequestPhoneVerificationCallInput = {
+  phone: string;
+  context: PhoneVerificationContext;
+  ip?: string;
+};
+
+type CheckPhoneVerificationCallInput = {
+  checkId: string;
+};
+
+const mapCallCheckStatus = (
+  statusCode: number,
+  statusText: string
+): PhoneCallVerificationStatusResult => {
+  if (statusCode === 401) {
+    return {
+      status: 'confirmed',
+      statusCode,
+      statusText
+    };
+  }
+  if (statusCode === 402) {
+    return {
+      status: 'expired',
+      statusCode,
+      statusText
+    };
+  }
+  return {
+    status: 'pending',
+    statusCode,
+    statusText
+  };
+};
+
+export const requestPhoneVerificationCall = async (
+  input: RequestPhoneVerificationCallInput
+): Promise<PhoneCallVerificationRequestResult> => {
+  const apiId = getSmsRuApiId();
+  const phone = normalizePhone(input.phone);
+  if (!phone) {
+    throw new Error('Пустой номер телефона');
+  }
+
+  if (!apiId) {
+    if (isDebugCodeEnabled()) {
+      const checkId = `debug-${Date.now()}`;
+      await logPhoneCodeDeliveryEvent({
+        phone: input.phone,
+        channel: 'debug',
+        context: input.context,
+        status: 'sent',
+        ip: input.ip
+      });
+      return {
+        channel: 'debug',
+        checkId,
+        callPhone: '70000000000',
+        callPhonePretty: '+7 (000) 000-00-00',
+        expiresInMinutes: SMS_RU_CALLCHECK_TTL_MINUTES
+      };
+    }
+    throw new Error('SMS.RU API ID не настроен');
+  }
+
+  const params = new URLSearchParams();
+  params.set('api_id', apiId);
+  params.set('phone', phone);
+  params.set('json', '1');
+  if (input.ip) {
+    params.set('ip', input.ip);
+  }
+
+  const response = await resilientFetch(
+    `${SMS_RU_BASE_URL}/callcheck/add`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: params.toString()
+    },
+    {
+      circuitKey: 'phone_verification:sms_ru_call_add',
+      timeoutMs: 10_000,
+      maxRetries: 2
+    }
+  );
+
+  const data = await parseJsonResponse<SmsRuCallCheckAddResponse>(response);
+  if (!response.ok) {
+    const errorMessage = `SMS.RU HTTP ${response.status}`;
+    await logPhoneCodeDeliveryEvent({
+      phone: input.phone,
+      channel: 'sms_ru_call',
+      context: input.context,
+      status: 'failed',
+      error: errorMessage,
+      ip: input.ip
+    });
+    throw new Error(errorMessage);
+  }
+
+  if (!data || data.status !== 'OK') {
+    const errorMessage = data?.status_text || 'SMS.RU callcheck/add failed';
+    await logPhoneCodeDeliveryEvent({
+      phone: input.phone,
+      channel: 'sms_ru_call',
+      context: input.context,
+      status: 'failed',
+      error: errorMessage,
+      ip: input.ip
+    });
+    throw new Error(errorMessage);
+  }
+
+  const checkId = data.check_id?.trim();
+  const callPhone = data.call_phone?.trim();
+  const callPhonePretty = data.call_phone_pretty?.trim();
+
+  if (!checkId || !callPhone || !callPhonePretty) {
+    const errorMessage = 'SMS.RU callcheck/add returned incomplete response';
+    await logPhoneCodeDeliveryEvent({
+      phone: input.phone,
+      channel: 'sms_ru_call',
+      context: input.context,
+      status: 'failed',
+      error: errorMessage,
+      ip: input.ip
+    });
+    throw new Error(errorMessage);
+  }
+
+  await logPhoneCodeDeliveryEvent({
+    phone: input.phone,
+    channel: 'sms_ru_call',
+    context: input.context,
+    status: 'sent',
+    providerRequestId: checkId,
+    providerMessageId: callPhone,
+    ip: input.ip
+  });
+
+  return {
+    channel: 'sms_ru_call',
+    checkId,
+    callPhone,
+    callPhonePretty,
+    expiresInMinutes: SMS_RU_CALLCHECK_TTL_MINUTES
+  };
+};
+
+export const checkPhoneVerificationCallStatus = async (
+  input: CheckPhoneVerificationCallInput
+): Promise<PhoneCallVerificationStatusResult> => {
+  const checkId = input.checkId.trim();
+  if (!checkId) {
+    throw new Error('check_id не указан');
+  }
+
+  if (checkId.startsWith('debug-')) {
+    return {
+      status: 'confirmed',
+      statusCode: 401,
+      statusText: 'Проверка подтверждена (debug)'
+    };
+  }
+
+  const apiId = getSmsRuApiId();
+  if (!apiId) {
+    throw new Error('SMS.RU API ID не настроен');
+  }
+
+  const params = new URLSearchParams();
+  params.set('api_id', apiId);
+  params.set('check_id', checkId);
+  params.set('json', '1');
+
+  const response = await resilientFetch(
+    `${SMS_RU_BASE_URL}/callcheck/status?${params.toString()}`,
+    {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json'
+      }
+    },
+    {
+      circuitKey: 'phone_verification:sms_ru_call_status',
+      timeoutMs: 10_000,
+      maxRetries: 2
+    }
+  );
+
+  const data = await parseJsonResponse<SmsRuCallCheckStatusResponse>(response);
+  if (!response.ok) {
+    throw new Error(`SMS.RU HTTP ${response.status}`);
+  }
+
+  if (!data || data.status !== 'OK') {
+    throw new Error(data?.status_text || 'SMS.RU callcheck/status failed');
+  }
+
+  const parsedCode = Number.parseInt(String(data.check_status ?? ''), 10);
+  const statusCode = Number.isFinite(parsedCode) ? parsedCode : 400;
+  const statusText = data.check_status_text?.trim() || 'Статус проверки не получен';
+  return mapCallCheckStatus(statusCode, statusText);
 };
 
 export const sendPhoneVerificationCode = async (

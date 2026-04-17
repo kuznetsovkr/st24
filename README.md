@@ -146,10 +146,10 @@ npm run build --workspace server
 
 ### Авторизация по телефону
 
+- `SMS_RU_API_ID` (обязателен, используется для подтверждения звонком через SMS.RU Callcheck)
+- `SMS_RU_SENDER` (только для SMS-кодов в других сценариях, если требуется аккаунтом SMS.ru)
 - `PHONE_VERIFICATION_MODE` (`telegram_then_sms` | `sms_only`)
 - `TELEGRAM_GATEWAY_TOKEN`
-- `SMS_RU_API_ID` (обязателен при `PHONE_VERIFICATION_MODE=sms_only`)
-- `SMS_RU_SENDER` (если требуется аккаунтом SMS.ru)
 - `PHONE_VERIFICATION_BRAND`
 
 ### Captcha
