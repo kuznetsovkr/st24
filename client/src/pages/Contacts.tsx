@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { STORE_EMAIL, STORE_EMAIL_HREF, TELEGRAM_LINK } from '../constants/contacts.ts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MAX_LINK, STORE_EMAIL, STORE_EMAIL_HREF, TELEGRAM_LINK } from '../constants/contacts.ts';
 import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 
 const MAP_CONTAINER_ID = 'contacts-map';
@@ -8,6 +8,10 @@ const STORE_COORDS: [number, number] = [56.03685, 92.789874];
 const STORE_ADDRESS = 'Красноярск, улица Калинина, 53а';
 const STORE_PHONE_DISPLAY = '+7 995 908-95-97';
 const STORE_PHONE_HREF = 'tel:+79959089597';
+const STORE_PHONE_COPY = '+79959089597';
+const STORE_PHONE_NOTE_DISPLAY = '+7\u00A0995\u00A0908-95-97';
+const MAX_PHONE_COPY = '+79130491499';
+const MAX_PHONE_NOTE_DISPLAY = '+7\u00A0913\u00A0049-14-99';
 const TWO_GIS_REVIEWS_LINK = 'https://go.2gis.com/jyqVa';
 const MAP_ZOOM = 17;
 
@@ -42,6 +46,12 @@ const TelegramIcon = () => (
   </svg>
 );
 
+const MaxIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" width="16" height="16" fill="currentColor" aria-hidden="true">
+    <path d="M350.4,9.6C141.8,20.5,4.1,184.1,12.8,390.4c3.8,90.3,40.1,168,48.7,253.7,2.2,22.2-4.2,49.6,21.4,59.3,31.5,11.9,79.8-8.1,106.2-26.4,9-6.1,17.6-13.2,24.2-22,27.3,18.1,53.2,35.6,85.7,43.4,143.1,34.3,299.9-44.2,369.6-170.3C799.6,291.2,622.5-4.6,350.4,9.6h0ZM269.4,504c-11.3,8.8-22.2,20.8-34.7,27.7-18.1,9.7-23.7-.4-30.5-16.4-21.4-50.9-24-137.6-11.5-190.9,16.8-72.5,72.9-136.3,150-143.1,78-6.9,150.4,32.7,183.1,104.2,72.4,159.1-112.9,316.2-256.4,218.6h0Z" />
+  </svg>
+);
+
 const PhoneIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
     <path d="m23.5,11c-.276,0-.5-.224-.5-.5,0-5.238-4.262-9.5-9.5-9.5-.276,0-.5-.224-.5-.5s.224-.5.5-.5c5.79,0,10.5,4.71,10.5,10.5,0,.276-.224,.5-.5,.5Zm-3.5-.5c0-3.584-2.916-6.5-6.5-6.5-.276,0-.5.224-.5.5s.224.5.5.5c3.033,0,5.5,2.467,5.5,5.5,0,.276.224.5.5.5s.5-.224.5-.5Zm2.234,11.771l.978-1.125c.508-.508.788-1.184.788-1.902s-.28-1.395-.837-1.945l-2.446-1.873c-1.048-1.048-2.753-1.049-3.803-.003l-1.532,1.494c-3.68-1.499-6.678-4.5-8.294-8.303l1.488-1.525c1.049-1.049,1.049-2.756.043-3.756l-1.959-2.543c-1.017-1.017-2.813-.993-3.78-.023l-1.174,1.024C.605,2.886,0,4.373,0,5.976c0,7.749,10.275,18.024,18.024,18.024,1.603,0,3.089-.605,4.21-1.729ZM5.909,1.446l1.959,2.543c.659.659.659,1.732-.004,2.396l-1.722,1.766c-.138.142-.18.352-.106.536,1.729,4.305,5.113,7.688,9.286,9.28.182.07.388.027.527-.108l1.766-1.722s.003-.003.004-.005c.639-.64,1.704-.681,2.44.043l2.446,1.873c.659.659.659,1.731-.023,2.416l-.979,1.125c-.908.91-2.144,1.411-3.479,1.411C10.864,23,1,13.136,1,5.976c0-1.335.501-2.571,1.387-3.456l1.175-1.025c.336-.336.779-.5,1.215-.5.419,0,.831.152,1.133.452Z" />
@@ -56,7 +66,9 @@ const EmailIcon = () => (
 
 const ContactsPage = () => {
   const mapRef = useRef<InstanceType<YandexMapsApi['Map']> | null>(null);
+  const copyNoticeTimerRef = useRef<number | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
   const breadcrumbJsonLd = useMemo(
     () => ({
@@ -84,6 +96,38 @@ const ContactsPage = () => {
     const [lat, lon] = STORE_COORDS;
     return `https://yandex.ru/maps/?ll=${lon}%2C${lat}&z=${MAP_ZOOM}&pt=${lon},${lat},pm2blk`;
   }, []);
+
+  const showCopyNotice = useCallback((message: string) => {
+    if (copyNoticeTimerRef.current) {
+      window.clearTimeout(copyNoticeTimerRef.current);
+    }
+    setCopyNotice(message);
+    copyNoticeTimerRef.current = window.setTimeout(() => {
+      setCopyNotice(null);
+      copyNoticeTimerRef.current = null;
+    }, 1800);
+  }, []);
+
+  const handleCopyPhone = useCallback(async (phone: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(phone);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = phone;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      showCopyNotice('Номер скопирован');
+    } catch {
+      showCopyNotice('Не удалось скопировать номер');
+    }
+  }, [showCopyNotice]);
 
   usePageSeo(
     'Контакты | СТ-24',
@@ -199,6 +243,14 @@ const ContactsPage = () => {
     };
   }, [apiKey]);
 
+  useEffect(() => {
+    return () => {
+      if (copyNoticeTimerRef.current) {
+        window.clearTimeout(copyNoticeTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div className="page">
       <header className="page-header">
@@ -241,6 +293,17 @@ const ContactsPage = () => {
               </span>
               <span>Написать в Telegram</span>
             </a>
+            <a
+              className="contacts-inline-link contacts-link-with-icon"
+              href={MAX_LINK}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="contacts-inline-icon contacts-inline-icon--max" aria-hidden="true">
+                <MaxIcon />
+              </span>
+              <span>Связаться в MAX</span>
+            </a>
           </div>
 
           <div className="contacts-info-block">
@@ -269,8 +332,21 @@ const ContactsPage = () => {
         <p>
           Заказы через сайт принимаем круглосуточно. Обрабатываем заявки в рабочее время: Пн — Пт 10:00–19:00, Сб
           10:00–16:00 (красноярское время), Вс — выходной. Связаться с нами по почте{' '}
-          <a href={STORE_EMAIL_HREF}>{STORE_EMAIL}</a> и в <a href={TELEGRAM_LINK}>Telegram</a>.
+          <a href={STORE_EMAIL_HREF}>{STORE_EMAIL}</a>, в <a href={TELEGRAM_LINK}>Telegram</a> по номеру{' '}
+          <button type="button" className="contacts-copy-link" onClick={() => void handleCopyPhone(STORE_PHONE_COPY)}>
+            {STORE_PHONE_NOTE_DISPLAY}
+          </button>{' '}
+          и в <a href={MAX_LINK}>MAX</a> по номеру{' '}
+          <button type="button" className="contacts-copy-link" onClick={() => void handleCopyPhone(MAX_PHONE_COPY)}>
+            {MAX_PHONE_NOTE_DISPLAY}
+          </button>
+          .
         </p>
+        {copyNotice && (
+          <p className="status-text contacts-copy-status" role="status" aria-live="polite">
+            {copyNotice}
+          </p>
+        )}
         <p>
           Информация о юридическом лице: ИП Булуков Александр Владимирович, ИНН 246009729921, ОГРНИП 321246800146178, г. Красноярск, ул. Калинина, 53а.
         </p>

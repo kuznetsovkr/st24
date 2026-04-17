@@ -582,6 +582,12 @@ a {
   display: block;
 }
 
+.contacts-inline-icon--max svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 .contacts-hours-item {
   margin: 0;
   color: var(--muted);
@@ -627,6 +633,28 @@ a {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.contacts-copy-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: copy;
+}
+
+.contacts-copy-link:focus-visible {
+  outline: 1px dashed var(--text);
+  outline-offset: 2px;
+}
+
+.contacts-copy-status {
+  align-self: flex-start;
 }
 
 .page--center {

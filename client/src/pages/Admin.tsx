@@ -713,6 +713,7 @@ const AdminPage = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDelete = async (product: Product) => {
