@@ -1513,8 +1513,11 @@ export const createApp = () => {
 
   app.all(
     '/api/smsru/callcheck/webhook',
+    multer().none(),
     express.urlencoded({ extended: false }),
     async (req: Request, res: Response) => {
+      const respondSmsRuAck = () => res.status(200).type('text/plain; charset=utf-8').send('100');
+
       const getWebhookValue = (key: string) => {
         const body =
           req.body && typeof req.body === 'object'
@@ -1541,10 +1544,19 @@ export const createApp = () => {
         return '';
       };
 
+      const getFirstWebhookValue = (...keys: string[]) => {
+        for (const key of keys) {
+          const value = getWebhookValue(key);
+          if (value) {
+            return value;
+          }
+        }
+        return '';
+      };
+
       const expectedSecret = getSmsRuCallcheckWebhookSecret();
       if (expectedSecret) {
-        const providedSecret =
-          getWebhookValue('secret') || req.header('x-smsru-webhook-secret')?.trim() || '';
+        const providedSecret = getFirstWebhookValue('secret', 'token');
         if (!providedSecret || providedSecret !== expectedSecret) {
           logSecurityEventFromRequest(req, {
             eventType: 'webhook_signature_invalid',
@@ -1555,15 +1567,27 @@ export const createApp = () => {
         }
       }
 
-      const checkId = getWebhookValue('check_id');
+      const checkId = getFirstWebhookValue('check_id', 'checkid', 'id');
       if (!checkId) {
-        res.status(400).json({ error: 'Некорректные данные запроса' });
+        console.warn('[SMS.RU WEBHOOK] Missing check_id in payload', {
+          body: req.body,
+          query: req.query
+        });
+        respondSmsRuAck();
         return;
       }
 
-      const parsedStatusCode = Number.parseInt(getWebhookValue('check_status'), 10);
+      const parsedStatusCode = Number.parseInt(
+        getFirstWebhookValue('check_status', 'status', 'callcheck_status'),
+        10
+      );
       if (!Number.isFinite(parsedStatusCode)) {
-        res.status(400).json({ error: 'Некорректные данные запроса' });
+        console.warn('[SMS.RU WEBHOOK] Missing check_status in payload', {
+          checkId,
+          body: req.body,
+          query: req.query
+        });
+        respondSmsRuAck();
         return;
       }
 
@@ -1573,17 +1597,18 @@ export const createApp = () => {
           : parsedStatusCode === 402
           ? 'expired'
           : 'pending';
-      const statusText = getWebhookValue('check_status_text') || getWebhookValue('status_text');
+      const statusText = getFirstWebhookValue('check_status_text', 'status_text');
 
       try {
-        const matched = await updateAuthCodeCallStatusByRequestId(
+        await updateAuthCodeCallStatusByRequestId(checkId, callStatus, statusText || null);
+        respondSmsRuAck();
+      } catch (error) {
+        console.error('[SMS.RU WEBHOOK] Failed to persist call status', {
           checkId,
           callStatus,
-          statusText || null
-        );
-        res.json({ ok: true, matched });
-      } catch {
-        res.status(500).json({ error: 'Не удалось выполнить запрос' });
+          error: error instanceof Error ? error.message : String(error)
+        });
+        respondSmsRuAck();
       }
     }
   );
