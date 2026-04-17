@@ -1637,7 +1637,7 @@ input[type='file'] {
   height: 14px;
   display: inline-block;
   flex: 0 0 auto;
-  animation: auth-call-spin 1s linear infinite;
+  animation: auth-call-spin 1.4s linear infinite;
 }
 
 @keyframes auth-call-spin {
