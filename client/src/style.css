@@ -1588,10 +1588,62 @@ input[type='file'] {
   font-weight: var(--weight-regular);
 }
 
+.auth-call-instructions {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-call-instructions-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+
+.auth-call-instructions-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.auth-call-instructions-list li {
+  line-height: 1.35;
+}
+
 .auth-code-link {
   font-size: inherit;
   font-weight: inherit;
   vertical-align: baseline;
+}
+
+.auth-call-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-call-spinner {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  flex: 0 0 auto;
+  animation: auth-call-spin 1s linear infinite;
+}
+
+@keyframes auth-call-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .status-text--error {

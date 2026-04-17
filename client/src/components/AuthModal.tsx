@@ -47,17 +47,17 @@ const extractApiErrorMessage = (error: unknown) => {
 const isCaptchaValidationError = (value: string) => {
   const normalized = value.toLowerCase();
   return (
-    normalized.includes('капч') ||
+    normalized.includes('????') ||
     normalized.includes('captcha') ||
-    normalized.includes('робот') ||
+    normalized.includes('?????') ||
     normalized.includes('verify') ||
-    normalized.includes('проверк')
+    normalized.includes('???????')
   );
 };
 
 const isExpiredCallError = (value: string) => {
   const normalized = value.toLowerCase();
-  return normalized.includes('expired') || normalized.includes('истек');
+  return normalized.includes('?????') || normalized.includes('expired');
 };
 
 const formatCallHref = (phone: string | null) => {
@@ -67,6 +67,17 @@ const formatCallHref = (phone: string | null) => {
   const normalized = phone.replace(/[^\d+]/g, '');
   return normalized ? `tel:${normalized}` : '';
 };
+
+const SpinnerIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="auth-call-spinner"
+  >
+    <path d="m12.5.5v3c0,.276-.224.5-.5.5s-.5-.224-.5-.5V.5c0-.276.224-.5.5-.5s.5.224.5.5Zm-.5,19.5c-.276,0-.5.224-.5.5v3c0,.276.224.5.5.5s.5-.224.5-.5v-3c0-.276-.224-.5-.5-.5ZM4,12c0-.276-.224-.5-.5-.5H.5c-.276,0-.5.224-.5.5s.224.5.5.5h3c.276,0,.5-.224.5-.5Zm19.5-.5h-3c-.276,0-.5.224-.5.5s.224.5.5.5h3c.276,0,.5-.224.5-.5s-.224-.5-.5-.5ZM4.426,15.889l-2.584,1.524c-.238.141-.317.447-.177.685.094.158.26.246.431.246.087,0,.174-.022.254-.069l2.584-1.524c.238-.141.317-.447.177-.685-.142-.239-.447-.316-.685-.177Zm14.895-7.708c.087,0,.174-.022.254-.069l2.584-1.524c.238-.141.317-.447.177-.685-.142-.238-.447-.316-.685-.177l-2.584,1.524c-.238.141-.317.447-.177.685.094.158.26.246.431.246Zm2.838,9.232l-2.584-1.524c-.238-.139-.543-.062-.685.177-.141.237-.062.544.177.685l2.584,1.524c.08.047.167.069.254.069.171,0,.337-.088.431-.246.141-.237.062-.544-.177-.685ZM4.934,7.25l-2.584-1.524c-.237-.14-.544-.062-.685.177-.141.237-.062.544.177.685l2.584,1.524c.08.047.167.069.254.069.171,0,.337-.088.431-.246.141-.237.062-.544-.177-.685Zm1.653-5.408c-.142-.239-.448-.316-.685-.177-.238.141-.317.447-.177.685l1.524,2.584c.094.158.26.246.431.246.087,0,.174-.022.254-.069.238-.141.317-.447.177-.685l-1.524-2.584Zm10.163,17.225c-.142-.239-.447-.316-.685-.177-.238.141-.317.447-.177.685l1.524,2.584c.094.158.26.246.431.246.087,0,.174-.022.254-.069.238-.141.317-.447.177-.685l-1.524-2.584Zm-8.815-.177c-.237-.139-.544-.062-.685.177l-1.524,2.584c-.141.237-.062.544.177.685.08.047.167.069.254.069.171,0,.337-.088.431-.246l1.524-2.584c.141-.237.062-.544-.177-.685ZM18.098,1.665c-.237-.139-.543-.062-.685.177l-1.524,2.584c-.141.237-.062.544.177.685.08.047.167.069.254.069.171,0,.337-.088.431-.246l1.524-2.584c.141-.237.062-.544-.177-.685Z" />
+  </svg>
+);
 
 const AuthModal = () => {
   const { authModalOpen, closeAuthModal } = useUI();
@@ -84,7 +95,6 @@ const AuthModal = () => {
   const [isRequestButtonHidden, setIsRequestButtonHidden] = useState(false);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [isAutoCheckingCall, setIsAutoCheckingCall] = useState(false);
   const [callPhone, setCallPhone] = useState<string | null>(null);
   const [callPhonePretty, setCallPhonePretty] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -96,13 +106,13 @@ const AuthModal = () => {
   const shouldShowCaptcha =
     authMode === 'call' && Boolean(turnstileSiteKey) && phoneReadyForCaptcha && !captchaToken;
   const showRequestCallButton = authMode === 'call' && !isRequestButtonHidden;
+  const showCallInstructions = authMode === 'call';
   const callHref = useMemo(() => formatCallHref(callPhone), [callPhone]);
 
   const resetCallFlow = useCallback(() => {
     setIsCallRequested(false);
     setIsRequestButtonHidden(false);
     setIsRequesting(false);
-    setIsAutoCheckingCall(false);
     setIsVerifying(false);
     setCallPhone(null);
     setCallPhonePretty(null);
@@ -113,7 +123,7 @@ const AuthModal = () => {
   const handleCaptchaTokenChange = useCallback((token: string | null) => {
     setCaptchaToken(token);
     if (token) {
-      setRequestError((prev) => (prev === 'Подтвердите, что вы не робот.' ? null : prev));
+      setRequestError((prev) => (prev === '???????????, ??? ?? ?? ?????.' ? null : prev));
     }
   }, []);
 
@@ -133,7 +143,6 @@ const AuthModal = () => {
     setIsRequestButtonHidden(false);
     setIsRequesting(false);
     setIsVerifying(false);
-    setIsAutoCheckingCall(false);
     setCallPhone(null);
     setCallPhonePretty(null);
     if (captchaToken) {
@@ -156,7 +165,6 @@ const AuthModal = () => {
         return;
       }
       inFlight = true;
-      setIsAutoCheckingCall(true);
 
       try {
         const status = await fetchAuthCallStatus(normalizedPhone);
@@ -177,7 +185,7 @@ const AuthModal = () => {
         }
 
         if (status.status === 'expired' || status.status === 'not_found') {
-          setVerifyMessage('Время ожидания звонка истекло. Запросите новый номер.');
+          setVerifyMessage('????? ???????? ?????? ???????. ????????? ????? ?????.');
           setIsVerifyError(true);
           resetCallFlow();
         }
@@ -187,7 +195,7 @@ const AuthModal = () => {
         }
         const apiErrorMessage = extractApiErrorMessage(error);
         if (isExpiredCallError(apiErrorMessage)) {
-          setVerifyMessage('Время ожидания звонка истекло. Запросите новый номер.');
+          setVerifyMessage('????? ???????? ?????? ???????. ????????? ????? ?????.');
           setIsVerifyError(true);
           resetCallFlow();
           return;
@@ -198,7 +206,6 @@ const AuthModal = () => {
       } finally {
         inFlight = false;
         if (!cancelled) {
-          setIsAutoCheckingCall(false);
           setIsVerifying(false);
         }
       }
@@ -241,17 +248,17 @@ const AuthModal = () => {
     setIsVerifyError(false);
 
     if (!phone.trim()) {
-      setRequestError('Введите номер телефона.');
+      setRequestError('??????? ????? ????????.');
       return;
     }
 
     if (!phoneReadyForCaptcha) {
-      setRequestError('Введите полный номер телефона.');
+      setRequestError('??????? ?????? ????? ????????.');
       return;
     }
 
     if (turnstileSiteKey && !captchaToken) {
-      setRequestError('Подтвердите, что вы не робот.');
+      setRequestError('???????????, ??? ?? ?? ?????.');
       return;
     }
 
@@ -265,7 +272,7 @@ const AuthModal = () => {
         setIsCallRequested(false);
         setCallPhone(null);
         setCallPhonePretty(null);
-        setVerifyMessage('Введите пароль администратора.');
+        setVerifyMessage('??????? ?????? ??????????????.');
         setIsVerifyError(false);
         return;
       }
@@ -276,16 +283,14 @@ const AuthModal = () => {
       setCallPhone(result.callPhone ?? null);
       setCallPhonePretty(result.callPhonePretty ?? null);
 
-      if (result.deliveryChannel === 'sms_ru_call' && result.callPhonePretty) {
-        setRequestStatus(`Позвоните на номер ${result.callPhonePretty}. Вход выполнится автоматически.`);
-      } else if (result.deliveryChannel === 'debug') {
-        setRequestStatus('Проверка звонка запущена (тестовый режим).');
-      } else {
-        setRequestStatus('Проверка звонка запущена. Вход выполнится автоматически.');
+      if (result.deliveryChannel === 'debug') {
+        setRequestStatus('???????? ?????? ???????? (???????? ?????).');
+      } else if (!result.callPhonePretty) {
+        setRequestStatus('???????? ?????? ????????. ???? ?????????? ?????????????.');
       }
     } catch (error) {
       const apiErrorMessage = extractApiErrorMessage(error);
-      setRequestError(apiErrorMessage || 'Не удалось запросить номер для звонка.');
+      setRequestError(apiErrorMessage || '?? ??????? ????????? ????? ??? ??????.');
       if (turnstileSiteKey && isCaptchaValidationError(apiErrorMessage)) {
         setCaptchaToken(null);
         setCaptchaResetKey((prev) => prev + 1);
@@ -301,24 +306,24 @@ const AuthModal = () => {
     setIsVerifyError(false);
 
     if (!phone.trim()) {
-      setVerifyMessage('Введите номер телефона.');
+      setVerifyMessage('??????? ????? ????????.');
       setIsVerifyError(true);
       return;
     }
 
     if (authMode === 'password' && !password.trim()) {
-      setVerifyMessage('Введите пароль.');
+      setVerifyMessage('??????? ??????.');
       setIsVerifyError(true);
       return;
     }
 
     if (authMode === 'call') {
       if (!isCallRequested) {
-        setVerifyMessage('Сначала запросите номер для звонка.');
+        setVerifyMessage('??????? ????????? ????? ??? ??????.');
         setIsVerifyError(true);
         return;
       }
-      setVerifyMessage('После звонка вход выполнится автоматически.');
+      setVerifyMessage('????? ?????? ???? ?????????? ?????????????.');
       setIsVerifyError(false);
       return;
     }
@@ -332,7 +337,7 @@ const AuthModal = () => {
       closeAuthModal();
     } catch (error) {
       const apiErrorMessage = extractApiErrorMessage(error);
-      setVerifyMessage(apiErrorMessage || 'Неверный пароль.');
+      setVerifyMessage(apiErrorMessage || '???????? ??????.');
       setIsVerifyError(true);
     } finally {
       setIsVerifying(false);
@@ -344,9 +349,9 @@ const AuthModal = () => {
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <p className="eyebrow">Авторизация</p>
+            <p className="eyebrow">???????????</p>
           </div>
-          <button className="icon-button" aria-label="Закрыть" onClick={closeAuthModal}>
+          <button className="icon-button" aria-label="???????" onClick={closeAuthModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="17"
@@ -367,13 +372,23 @@ const AuthModal = () => {
 
         <p className="muted">
           {authMode === 'password'
-            ? 'Для администратора используется пароль.'
-            : 'Для входа подтвердите номер бесплатным звонком.'}
+            ? '??? ?????????????? ???????????? ??????.'
+            : '??? ????? ??????????? ????? ?????????? ???????.'}
         </p>
+        {showCallInstructions && (
+          <div className="auth-call-instructions">
+            <p className="auth-call-instructions-title">??? ??? ????????:</p>
+            <ol className="auth-call-instructions-list">
+              <li>??????? ??? ????? ????????.</li>
+              <li>??????? ????????? ????? ??? ???????.</li>
+              <li>????????? ?? ???????? ????? ? ??????? 5 ?????. ?????? ??????????, ???? ??-?? ??????.</li>
+            </ol>
+          </div>
+        )}
 
         <form className="stacked-form" onSubmit={handleSubmit}>
           <label className="field">
-            <span>Телефон</span>
+            <span>???????</span>
             <input
               type="tel"
               placeholder="+7"
@@ -401,7 +416,7 @@ const AuthModal = () => {
                   onClick={() => void handleRequestCall()}
                   disabled={isRequesting}
                 >
-                  {isRequesting ? 'Отправляем...' : 'Получить номер для звонка'}
+                  {isRequesting ? '??????????...' : '???????? ????? ??? ??????'}
                 </button>
               )}
 
@@ -412,7 +427,7 @@ const AuthModal = () => {
 
               {callPhonePretty && (
                 <p className="status-text auth-code-status">
-                  Номер для звонка:{' '}
+                  ????????? ?? ?????{' '}
                   {callHref ? (
                     <a className="auth-code-link" href={callHref}>
                       {callPhonePretty}
@@ -420,19 +435,14 @@ const AuthModal = () => {
                   ) : (
                     callPhonePretty
                   )}
-                </p>
-              )}
-              {callPhonePretty && (
-                <p className="status-text auth-code-status">
-                  Звонок бесплатный, номер сбрасывается автоматически.
+                  . ???? ?????????? ?????????????.
                 </p>
               )}
 
               {isCallRequested && (
-                <p className="status-text auth-code-status">
-                  {isAutoCheckingCall
-                    ? 'Проверяем статус звонка...'
-                    : 'Ожидаем подтверждение звонка.'}
+                <p className="status-text auth-code-status auth-call-waiting">
+                  <SpinnerIcon />
+                  <span>??????? ????????????? ??????.</span>
                 </p>
               )}
             </>
@@ -441,7 +451,7 @@ const AuthModal = () => {
           {authMode === 'password' && (
             <>
               <label className="field">
-                <span>Пароль</span>
+                <span>??????</span>
                 <input
                   type="password"
                   value={password}
@@ -456,7 +466,7 @@ const AuthModal = () => {
                   className="primary-button auth-submit-button"
                   disabled={isVerifying}
                 >
-                  {isVerifying ? 'Проверяем...' : 'Войти'}
+                  {isVerifying ? '?????????...' : '?????'}
                 </button>
               </div>
             </>
