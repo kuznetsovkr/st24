@@ -381,8 +381,7 @@ const CheckoutPage = () => {
     hasEnabledDeliveryProviders,
     yandexApiKey,
     cdekFrom,
-    cdekDefaultLocation,
-    shippingParcels
+    cdekDefaultLocation
   ]);
 
   useEffect(() => {
@@ -543,6 +542,7 @@ const CheckoutPage = () => {
     }
 
     setIsSubmitting(true);
+    let keepSubmittingState = false;
     try {
       const latest = await syncWithServer();
       const hasIssues = latest.some(
@@ -575,15 +575,18 @@ const CheckoutPage = () => {
 
       const paymentSession = await createOrderPayment(order.id);
       if (paymentSession.alreadyPaid || paymentSession.order.status === 'paid') {
+        keepSubmittingState = true;
         navigate(`/order-success/${order.id}`);
         return;
       }
 
       if (paymentSession.confirmationUrl) {
+        keepSubmittingState = true;
         window.location.href = paymentSession.confirmationUrl;
         return;
       }
 
+      keepSubmittingState = true;
       navigate(`/payment/${order.id}`);
     } catch (submitError) {
       if (submitError instanceof Error) {
@@ -592,7 +595,9 @@ const CheckoutPage = () => {
         setError('Не удалось создать заказ.');
       }
     } finally {
-      setIsSubmitting(false);
+      if (!keepSubmittingState) {
+        setIsSubmitting(false);
+      }
     }
   };
   const toggleSummaryItemName = (itemId: string) => {

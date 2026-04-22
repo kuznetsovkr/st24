@@ -2935,6 +2935,24 @@ export const createApp = () => {
           const quoteDestinationUpper = quoteDestination.toUpperCase();
           const requestDestinationUpper = requestDestination.toUpperCase();
           let isCdekDestinationMatched = quoteDestinationUpper === requestDestinationUpper;
+          const quoteLooksLikeCityCode = /^\d+$/.test(quoteDestination);
+          const requestLooksLikeOfficeCode = /[A-Za-zА-Яа-я]/.test(requestDestination);
+
+          // Typical CDEK widget flow: quote token keeps city code (e.g. "869"),
+          // checkout request sends office code (e.g. "BRZ9").
+          // Accept this known pair immediately to avoid an extra network call to CDEK
+          // on order creation (can add up to tens of seconds on retries/timeouts).
+          if (
+            !isCdekDestinationMatched &&
+            quoteLooksLikeCityCode &&
+            requestLooksLikeOfficeCode
+          ) {
+            console.warn('[CDEK] Destination code mismatch accepted by fallback', {
+              quoteDestination,
+              requestDestination
+            });
+            isCdekDestinationMatched = true;
+          }
 
           if (!isCdekDestinationMatched) {
             try {
@@ -2952,20 +2970,6 @@ export const createApp = () => {
                 quoteDestination,
                 error: error instanceof Error ? error.message : String(error)
               });
-            }
-          }
-
-          // Fallback for CDEK widget cases where quote token contains city code
-          // while checkout sends office code (e.g. "869" vs "BRZ9").
-          if (!isCdekDestinationMatched) {
-            const quoteLooksLikeCityCode = /^\d+$/.test(quoteDestination);
-            const requestLooksLikeOfficeCode = /[A-Za-zА-Яа-я]/.test(requestDestination);
-            if (quoteLooksLikeCityCode && requestLooksLikeOfficeCode) {
-              console.warn('[CDEK] Destination code mismatch accepted by fallback', {
-                quoteDestination,
-                requestDestination
-              });
-              isCdekDestinationMatched = true;
             }
           }
 
