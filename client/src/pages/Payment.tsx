@@ -252,8 +252,7 @@ const PaymentPage = () => {
           <p className="muted">Оплата будет проведена на полную сумму заказа.</p>
           {fromYooKassa && isStatusPollingActive && (
             <p className="muted payment-status-checking">
-              <PaymentStatusSpinner />
-              <span>Проверяем статус оплаты после возврата из ЮKassa...</span>
+              <span>Проверяем статус оплаты после возврата из ЮKassa...<PaymentStatusSpinner /></span>
             </p>
           )}
           {error && <p className="status-text status-text--error">{error}</p>}
