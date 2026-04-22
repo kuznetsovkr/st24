@@ -14,7 +14,11 @@ import {
   signToken,
   verifyToken
 } from './auth';
-import { CdekProxyError, proxyCdekWidgetRequest } from './cdek';
+import {
+  CdekProxyError,
+  proxyCdekWidgetRequest,
+  resolveCdekDestinationCodeByOffice
+} from './cdek';
 import {
   findAuthCode,
   saveAuthCode,
@@ -2952,12 +2956,56 @@ export const createApp = () => {
       }
       const destinationCodeToCheck =
         deliveryProvider === 'cdek' ? pickupPointCode : destinationCode || pickupPointCode;
-      if (
-        quote.payload.destinationCode &&
-        quote.payload.destinationCode !== destinationCodeToCheck
-      ) {
-        res.status(400).json({ error: 'Некорректные данные запроса' });
-        return;
+      if (quote.payload.destinationCode) {
+        const quoteDestination = quote.payload.destinationCode.trim();
+        const requestDestination = destinationCodeToCheck.trim();
+
+        if (deliveryProvider === 'cdek') {
+          const quoteDestinationUpper = quoteDestination.toUpperCase();
+          const requestDestinationUpper = requestDestination.toUpperCase();
+          let isCdekDestinationMatched = quoteDestinationUpper === requestDestinationUpper;
+
+          if (!isCdekDestinationMatched) {
+            try {
+              const resolvedDestinationCode =
+                await resolveCdekDestinationCodeByOffice(pickupPointCode);
+              if (
+                resolvedDestinationCode &&
+                resolvedDestinationCode.toUpperCase() === quoteDestinationUpper
+              ) {
+                isCdekDestinationMatched = true;
+              }
+            } catch (error) {
+              console.warn('[CDEK] Failed to resolve destination code by office', {
+                pickupPointCode,
+                quoteDestination,
+                error: error instanceof Error ? error.message : String(error)
+              });
+            }
+          }
+
+          // Fallback for CDEK widget cases where quote token contains city code
+          // while checkout sends office code (e.g. "869" vs "BRZ9").
+          if (!isCdekDestinationMatched) {
+            const quoteLooksLikeCityCode = /^\d+$/.test(quoteDestination);
+            const requestLooksLikeOfficeCode = /[A-Za-zА-Яа-я]/.test(requestDestination);
+            if (quoteLooksLikeCityCode && requestLooksLikeOfficeCode) {
+              console.warn('[CDEK] Destination code mismatch accepted by fallback', {
+                quoteDestination,
+                requestDestination
+              });
+              isCdekDestinationMatched = true;
+            }
+          }
+
+          if (!isCdekDestinationMatched) {
+            res.status(400).json({ error: 'Некорректные данные запроса' });
+            return;
+          }
+        } else if (quoteDestination !== requestDestination) {
+          res.status(400).json({ error: 'Некорректные данные запроса' });
+          return;
+        }
       }
       if (
         deliveryProvider === 'cdek' &&

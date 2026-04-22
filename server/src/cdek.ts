@@ -304,6 +304,51 @@ const removeAction = (payload: Record<string, unknown>) => {
   return copy;
 };
 
+const toTrimmedString = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return '';
+};
+
+export const resolveCdekDestinationCodeByOffice = async (
+  officeCode: string
+): Promise<string | null> => {
+  const normalizedOfficeCode = officeCode.trim();
+  if (!normalizedOfficeCode) {
+    return null;
+  }
+
+  const token = await fetchCdekAccessToken();
+  const response = await requestCdek('deliverypoints', token, {
+    method: 'GET',
+    query: {
+      code: normalizedOfficeCode,
+      is_handout: true,
+      page: 1,
+      size: 1
+    }
+  });
+
+  const first = Array.isArray(response.body) ? response.body[0] : null;
+  if (!isPlainObject(first)) {
+    return null;
+  }
+
+  const location = isPlainObject(first.location) ? first.location : null;
+  const destinationCode = pickFirstNonEmpty(
+    toTrimmedString(first.location_code),
+    toTrimmedString(first.city_code),
+    toTrimmedString(location?.code),
+    toTrimmedString(location?.city_code)
+  );
+
+  return destinationCode || null;
+};
+
 export const proxyCdekWidgetRequest = async (
   queryInput: unknown,
   bodyInput: unknown
