@@ -1689,6 +1689,20 @@ input[type='file'] {
   animation: auth-call-spin 1.4s linear infinite;
 }
 
+.payment-status-checking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.payment-status-spinner {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  flex: 0 0 auto;
+  animation: auth-call-spin 1.4s linear infinite;
+}
+
 @keyframes auth-call-spin {
   to {
     transform: rotate(360deg);
