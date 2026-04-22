@@ -136,12 +136,10 @@ import { createDeliveryQuoteToken, verifyDeliveryQuoteToken } from './shippingQu
 import {
   createYooKassaPayment,
   fetchYooKassaPayment,
-  getYooKassaFixedAmountCents,
   getYooKassaReceiptTaxSystemCode,
   getYooKassaReceiptVatCode,
   getYooKassaReturnBaseUrl,
   getYooKassaWebhookSecret,
-  isYooKassaUseOrderTotal,
   isYooKassaConfigured,
   type YooKassaPayment,
   type YooKassaReceipt
@@ -1112,33 +1110,6 @@ const normalizeReceiptDescription = (value: string, fallback: string) => {
   const trimmed = value.trim();
   const base = trimmed || fallback;
   return base.length > 128 ? `${base.slice(0, 125)}...` : base;
-};
-
-const buildYooKassaTestReceipt = (order: OrderRow, amountCents: number): YooKassaReceipt => {
-  const customerEmail = order.email.trim();
-  const customerPhone = formatPhoneE164(order.phone);
-
-  return {
-    customer: {
-      full_name: order.full_name.trim() || undefined,
-      email: customerEmail || undefined,
-      phone: customerPhone || undefined
-    },
-    tax_system_code: getYooKassaReceiptTaxSystemCode(),
-    items: [
-      {
-        description: `Тестовая оплата заказа №${order.order_number}`,
-        quantity: '1.000',
-        amount: {
-          value: toAmountValue(amountCents),
-          currency: 'RUB'
-        },
-        vat_code: getYooKassaReceiptVatCode(),
-        payment_mode: 'full_payment',
-        payment_subject: 'service'
-      }
-    ]
-  };
 };
 
 const buildYooKassaOrderReceipt = (
@@ -3168,15 +3139,10 @@ export const createApp = () => {
         return;
       }
 
-      const amountCents = isYooKassaUseOrderTotal()
-        ? order.total_cents
-        : getYooKassaFixedAmountCents();
+      const amountCents = order.total_cents;
       amountForLog = amountCents;
-      const isTestMode = !isYooKassaUseOrderTotal();
       const orderItems = await listOrderItemsForUser(order.id, userId);
-      const receipt = !isTestMode
-        ? buildYooKassaOrderReceipt(order, orderItems, amountCents)
-        : buildYooKassaTestReceipt(order, amountCents);
+      const receipt = buildYooKassaOrderReceipt(order, orderItems, amountCents);
 
       const payment = await createYooKassaPayment({
         amountCents,
@@ -3219,8 +3185,7 @@ export const createApp = () => {
         confirmationUrl,
         paymentId: payment.id,
         paymentStatus: payment.status,
-        amountCents,
-        isTestMode
+        amountCents
       });
     } catch (error) {
       const message =

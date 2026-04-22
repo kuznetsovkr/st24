@@ -25,7 +25,6 @@ const PaymentPage = () => {
   const [isPaying, setIsPaying] = useState(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [paymentAmountCents, setPaymentAmountCents] = useState(100);
-  const [isTestPaymentMode, setIsTestPaymentMode] = useState(true);
   const promptedRef = useRef(false);
   const fromYooKassa = searchParams.get('fromYooKassa') === '1';
 
@@ -51,6 +50,7 @@ const PaymentPage = () => {
           return;
         }
         setOrder(data);
+        setPaymentAmountCents(data.totalCents);
         setState('ready');
       })
       .catch(() => {
@@ -76,7 +76,6 @@ const PaymentPage = () => {
       if (typeof payment.amountCents === 'number' && payment.amountCents > 0) {
         setPaymentAmountCents(payment.amountCents);
       }
-      setIsTestPaymentMode(Boolean(payment.isTestMode));
 
       if (payment.alreadyPaid || payment.order.status === 'paid') {
         clear();
@@ -231,13 +230,9 @@ const PaymentPage = () => {
       </header>
       <div className="payment-layout">
         <div className="card payment-card">
-          <h3>{isTestPaymentMode ? 'Тестовая сумма к оплате' : 'Сумма к оплате'}</h3>
+          <h3>Сумма к оплате</h3>
           <p className="price">{formatPrice(paymentAmountCents)}</p>
-          {isTestPaymentMode ? (
-            <p className="muted">Сейчас включен тестовый режим: каждый заказ оплачивается на 1 ₽.</p>
-          ) : (
-            <p className="muted">Оплата будет проведена на полную сумму заказа.</p>
-          )}
+          <p className="muted">Оплата будет проведена на полную сумму заказа.</p>
           {fromYooKassa && isRefreshingStatus && (
             <p className="muted">Проверяем статус оплаты после возврата из ЮKassa...</p>
           )}

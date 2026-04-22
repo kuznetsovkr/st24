@@ -109,7 +109,6 @@ export type OrderPaymentSession = {
   paymentId?: string;
   paymentStatus?: string;
   amountCents?: number;
-  isTestMode?: boolean;
   alreadyPaid?: boolean;
 };
 
