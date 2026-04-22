@@ -803,6 +803,8 @@ const extractCdekDestinationCode = (requestPayload: Record<string, unknown>) => 
   const directCode =
     toTrimmedString(requestPayload.office_code) ??
     toTrimmedString(requestPayload.officeCode) ??
+    toTrimmedString(requestPayload.pvz_code) ??
+    toTrimmedString(requestPayload.pvzCode) ??
     toTrimmedString(requestPayload.destinationCode);
   if (directCode) {
     return directCode;
@@ -814,11 +816,11 @@ const extractCdekDestinationCode = (requestPayload: Record<string, unknown>) => 
   }
 
   return (
-    toTrimmedString(toLocation.code) ??
     toTrimmedString(toLocation.office_code) ??
     toTrimmedString(toLocation.officeCode) ??
     toTrimmedString(toLocation.pvz_code) ??
-    toTrimmedString(toLocation.pvzCode)
+    toTrimmedString(toLocation.pvzCode) ??
+    toTrimmedString(toLocation.code)
   );
 };
 
