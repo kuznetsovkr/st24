@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   API_BASE,
   createOrder,
+  createOrderPayment,
   estimateShipping,
   fetchBoxTypes,
   fetchDeliveryProviders,
@@ -722,6 +723,18 @@ const CheckoutPage = () => {
         destinationCity: deliveryProvider === 'cdek' ? undefined : pickupPointCity,
         destinationAddress: deliveryProvider === 'cdek' ? undefined : pickupPointAddress
       });
+
+      const paymentSession = await createOrderPayment(order.id);
+      if (paymentSession.alreadyPaid || paymentSession.order.status === 'paid') {
+        navigate(`/order-success/${order.id}`);
+        return;
+      }
+
+      if (paymentSession.confirmationUrl) {
+        window.location.href = paymentSession.confirmationUrl;
+        return;
+      }
+
       navigate(`/payment/${order.id}`);
     } catch (submitError) {
       if (submitError instanceof Error) {
