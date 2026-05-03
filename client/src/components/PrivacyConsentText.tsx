@@ -12,12 +12,8 @@ const PrivacyConsentText = ({ openInNewTab = false }: PrivacyConsentTextProps) =
       <span className="legal-consent-main">
         Согласен с <Link to="/terms" {...linkProps}>условиями оферты</Link>,{' '}
         <Link to="/privacy" {...linkProps}>политикой обработки персональных данных</Link> и{' '}
-        <Link to="/consent" {...linkProps}>согласием на обработку персональных данных</Link>.
-      </span>
-      <span className="legal-consent-note">
-        Уведомлен о передаче данных платежным, логистическим и защитным сервисам (ЮKassa, СДЭК, Деловые Линии,
-        Почта России, Cloudflare Turnstile, SMS.ru, Telegram Gateway) и о возможной трансграничной передаче
-        технических данных в случаях, указанных в политике.
+        <Link to="/consent" {...linkProps}>согласием на обработку персональных данных</Link>, включая передачу данных
+        третьим лицам в объеме, необходимом для оплаты, доставки и защиты сайта.
       </span>
     </span>
   );
