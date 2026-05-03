@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../context/AuthContext.tsx';
 import { useCart } from '../context/CartContext.tsx';
 import { useUI } from '../context/UIContext.tsx';
+import PrivacyConsentText from '../components/PrivacyConsentText.tsx';
 import { STORE_EMAIL_HREF, TELEGRAM_LINK, STORE_EMAIL } from '../constants/contacts.ts';
 import { formatPhone } from '../utils/formatPhone.ts';
 import { buildShippingPackingDebug } from '../utils/parcelPacking.ts';
@@ -25,8 +26,8 @@ import { usePageSeo } from '../utils/usePageSeo.ts';
 const CDEK_WIDGET_SCRIPT_ID = 'cdek-widget-script';
 const CDEK_WIDGET_SCRIPT_SRC = 'https://cdn.jsdelivr.net/npm/@cdek-it/widget@3';
 const CDEK_WIDGET_ROOT_ID = 'checkout-cdek-map';
-const DEFAULT_CDEK_FROM = 'Красноярск, улица Калинина, 53а/1';
-const DEFAULT_CDEK_LOCATION = 'Красноярск';
+const DEFAULT_CDEK_FROM = 'РљСЂР°СЃРЅРѕСЏСЂСЃРє, СѓР»РёС†Р° РљР°Р»РёРЅРёРЅР°, 53Р°/1';
+const DEFAULT_CDEK_LOCATION = 'РљСЂР°СЃРЅРѕСЏСЂСЃРє';
 
 
 const getPickupSearchDefault = (provider: DeliveryProvider, cdekDefaultLocation: string) =>
@@ -72,15 +73,15 @@ declare global {
 type DeliveryProvider = 'cdek' | 'dellin' | 'russian_post';
 
 const DELIVERY_PROVIDER_LABELS: Record<DeliveryProvider, string> = {
-  cdek: 'СДЭК',
-  dellin: 'Деловые линии',
-  russian_post: 'Почта России'
+  cdek: 'РЎР”Р­Рљ',
+  dellin: 'Р”РµР»РѕРІС‹Рµ Р»РёРЅРёРё',
+  russian_post: 'РџРѕС‡С‚Р° Р РѕСЃСЃРёРё'
 };
 
 const DEFAULT_DELIVERY_PROVIDERS: DeliveryProviderSetting[] = [
   {
     key: 'cdek',
-    name: 'СДЭК',
+    name: 'РЎР”Р­Рљ',
     isEnabled: true,
     sortOrder: 0,
     createdAt: '',
@@ -88,7 +89,7 @@ const DEFAULT_DELIVERY_PROVIDERS: DeliveryProviderSetting[] = [
   },
   {
     key: 'dellin',
-    name: 'Деловые линии',
+    name: 'Р”РµР»РѕРІС‹Рµ Р»РёРЅРёРё',
     isEnabled: false,
     sortOrder: 1,
     createdAt: '',
@@ -96,7 +97,7 @@ const DEFAULT_DELIVERY_PROVIDERS: DeliveryProviderSetting[] = [
   },
   {
     key: 'russian_post',
-    name: 'Почта России',
+    name: 'РџРѕС‡С‚Р° Р РѕСЃСЃРёРё',
     isEnabled: false,
     sortOrder: 2,
     createdAt: '',
@@ -109,11 +110,11 @@ const buildPickupPointLabel = (office: CdekWidgetOffice) => {
   if (office.name && addressLine) {
     return `${office.name}, ${addressLine}`;
   }
-  return office.name || addressLine || 'ПВЗ СДЭК';
+  return office.name || addressLine || 'РџР’Р— РЎР”Р­Рљ';
 };
 
 const CheckoutPage = () => {
-  usePageSeo('Оформление заказа | СТ-24', 'Страница оформления заказа интернет-магазина СТ-24.', {
+  usePageSeo('РћС„РѕСЂРјР»РµРЅРёРµ Р·Р°РєР°Р·Р° | РЎРў-24', 'РЎС‚СЂР°РЅРёС†Р° РѕС„РѕСЂРјР»РµРЅРёСЏ Р·Р°РєР°Р·Р° РёРЅС‚РµСЂРЅРµС‚-РјР°РіР°Р·РёРЅР° РЎРў-24.', {
     robots: 'noindex,follow'
   });
 
@@ -182,11 +183,11 @@ const CheckoutPage = () => {
   const deliveryLabel =
     deliveryProvider === 'cdek'
       ? deliveryCostCents === null
-        ? 'после выбора ПВЗ'
+        ? 'РїРѕСЃР»Рµ РІС‹Р±РѕСЂР° РџР’Р—'
         : formatPrice(deliveryCostCents)
       : deliveryCostCents === null
-      ? 'после выбора ПВЗ'
-      : `≈ ${formatPrice(deliveryCostCents)}`;
+      ? 'РїРѕСЃР»Рµ РІС‹Р±РѕСЂР° РџР’Р—'
+      : `в‰€ ${formatPrice(deliveryCostCents)}`;
   const showDeliveryDisclaimer = deliveryProvider !== 'cdek' && deliveryCostCents !== null;
   const grandTotalCents =
     totalPriceCents + (deliveryProvider === 'cdek' ? (deliveryCostCents ?? 0) : 0);
@@ -346,7 +347,7 @@ const CheckoutPage = () => {
     const handleScriptError = () => {
       if (!disposed) {
         setIsWidgetLoading(false);
-        setError('Не удалось загрузить виджет СДЭК. Обновите страницу и попробуйте снова.');
+        setError('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РІРёРґР¶РµС‚ РЎР”Р­Рљ. РћР±РЅРѕРІРёС‚Рµ СЃС‚СЂР°РЅРёС†Сѓ Рё РїРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР°.');
       }
     };
 
@@ -414,7 +415,7 @@ const CheckoutPage = () => {
     const query = pickupSearchQuery.trim();
     if (query.length < 2) {
       setPickupOptions([]);
-      setPickupOptionsError('Введите минимум 2 символа для поиска ПВЗ.');
+      setPickupOptionsError('Р’РІРµРґРёС‚Рµ РјРёРЅРёРјСѓРј 2 СЃРёРјРІРѕР»Р° РґР»СЏ РїРѕРёСЃРєР° РџР’Р—.');
       return;
     }
 
@@ -429,13 +430,13 @@ const CheckoutPage = () => {
           : await searchRussianPostPickupPoints(query);
       setPickupOptions(points);
       if (points.length === 0) {
-        setPickupOptionsError('Пункты выдачи не найдены. Уточните город или адрес.');
+        setPickupOptionsError('РџСѓРЅРєС‚С‹ РІС‹РґР°С‡Рё РЅРµ РЅР°Р№РґРµРЅС‹. РЈС‚РѕС‡РЅРёС‚Рµ РіРѕСЂРѕРґ РёР»Рё Р°РґСЂРµСЃ.');
       }
     } catch (searchError) {
       if (searchError instanceof Error) {
         setPickupOptionsError(searchError.message);
       } else {
-        setPickupOptionsError('Не удалось загрузить пункты выдачи.');
+        setPickupOptionsError('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РїСѓРЅРєС‚С‹ РІС‹РґР°С‡Рё.');
       }
     } finally {
       setIsPickupOptionsLoading(false);
@@ -468,7 +469,7 @@ const CheckoutPage = () => {
       if (estimateError instanceof Error) {
         setPickupOptionsError(estimateError.message);
       } else {
-        setPickupOptionsError('Не удалось рассчитать ориентировочную стоимость доставки.');
+        setPickupOptionsError('РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃСЃС‡РёС‚Р°С‚СЊ РѕСЂРёРµРЅС‚РёСЂРѕРІРѕС‡РЅСѓСЋ СЃС‚РѕРёРјРѕСЃС‚СЊ РґРѕСЃС‚Р°РІРєРё.');
       }
       setDeliveryCostCents(null);
       setDeliveryQuoteToken('');
@@ -502,42 +503,42 @@ const CheckoutPage = () => {
     }
 
     if (items.length === 0) {
-      setError('Корзина пуста. Добавьте товары для продолжения.');
+      setError('РљРѕСЂР·РёРЅР° РїСѓСЃС‚Р°. Р”РѕР±Р°РІСЊС‚Рµ С‚РѕРІР°СЂС‹ РґР»СЏ РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ.');
       return;
     }
 
     if (!hasEnabledDeliveryProviders) {
-      setError('Способы доставки временно недоступны. Попробуйте позже.');
+      setError('РЎРїРѕСЃРѕР±С‹ РґРѕСЃС‚Р°РІРєРё РІСЂРµРјРµРЅРЅРѕ РЅРµРґРѕСЃС‚СѓРїРЅС‹. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ.');
       return;
     }
 
     if (!fullName.trim() || !phone.trim() || !email.trim()) {
-      setError('Заполните ФИО, телефон и email.');
+      setError('Р—Р°РїРѕР»РЅРёС‚Рµ Р¤РРћ, С‚РµР»РµС„РѕРЅ Рё email.');
       return;
     }
 
     if (!pickupPoint) {
-      setError('Выберите пункт выдачи.');
+      setError('Р’С‹Р±РµСЂРёС‚Рµ РїСѓРЅРєС‚ РІС‹РґР°С‡Рё.');
       return;
     }
 
     if (!pickupPointCode) {
-      setError('Отсутствует код пункта выдачи. Выберите пункт снова.');
+      setError('РћС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РєРѕРґ РїСѓРЅРєС‚Р° РІС‹РґР°С‡Рё. Р’С‹Р±РµСЂРёС‚Рµ РїСѓРЅРєС‚ СЃРЅРѕРІР°.');
       return;
     }
 
     if (deliveryProvider === 'cdek' && deliveryCostCents === null) {
-      setError('Не удалось рассчитать доставку CDEK. Выберите пункт выдачи снова.');
+      setError('РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃСЃС‡РёС‚Р°С‚СЊ РґРѕСЃС‚Р°РІРєСѓ CDEK. Р’С‹Р±РµСЂРёС‚Рµ РїСѓРЅРєС‚ РІС‹РґР°С‡Рё СЃРЅРѕРІР°.');
       return;
     }
 
     if (!deliveryQuoteToken) {
-      setError('Срок действия стоимости доставки истек. Выберите пункт выдачи снова.');
+      setError('РЎСЂРѕРє РґРµР№СЃС‚РІРёСЏ СЃС‚РѕРёРјРѕСЃС‚Рё РґРѕСЃС‚Р°РІРєРё РёСЃС‚РµРє. Р’С‹Р±РµСЂРёС‚Рµ РїСѓРЅРєС‚ РІС‹РґР°С‡Рё СЃРЅРѕРІР°.');
       return;
     }
 
     if (!agreed) {
-      setError('Подтвердите согласие с условиями и политикой конфиденциальности.');
+      setError('РџРѕРґС‚РІРµСЂРґРёС‚Рµ СЃРѕРіР»Р°СЃРёРµ СЃ СѓСЃР»РѕРІРёСЏРјРё Рё РїРѕР»РёС‚РёРєРѕР№ РєРѕРЅС„РёРґРµРЅС†РёР°Р»СЊРЅРѕСЃС‚Рё.');
       return;
     }
 
@@ -549,7 +550,7 @@ const CheckoutPage = () => {
         (item) => typeof item.stock === 'number' && item.quantity > item.stock
       );
       if (hasIssues) {
-        setError('Некоторых товаров недостаточно на складе в выбранном количестве. Проверьте корзину.');
+        setError('РќРµРєРѕС‚РѕСЂС‹С… С‚РѕРІР°СЂРѕРІ РЅРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РЅР° СЃРєР»Р°РґРµ РІ РІС‹Р±СЂР°РЅРЅРѕРј РєРѕР»РёС‡РµСЃС‚РІРµ. РџСЂРѕРІРµСЂСЊС‚Рµ РєРѕСЂР·РёРЅСѓ.');
         return;
       }
 
@@ -593,7 +594,7 @@ const CheckoutPage = () => {
       if (submitError instanceof Error) {
         setError(submitError.message);
       } else {
-        setError('Не удалось создать заказ.');
+        setError('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р·Р°РєР°Р·.');
       }
     } finally {
       if (!keepSubmittingState) {
@@ -616,7 +617,7 @@ const CheckoutPage = () => {
   if (status === 'loading') {
     return (
       <div className="page">
-        <p className="muted">Проверяем авторизацию...</p>
+        <p className="muted">РџСЂРѕРІРµСЂСЏРµРј Р°РІС‚РѕСЂРёР·Р°С†РёСЋ...</p>
       </div>
     );
   }
@@ -626,17 +627,17 @@ const CheckoutPage = () => {
       <div className="page">
         <header className="page-header">
           <div>
-            <p className="eyebrow">Оформление заказа</p>
-            <h1>Войдите, чтобы продолжить</h1>
-            <p className="muted">Авторизация нужна для создания заказа и оплаты.</p>
+            <p className="eyebrow">РћС„РѕСЂРјР»РµРЅРёРµ Р·Р°РєР°Р·Р°</p>
+            <h1>Р’РѕР№РґРёС‚Рµ, С‡С‚РѕР±С‹ РїСЂРѕРґРѕР»Р¶РёС‚СЊ</h1>
+            <p className="muted">РђРІС‚РѕСЂРёР·Р°С†РёСЏ РЅСѓР¶РЅР° РґР»СЏ СЃРѕР·РґР°РЅРёСЏ Р·Р°РєР°Р·Р° Рё РѕРїР»Р°С‚С‹.</p>
           </div>
         </header>
         <div className="card">
           <button className="primary-button" onClick={openAuthModal}>
-            Войти по телефону
+            Р’РѕР№С‚Рё РїРѕ С‚РµР»РµС„РѕРЅСѓ
           </button>
           <Link to="/cart" className="ghost-button">
-            Вернуться в корзину
+            Р’РµСЂРЅСѓС‚СЊСЃСЏ РІ РєРѕСЂР·РёРЅСѓ
           </Link>
         </div>
       </div>
@@ -648,14 +649,14 @@ const CheckoutPage = () => {
       <div className="page">
         <header className="page-header">
           <div>
-            <p className="eyebrow">Оформление заказа</p>
-            <h1>Корзина пустая</h1>
-            <p className="muted">Добавьте товары в корзину и вернитесь сюда.</p>
+            <p className="eyebrow">РћС„РѕСЂРјР»РµРЅРёРµ Р·Р°РєР°Р·Р°</p>
+            <h1>РљРѕСЂР·РёРЅР° РїСѓСЃС‚Р°СЏ</h1>
+            <p className="muted">Р”РѕР±Р°РІСЊС‚Рµ С‚РѕРІР°СЂС‹ РІ РєРѕСЂР·РёРЅСѓ Рё РІРµСЂРЅРёС‚РµСЃСЊ СЃСЋРґР°.</p>
           </div>
         </header>
         <div className="card">
           <Link to="/catalog" className="primary-button">
-            Перейти в каталог
+            РџРµСЂРµР№С‚Рё РІ РєР°С‚Р°Р»РѕРі
           </Link>
         </div>
       </div>
@@ -666,12 +667,12 @@ const CheckoutPage = () => {
     <div className="page">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Оформление заказа</p>
-          <h1>Контактные данные</h1>
-          <p className="muted">Заполните форму и перейдите к оплате.</p>
+          <p className="eyebrow">РћС„РѕСЂРјР»РµРЅРёРµ Р·Р°РєР°Р·Р°</p>
+          <h1>РљРѕРЅС‚Р°РєС‚РЅС‹Рµ РґР°РЅРЅС‹Рµ</h1>
+          <p className="muted">Р—Р°РїРѕР»РЅРёС‚Рµ С„РѕСЂРјСѓ Рё РїРµСЂРµР№РґРёС‚Рµ Рє РѕРїР»Р°С‚Рµ.</p>
         </div>
         <Link to="/cart" className="link-button">
-          Назад в корзину
+          РќР°Р·Р°Рґ РІ РєРѕСЂР·РёРЅСѓ
         </Link>
       </header>
 
@@ -679,17 +680,17 @@ const CheckoutPage = () => {
         <form id="checkout-form" className="card checkout-form" onSubmit={handleSubmit}>
           <div className="form-grid">
             <label className="field">
-              <span>ФИО</span>
+              <span>Р¤РРћ</span>
               <input
                 type="text"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
-                placeholder="Иванов Иван Иванович"
+                placeholder="РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡"
                 required
               />
             </label>
             <label className="field">
-              <span>Телефон</span>
+              <span>РўРµР»РµС„РѕРЅ</span>
               <input
                 type="tel"
                 value={phone}
@@ -729,60 +730,60 @@ const CheckoutPage = () => {
 
               {!hasEnabledDeliveryProviders ? (
                 <>
-                  <p className="eyebrow">Способы доставки временно недоступны</p>
+                  <p className="eyebrow">РЎРїРѕСЃРѕР±С‹ РґРѕСЃС‚Р°РІРєРё РІСЂРµРјРµРЅРЅРѕ РЅРµРґРѕСЃС‚СѓРїРЅС‹</p>
                   <p className="muted">
-                    Администратор отключил все службы доставки. Повторите попытку позже.
+                    РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РѕС‚РєР»СЋС‡РёР» РІСЃРµ СЃР»СѓР¶Р±С‹ РґРѕСЃС‚Р°РІРєРё. РџРѕРІС‚РѕСЂРёС‚Рµ РїРѕРїС‹С‚РєСѓ РїРѕР·Р¶Рµ.
                   </p>
                 </>
               ) : deliveryProvider === 'cdek' ? (
                 <>
                   <p className="muted">
-                    Выберите удобный ПВЗ на карте СДЭК. Стоимость доставки рассчитается
-                    автоматически.
+                    Р’С‹Р±РµСЂРёС‚Рµ СѓРґРѕР±РЅС‹Р№ РџР’Р— РЅР° РєР°СЂС‚Рµ РЎР”Р­Рљ. РЎС‚РѕРёРјРѕСЃС‚СЊ РґРѕСЃС‚Р°РІРєРё СЂР°СЃСЃС‡РёС‚Р°РµС‚СЃСЏ
+                    Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.
                   </p>
                 </>
               ) : (
                 <>
                   <p className="muted">
-                    Введите город или адрес и выберите подходящий пункт выдачи из списка.
+                    Р’РІРµРґРёС‚Рµ РіРѕСЂРѕРґ РёР»Рё Р°РґСЂРµСЃ Рё РІС‹Р±РµСЂРёС‚Рµ РїРѕРґС…РѕРґСЏС‰РёР№ РїСѓРЅРєС‚ РІС‹РґР°С‡Рё РёР· СЃРїРёСЃРєР°.
                   </p>
                 </>
               )}
 
               {hasEnabledDeliveryProviders && pickupPoint ? (
                 <>
-                  <p className="chip">Выбрано: {pickupPoint}</p>
+                  <p className="chip">Р’С‹Р±СЂР°РЅРѕ: {pickupPoint}</p>
                   <p className="cdek-meta">
                     {deliveryProvider === 'cdek' && deliveryTariffName
                       ? `${deliveryTariffName} - `
                       : ''}
-                    Доставка: {deliveryLabel}
+                    Р”РѕСЃС‚Р°РІРєР°: {deliveryLabel}
                   </p>
                   {showDeliveryDisclaimer ? (
                   <p className="muted">
-                    Стоимость является приблизительной, итоговую стоимость можете уточнить у
-                    менеджера в&nbsp;
+                    РЎС‚РѕРёРјРѕСЃС‚СЊ СЏРІР»СЏРµС‚СЃСЏ РїСЂРёР±Р»РёР·РёС‚РµР»СЊРЅРѕР№, РёС‚РѕРіРѕРІСѓСЋ СЃС‚РѕРёРјРѕСЃС‚СЊ РјРѕР¶РµС‚Рµ СѓС‚РѕС‡РЅРёС‚СЊ Сѓ
+                    РјРµРЅРµРґР¶РµСЂР° РІ&nbsp;
                     <a href={TELEGRAM_LINK} target="_blank" rel="noreferrer">
-                      телеграмме
+                      С‚РµР»РµРіСЂР°РјРјРµ
                     </a>{' '}
-                    или на почте{' '}
+                    РёР»Рё РЅР° РїРѕС‡С‚Рµ{' '}
                     <a href={STORE_EMAIL_HREF}>{STORE_EMAIL}</a>{' '}
-                    после отправки.
+                    РїРѕСЃР»Рµ РѕС‚РїСЂР°РІРєРё.
                   </p>
                   ) : null}
                   {isEstimatingDelivery ? (
-                    <p className="muted">Считаем ориентировочную стоимость доставки...</p>
+                    <p className="muted">РЎС‡РёС‚Р°РµРј РѕСЂРёРµРЅС‚РёСЂРѕРІРѕС‡РЅСѓСЋ СЃС‚РѕРёРјРѕСЃС‚СЊ РґРѕСЃС‚Р°РІРєРё...</p>
                   ) : null}
                 </>
               ) : hasEnabledDeliveryProviders ? (
-                <p className="muted">Пункт выдачи не выбран.</p>
+                <p className="muted">РџСѓРЅРєС‚ РІС‹РґР°С‡Рё РЅРµ РІС‹Р±СЂР°РЅ.</p>
               ) : null}
             </div>
 
             {!hasEnabledDeliveryProviders ? null : deliveryProvider === 'cdek' ? (
               <>
                 <div id={CDEK_WIDGET_ROOT_ID} className="cdek-widget-inline" />
-                {isWidgetLoading ? <p className="muted">Загружаем карту СДЭК...</p> : null}
+                {isWidgetLoading ? <p className="muted">Р—Р°РіСЂСѓР¶Р°РµРј РєР°СЂС‚Сѓ РЎР”Р­Рљ...</p> : null}
               </>
             ) : (
               <div className="pickup-search-block">
@@ -797,7 +798,7 @@ const CheckoutPage = () => {
                         void handlePickupPointSearch();
                       }
                     }}
-                    placeholder="Введите город или адрес"
+                    placeholder="Р’РІРµРґРёС‚Рµ РіРѕСЂРѕРґ РёР»Рё Р°РґСЂРµСЃ"
                   />
                   <button
                     type="button"
@@ -805,7 +806,7 @@ const CheckoutPage = () => {
                     onClick={handlePickupPointSearch}
                     disabled={isPickupOptionsLoading}
                   >
-                    {isPickupOptionsLoading ? 'Ищем...' : 'Найти ПВЗ'}
+                    {isPickupOptionsLoading ? 'РС‰РµРј...' : 'РќР°Р№С‚Рё РџР’Р—'}
                   </button>
                 </div>
                 {pickupOptionsError ? <p className="muted">{pickupOptionsError}</p> : null}
@@ -830,22 +831,19 @@ const CheckoutPage = () => {
             )}
           </div>
 
-          <label className="checkbox-field">
+          <label className="checkbox-field checkbox-field--legal">
             <input
               type="checkbox"
               checked={agreed}
               onChange={(event) => setAgreed(event.target.checked)}
             />
-            <span>
-              Согласен с <Link to="/terms">условиями оферты</Link> и{' '}
-              <Link to="/privacy">политикой обработки персональных данных</Link>.
-            </span>
+            <PrivacyConsentText />
           </label>
           {error && <p className="status-text status-text--error">{error}</p>}
         </form>
 
         <aside className="card checkout-summary">
-          <h3>Ваш заказ ({totalCount})</h3>
+          <h3>Р’Р°С€ Р·Р°РєР°Р· ({totalCount})</h3>
           <ul className="checkout-summary-list">
             {items.map((item) => (
               <li key={item.id}>
@@ -866,16 +864,16 @@ const CheckoutPage = () => {
           </ul>
           <div className="checkout-summary-total">
             <p className="muted checkout-summary-row">
-              <span>Товары:</span>{' '}
+              <span>РўРѕРІР°СЂС‹:</span>{' '}
               <span className="checkout-summary-value">{formatPrice(totalPriceCents)}</span>
             </p>
             <p className="muted checkout-summary-row">
-              <span>Доставка:</span>{' '}
+              <span>Р”РѕСЃС‚Р°РІРєР°:</span>{' '}
               <span className={deliveryCostCents === null ? undefined : 'checkout-summary-value'}>
                 {deliveryLabel}
               </span>
             </p>
-            <p className="price">Сумма: {formatPrice(grandTotalCents)}</p>
+            <p className="price">РЎСѓРјРјР°: {formatPrice(grandTotalCents)}</p>
           </div>
           <button
             form="checkout-form"
@@ -883,7 +881,7 @@ const CheckoutPage = () => {
             type="submit"
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Создаём заказ...' : 'Перейти к оплате'}
+            {isSubmitting ? 'РЎРѕР·РґР°С‘Рј Р·Р°РєР°Р·...' : 'РџРµСЂРµР№С‚Рё Рє РѕРїР»Р°С‚Рµ'}
           </button>
         </aside>
       </div>

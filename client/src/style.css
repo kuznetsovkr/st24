@@ -1558,6 +1558,31 @@ h3 {
   height: 18px;
 }
 
+.checkbox-field--legal {
+  align-items: flex-start;
+}
+
+.checkbox-field--legal input {
+  margin-top: 2px;
+}
+
+.legal-consent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legal-consent-main {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.legal-consent-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 input {
   border-radius: 10px;
   border: 1px solid var(--border);

@@ -1,7 +1,7 @@
-﻿import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { requestNeedPartCatalog } from '../api.ts';
 import TurnstileWidget from './TurnstileWidget.tsx';
+import PrivacyConsentText from './PrivacyConsentText.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { formatPhone } from '../utils/formatPhone.ts';
 
@@ -251,16 +251,13 @@ const CatalogNeedPartModal = ({ open, onClose, categoryName }: CatalogNeedPartMo
               </div>
             ) : null}
 
-            <label className="checkbox-field">
+            <label className="checkbox-field checkbox-field--legal">
               <input
                 type="checkbox"
                 checked={agreed}
                 onChange={(event) => setAgreed(event.target.checked)}
               />
-              <span>
-                Согласен с <Link to="/terms" target="_blank" rel="noopener noreferrer">условиями оферты</Link> и{' '}
-                <Link to="/privacy" target="_blank" rel="noopener noreferrer">политикой обработки персональных данных</Link>.
-              </span>
+              <PrivacyConsentText openInNewTab />
             </label>
 
             {turnstileSiteKey && (
