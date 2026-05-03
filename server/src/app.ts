@@ -1701,7 +1701,7 @@ export const createApp = () => {
     if (!rateLimit.allowed) {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ С‡РµСЂРµР· ${rateLimit.retryAfterSeconds} СЃРµРє.`
+        error: `Слишком много запросов. Повторите через ${rateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -1744,7 +1744,7 @@ export const createApp = () => {
     if (!rateLimit.allowed) {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ С‡РµСЂРµР· ${rateLimit.retryAfterSeconds} СЃРµРє.`
+        error: `Слишком много запросов. Повторите через ${rateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -1791,7 +1791,7 @@ export const createApp = () => {
     if (!rateLimit.allowed) {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
       res.status(429).json({
-        error: `РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р·Р°РїСЂРѕСЃРѕРІ. РџРѕРІС‚РѕСЂРёС‚Рµ С‡РµСЂРµР· ${rateLimit.retryAfterSeconds} СЃРµРє.`
+        error: `Слишком много запросов. Повторите через ${rateLimit.retryAfterSeconds} сек.`
       });
       return;
     }
@@ -2512,17 +2512,17 @@ export const createApp = () => {
     if (includeHidden) {
       const { token } = getRequestAuthToken(req);
       if (!token) {
-        res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
+        res.status(403).json({ error: 'Доступ запрещен' });
         return;
       }
       try {
         const payload = verifyToken(token);
         if (!hasAdminRole(payload.role)) {
-          res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
+          res.status(403).json({ error: 'Доступ запрещен' });
           return;
         }
       } catch {
-        res.status(403).json({ error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ' });
+        res.status(403).json({ error: 'Доступ запрещен' });
         return;
       }
     }
@@ -2530,12 +2530,12 @@ export const createApp = () => {
     findProductById(id)
       .then((item) => {
         if (!item || (item.is_hidden && !includeHidden)) {
-          res.status(404).json({ error: 'РўРѕРІР°СЂ РЅРµ РЅР°Р№РґРµРЅ' });
+          res.status(404).json({ error: 'Товар не найден' });
           return;
         }
         res.json(mapProduct(item));
       })
-      .catch(() => res.status(500).json({ error: 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С‚РѕРІР°СЂ' }));
+      .catch(() => res.status(500).json({ error: 'Не удалось загрузить товар' }));
   });
 
   app.post('/api/products', authenticate, requireAdmin, upload.array('images', 5), async (req, res) => {

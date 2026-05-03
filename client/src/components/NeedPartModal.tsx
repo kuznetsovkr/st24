@@ -10,9 +10,9 @@ import { formatPhone } from '../utils/formatPhone.ts';
 const isCaptchaValidationError = (value: string) => {
   const normalized = value.toLowerCase();
   return (
-    normalized.includes('РєР°РїС‡') ||
+    normalized.includes('капч') ||
     normalized.includes('captcha') ||
-    normalized.includes('РїСЂРѕРІРµСЂРє')
+    normalized.includes('проверк')
   );
 };
 
@@ -33,7 +33,7 @@ const NeedPartModal = () => {
   const handleCaptchaTokenChange = useCallback((token: string | null) => {
     setCaptchaToken(token);
     if (token) {
-      setError((prev) => (prev === 'РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ РІС‹ РЅРµ СЂРѕР±РѕС‚.' ? null : prev));
+      setError((prev) => (prev === 'Подтвердите, что вы не робот.' ? null : prev));
     }
   }, []);
 
@@ -61,15 +61,15 @@ const NeedPartModal = () => {
     setError(null);
 
     if (!fullName.trim() || !phone.trim()) {
-      setError('Р—Р°РїРѕР»РЅРёС‚Рµ Р¤РРћ Рё РЅРѕРјРµСЂ С‚РµР»РµС„РѕРЅР°.');
+      setError('Заполните ФИО и номер телефона.');
       return;
     }
     if (!agreed) {
-      setError('РќСѓР¶РЅРѕ СЃРѕРіР»Р°СЃРёС‚СЊСЃСЏ СЃ СѓСЃР»РѕРІРёСЏРјРё Рё РїРѕР»РёС‚РёРєРѕР№.');
+      setError('Нужно согласиться с условиями и политикой.');
       return;
     }
     if (turnstileSiteKey && !captchaToken) {
-      setError('РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ РІС‹ РЅРµ СЂРѕР±РѕС‚.');
+      setError('Подтвердите, что вы не робот.');
       return;
     }
 
@@ -91,7 +91,7 @@ const NeedPartModal = () => {
           setCaptchaResetKey((prev) => prev + 1);
         }
       } else {
-        setError('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ.');
+        setError('Не удалось отправить заявку.');
       }
     } finally {
       setIsSubmitting(false);
@@ -103,10 +103,10 @@ const NeedPartModal = () => {
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <p className="eyebrow">РќСѓР¶РЅР° РґРµС‚Р°Р»СЊ</p>
-            <h3>Р—Р°РїСЂРѕСЃ РїРѕ С‚РѕРІР°СЂСѓ</h3>
+            <p className="eyebrow">Нужна деталь</p>
+            <h3>Запрос по товару</h3>
           </div>
-          <button className="icon-button" aria-label="Р—Р°РєСЂС‹С‚СЊ" onClick={closeNeedPartModal}>
+          <button className="icon-button" aria-label="Закрыть" onClick={closeNeedPartModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="17"
@@ -138,27 +138,27 @@ const NeedPartModal = () => {
                 />
               </svg>
             </div>
-            <p className="status-text need-part-success-text">Р—Р°СЏРІРєР° РѕС‚РїСЂР°РІР»РµРЅР°. РњС‹ СЃРІСЏР¶РµРјСЃСЏ СЃ РІР°РјРё.</p>
+            <p className="status-text need-part-success-text">Заявка отправлена. Мы свяжемся с вами.</p>
           </div>
         ) : (
           <>
             <p className="muted">
-              РўРѕРІР°СЂ: {product.name}
-              {product.sku ? ` В· SKU ${product.sku}` : ''}
+              Товар: {product.name}
+              {product.sku ? ` · SKU ${product.sku}` : ''}
             </p>
             <form className="stacked-form" onSubmit={handleSubmit}>
               <label className="field">
-                <span>Р¤РРћ</span>
+                <span>ФИО</span>
                 <input
                   type="text"
                   value={fullName}
                   onChange={(event) => setFullName(event.target.value)}
-                  placeholder="РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡"
+                  placeholder="Иванов Иван Иванович"
                   required
                 />
               </label>
               <label className="field">
-                <span>РўРµР»РµС„РѕРЅ</span>
+                <span>Телефон</span>
                 <input
                   type="tel"
                   value={phone}
@@ -186,10 +186,10 @@ const NeedPartModal = () => {
               {error && <p className="status-text status-text--error">{error}</p>}
               <div className="modal-actions">
                 <button className="primary-button" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'РћС‚РїСЂР°РІР»СЏРµРј...' : 'РћС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ'}
+                  {isSubmitting ? 'Отправляем...' : 'Отправить заявку'}
                 </button>
                 <button type="button" className="ghost-button" onClick={closeNeedPartModal}>
-                  РћС‚РјРµРЅРёС‚СЊ
+                  Отменить
                 </button>
               </div>
             </form>

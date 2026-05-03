@@ -8,9 +8,9 @@ import { SITE_URL, usePageSeo } from '../utils/usePageSeo.ts';
 const isCaptchaValidationError = (value: string) => {
   const normalized = value.toLowerCase();
   return (
-    normalized.includes('РєР°РїС‡') ||
+    normalized.includes('капч') ||
     normalized.includes('captcha') ||
-    normalized.includes('РїСЂРѕРІРµСЂРє')
+    normalized.includes('проверк')
   );
 };
 
@@ -36,7 +36,7 @@ const B2BPage = () => {
         {
           '@type': 'ListItem',
           position: 1,
-          name: 'Р“Р»Р°РІРЅР°СЏ',
+          name: 'Главная',
           item: `${SITE_URL}/`
         },
         {
@@ -51,8 +51,8 @@ const B2BPage = () => {
   );
 
   usePageSeo(
-    'Р—Р°РїСЂРѕСЃ РґР»СЏ СЋСЂРёРґРёС‡РµСЃРєРёС… Р»РёС† | РЎРў-24',
-    'Р—Р°РїРѕР»РЅРёС‚Рµ С„РѕСЂРјСѓ B2B-Р·Р°РїСЂРѕСЃР° РІ РЎРў-24, С‡С‚РѕР±С‹ РїРѕР»СѓС‡РёС‚СЊ РєРѕРјРјРµСЂС‡РµСЃРєРѕРµ РїСЂРµРґР»РѕР¶РµРЅРёРµ РЅР° Р·Р°РїС‡Р°СЃС‚Рё РґР»СЏ С‚РµС…РЅРёРєРё Karcher.',
+    'Запрос для юридических лиц | СТ-24',
+    'Заполните форму B2B-запроса в СТ-24, чтобы получить коммерческое предложение на запчасти для техники Karcher.',
     {
       jsonLd: breadcrumbJsonLd
     }
@@ -61,7 +61,7 @@ const B2BPage = () => {
   const handleCaptchaTokenChange = useCallback((token: string | null) => {
     setCaptchaToken(token);
     if (token) {
-      setError((prev) => (prev === 'РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ РІС‹ РЅРµ СЂРѕР±РѕС‚.' ? '' : prev));
+      setError((prev) => (prev === 'Подтвердите, что вы не робот.' ? '' : prev));
     }
   }, []);
 
@@ -86,22 +86,22 @@ const B2BPage = () => {
     setIsSubmitted(false);
 
     if (!companyName.trim()) {
-      setError('РЈРєР°Р¶РёС‚Рµ Р¤РРћ РёР»Рё РЅР°Р·РІР°РЅРёРµ РєРѕРјРїР°РЅРёРё.');
+      setError('Укажите ФИО или название компании.');
       return;
     }
 
     if (!phone.trim()) {
-      setError('РЈРєР°Р¶РёС‚Рµ С‚РµР»РµС„РѕРЅ РґР»СЏ СЃРІСЏР·Рё.');
+      setError('Укажите телефон для связи.');
       return;
     }
 
     if (!agreed) {
-      setError('РќСѓР¶РЅРѕ РїРѕРґС‚РІРµСЂРґРёС‚СЊ СЃРѕРіР»Р°СЃРёРµ СЃ СѓСЃР»РѕРІРёСЏРјРё Рё РїРѕР»РёС‚РёРєРѕР№.');
+      setError('Нужно подтвердить согласие с условиями и политикой.');
       return;
     }
 
     if (turnstileSiteKey && !captchaToken) {
-      setError('РџРѕРґС‚РІРµСЂРґРёС‚Рµ, С‡С‚Рѕ РІС‹ РЅРµ СЂРѕР±РѕС‚.');
+      setError('Подтвердите, что вы не робот.');
       return;
     }
 
@@ -139,7 +139,7 @@ const B2BPage = () => {
           setCaptchaResetKey((prev) => prev + 1);
         }
       } else {
-        setError('РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ Р·Р°СЏРІРєСѓ.');
+        setError('Не удалось отправить заявку.');
       }
     } finally {
       setIsSubmitting(false);
@@ -150,9 +150,9 @@ const B2BPage = () => {
     <div className="page">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Р”Р»СЏ СЋСЂРёРґРёС‡РµСЃРєРёС… Р»РёС†</p>
-          <h1>B2B-Р·Р°СЏРІРєР°</h1>
-          <p className="muted">РћСЃС‚Р°РІСЊС‚Рµ РґР°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё, Рё РјС‹ РїРѕРґРіРѕС‚РѕРІРёРј РїСЂРµРґР»РѕР¶РµРЅРёРµ.</p>
+          <p className="eyebrow">Для юридических лиц</p>
+          <h1>B2B-заявка</h1>
+          <p className="muted">Оставьте данные компании, и мы подготовим предложение.</p>
         </div>
       </header>
 
@@ -170,35 +170,35 @@ const B2BPage = () => {
                 />
               </svg>
             </div>
-            <p className="status-text need-part-success-text">Р—Р°СЏРІРєР° РѕС‚РїСЂР°РІР»РµРЅР°. РњС‹ СЃРІСЏР¶РµРјСЃСЏ СЃ РІР°РјРё.</p>
+            <p className="status-text need-part-success-text">Заявка отправлена. Мы свяжемся с вами.</p>
             <button type="button" className="ghost-button" onClick={resetForm}>
-              Р—Р°РїРѕР»РЅРёС‚СЊ РЅРѕРІСѓСЋ Р·Р°СЏРІРєСѓ
+              Заполнить новую заявку
             </button>
           </div>
         ) : (
           <form className="stacked-form" onSubmit={handleSubmit}>
             <div className="form-grid">
               <label className="field">
-                <span>Р¤РРћ РёР»Рё РЅР°Р·РІР°РЅРёРµ РєРѕРјРїР°РЅРёРё</span>
+                <span>ФИО или название компании</span>
                 <input
                   type="text"
                   value={companyName}
                   onChange={(event) => setCompanyName(event.target.value)}
-                  placeholder="РћРћРћ РџСЂРёРјРµСЂ / РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡"
+                  placeholder="ООО Пример / Иванов Иван Иванович"
                   required
                 />
               </label>
               <label className="field">
-                <span>РљРѕРЅС‚Р°РєС‚РЅРѕРµ Р»РёС†Рѕ</span>
+                <span>Контактное лицо</span>
                 <input
                   type="text"
                   value={contactPerson}
                   onChange={(event) => setContactPerson(event.target.value)}
-                  placeholder="РРјСЏ РјРµРЅРµРґР¶РµСЂР°"
+                  placeholder="Имя менеджера"
                 />
               </label>
               <label className="field">
-                <span>РўРµР»РµС„РѕРЅ</span>
+                <span>Телефон</span>
                 <input
                   type="tel"
                   value={phone}
@@ -219,7 +219,7 @@ const B2BPage = () => {
             </div>
 
             <label className="field">
-              <span>РљР°СЂС‚РѕС‡РєР° РїСЂРµРґРїСЂРёСЏС‚РёСЏ (С„Р°Р№Р»)</span>
+              <span>Карточка предприятия (файл)</span>
               <input
                 type="file"
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
@@ -229,17 +229,17 @@ const B2BPage = () => {
                 }}
               />
               <span className="form-help">
-                PDF, DOC, DOCX, XLS, XLSX, JPG, PNG. РњР°РєСЃРёРјР°Р»СЊРЅС‹Р№ СЂР°Р·РјРµСЂ: 10 РњР‘.
+                PDF, DOC, DOCX, XLS, XLSX, JPG, PNG. Максимальный размер: 10 МБ.
               </span>
             </label>
 
             <label className="field">
-              <span>РљРѕРјРјРµРЅС‚Р°СЂРёР№</span>
+              <span>Комментарий</span>
               <textarea
                 rows={4}
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
-                placeholder="РЈС‚РѕС‡РЅРµРЅРёСЏ РїРѕ Р·Р°СЏРІРєРµ"
+                placeholder="Уточнения по заявке"
               />
             </label>
 
@@ -265,7 +265,7 @@ const B2BPage = () => {
 
             <div className="button-row">
               <button className="primary-button" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'РћС‚РїСЂР°РІР»СЏРµРј...' : 'РћС‚РїСЂР°РІРёС‚СЊ Р·Р°РїСЂРѕСЃ'}
+                {isSubmitting ? 'Отправляем...' : 'Отправить запрос'}
               </button>
             </div>
           </form>
