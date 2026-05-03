@@ -1041,6 +1041,61 @@ h3 {
   font-size: 14px;
 }
 
+.legal-doc-meta {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.legal-doc-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+}
+
+.legal-doc-content {
+  margin-top: 20px;
+  display: grid;
+  gap: 20px;
+}
+
+.legal-doc-section {
+  display: grid;
+  gap: 10px;
+}
+
+.legal-doc-section h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.legal-doc-section p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.legal-doc-bullets {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.legal-doc-bullets li {
+  line-height: 1.5;
+}
+
 .legal-doc-viewer {
   width: 100%;
   border: 1px solid var(--border);
@@ -3302,6 +3357,10 @@ input[type='file'] {
 @media (max-width: 767px) {
   .legal-doc-frame {
     min-height: 540px;
+  }
+
+  .legal-doc-section h2 {
+    font-size: 18px;
   }
 }
 

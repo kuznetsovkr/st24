@@ -165,6 +165,11 @@ export type ShippingEstimate = {
   quoteToken: string;
 };
 
+export type PrivacyPolicyMeta = {
+  version: string;
+  effectiveDate: string;
+};
+
 export type ProductsPage = {
   items: Product[];
   total: number;
@@ -265,6 +270,10 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
     throw new Error(text || 'Не удалось выполнить запрос');
   }
   return (await response.json()) as T;
+};
+
+export const fetchPrivacyPolicyMeta = async () => {
+  return fetchJson<PrivacyPolicyMeta>(`${API_BASE}/api/legal/privacy-policy`);
 };
 
 export const fetchCategories = async () => {

@@ -1507,6 +1507,13 @@ export const createApp = () => {
     res.json({ status: 'ok' });
   });
 
+  app.get('/api/legal/privacy-policy', (_req: Request, res: Response) => {
+    res.json({
+      version: PRIVACY_POLICY_VERSION,
+      effectiveDate: PRIVACY_POLICY_VERSION
+    });
+  });
+
   app.get('/api/sitemaps/products.xml', async (_req: Request, res: Response) => {
     try {
       const products = await listAllVisibleProducts();
