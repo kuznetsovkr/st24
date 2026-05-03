@@ -25,6 +25,7 @@ const ProductPage = lazy(() => import('./pages/Product.tsx'));
 const SearchPage = lazy(() => import('./pages/Search.tsx'));
 const PrivacyPage = lazy(() => import('./pages/Privacy.tsx'));
 const TermsPage = lazy(() => import('./pages/Terms.tsx'));
+const ConsentPage = lazy(() => import('./pages/Consent.tsx'));
 
 const RouteLoader = () => (
   <div className="page">
@@ -54,6 +55,7 @@ const App = () => (
                 <Route path="/b2b" element={<B2BPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+                <Route path="/consent" element={<ConsentPage />} />
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/admin" element={<AdminPage />} />
                 <Route path="*" element={<NotFoundPage />} />
