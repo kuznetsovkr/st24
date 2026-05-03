@@ -120,6 +120,7 @@ const CatalogNeedPartModal = ({ open, onClose, categoryName }: CatalogNeedPartMo
     payload.append('fullName', fullName.trim());
     payload.append('phone', phone.trim());
     payload.append('productQuery', productQuery.trim());
+    payload.append('privacyConsent', 'true');
     if (categoryName?.trim()) {
       payload.append('categoryName', categoryName.trim());
     }

@@ -17,6 +17,11 @@ export type OrderRow = {
   payment_id: string | null;
   payment_status: string | null;
   payment_confirmed_at: string | null;
+  privacy_consent_at: string | null;
+  privacy_policy_version: string | null;
+  privacy_consent_source: string | null;
+  privacy_consent_ip: string | null;
+  privacy_consent_user_agent: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -60,11 +65,16 @@ type CreateOrderInput = {
   pickupPoint: string | null;
   deliveryCostCents: number;
   totalCents: number;
+  privacyConsentAt: string;
+  privacyPolicyVersion: string;
+  privacyConsentSource: string;
+  privacyConsentIp: string | null;
+  privacyConsentUserAgent: string | null;
   items: OrderItemInput[];
 };
 
 const ORDER_SELECT_FIELDS = `
-  id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+  id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, privacy_consent_at, privacy_policy_version, privacy_consent_source, privacy_consent_ip, privacy_consent_user_agent, created_at, updated_at
 `;
 
 type StockItem = {
@@ -186,9 +196,24 @@ export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
       const id = randomUUID();
       const orderResult = await client.query(
         `
-          INSERT INTO orders (id, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
+          INSERT INTO orders (
+            id,
+            user_id,
+            status,
+            full_name,
+            phone,
+            email,
+            pickup_point,
+            delivery_cost_cents,
+            total_cents,
+            privacy_consent_at,
+            privacy_policy_version,
+            privacy_consent_source,
+            privacy_consent_ip,
+            privacy_consent_user_agent
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING ${ORDER_SELECT_FIELDS};
         `,
         [
           id,
@@ -199,7 +224,12 @@ export const createOrder = async (input: CreateOrderInput): Promise<OrderRow> =>
           input.email,
           input.pickupPoint,
           input.deliveryCostCents,
-          input.totalCents
+          input.totalCents,
+          input.privacyConsentAt,
+          input.privacyPolicyVersion,
+          input.privacyConsentSource,
+          input.privacyConsentIp,
+          input.privacyConsentUserAgent
         ]
       );
 
@@ -238,7 +268,7 @@ export const findOrderByIdForUser = async (
 ): Promise<OrderRow | null> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+      SELECT ${ORDER_SELECT_FIELDS}
       FROM orders
       WHERE id = $1 AND user_id = $2;
     `,
@@ -251,7 +281,7 @@ export const findOrderByIdForUser = async (
 export const listOrdersByUser = async (userId: string): Promise<OrderRow[]> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+      SELECT ${ORDER_SELECT_FIELDS}
       FROM orders
       WHERE user_id = $1
       ORDER BY created_at DESC;
@@ -265,7 +295,7 @@ export const listOrdersByUser = async (userId: string): Promise<OrderRow[]> => {
 export const findOrderById = async (id: string): Promise<OrderRow | null> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+      SELECT ${ORDER_SELECT_FIELDS}
       FROM orders
       WHERE id = $1;
     `,
@@ -278,7 +308,7 @@ export const findOrderById = async (id: string): Promise<OrderRow | null> => {
 export const findOrderByPaymentId = async (paymentId: string): Promise<OrderRow | null> => {
   const result = await query(
     `
-      SELECT id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at
+      SELECT ${ORDER_SELECT_FIELDS}
       FROM orders
       WHERE payment_id = $1
       ORDER BY updated_at DESC
@@ -391,7 +421,7 @@ export const updateOrderPayment = async (
           payment_status = $4,
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
+      RETURNING ${ORDER_SELECT_FIELDS};
     `,
     [id, input.provider, input.paymentId, input.paymentStatus]
   );
@@ -409,7 +439,7 @@ export const updateOrderPaymentStatusById = async (
       SET payment_status = $2,
           updated_at = NOW()
       WHERE id = $1
-      RETURNING id, order_number, user_id, status, full_name, phone, email, pickup_point, delivery_cost_cents, total_cents, payment_provider, payment_id, payment_status, payment_confirmed_at, created_at, updated_at;
+      RETURNING ${ORDER_SELECT_FIELDS};
     `,
     [id, paymentStatus]
   );

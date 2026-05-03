@@ -79,6 +79,7 @@ const NeedPartModal = () => {
         productId: product.id,
         fullName: fullName.trim(),
         phone: phone.trim(),
+        privacyConsent: true,
         captchaToken: captchaToken ?? undefined
       });
       setIsSubmitted(true);

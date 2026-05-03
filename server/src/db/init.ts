@@ -463,6 +463,11 @@ export const initDb = async () => {
       payment_id TEXT,
       payment_status TEXT,
       payment_confirmed_at TIMESTAMPTZ,
+      privacy_consent_at TIMESTAMPTZ,
+      privacy_policy_version TEXT,
+      privacy_consent_source TEXT,
+      privacy_consent_ip TEXT,
+      privacy_consent_user_agent TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -491,6 +496,31 @@ export const initDb = async () => {
   await query(`
     ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS privacy_consent_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS privacy_policy_version TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS privacy_consent_source TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS privacy_consent_ip TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS privacy_consent_user_agent TEXT;
   `);
 
   await query(`

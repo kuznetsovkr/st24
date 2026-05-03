@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import TurnstileWidget from '../components/TurnstileWidget.tsx';
 import { requestB2BInquiry } from '../api';
 import { formatPhone } from '../utils/formatPhone.ts';
@@ -20,6 +21,7 @@ const B2BPage = () => {
   const [email, setEmail] = useState('');
   const [comment, setComment] = useState('');
   const [enterpriseCard, setEnterpriseCard] = useState<File | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -70,6 +72,7 @@ const B2BPage = () => {
     setEmail('');
     setComment('');
     setEnterpriseCard(null);
+    setAgreed(false);
     setCaptchaToken(null);
     setCaptchaResetKey((prev) => prev + 1);
     setError('');
@@ -92,6 +95,11 @@ const B2BPage = () => {
       return;
     }
 
+    if (!agreed) {
+      setError('Нужно подтвердить согласие с условиями и политикой.');
+      return;
+    }
+
     if (turnstileSiteKey && !captchaToken) {
       setError('Подтвердите, что вы не робот.');
       return;
@@ -103,6 +111,7 @@ const B2BPage = () => {
     payload.append('phone', phone.trim());
     payload.append('email', email.trim());
     payload.append('comment', comment.trim());
+    payload.append('privacyConsent', 'true');
     if (captchaToken) {
       payload.append('captchaToken', captchaToken);
     }
@@ -232,6 +241,18 @@ const B2BPage = () => {
                 onChange={(event) => setComment(event.target.value)}
                 placeholder="Уточнения по заявке"
               />
+            </label>
+
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(event) => setAgreed(event.target.checked)}
+              />
+              <span>
+                Согласен с <Link to="/terms" target="_blank" rel="noopener noreferrer">условиями оферты</Link> и{' '}
+                <Link to="/privacy" target="_blank" rel="noopener noreferrer">политикой обработки персональных данных</Link>.
+              </span>
             </label>
 
             {turnstileSiteKey && (

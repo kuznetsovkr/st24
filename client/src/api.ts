@@ -599,6 +599,7 @@ export const createOrder = async (payload: {
   pickupPointCode: string;
   deliveryProvider: DeliveryProviderKey;
   deliveryQuoteToken: string;
+  privacyConsent: boolean;
   deliveryTariffCode?: number;
   destinationCode?: string;
   destinationCity?: string;
@@ -665,6 +666,7 @@ export const requestNeedPart = async (payload: {
   productId: string;
   fullName: string;
   phone: string;
+  privacyConsent: boolean;
   captchaToken?: string;
 }) => {
   return fetchJson<{ ok: boolean }>(`${API_BASE}/api/requests/need-part`, {

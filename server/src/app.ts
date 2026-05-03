@@ -187,6 +187,9 @@ const B2B_CARD_ALLOWED_EXTENSIONS = new Set([
 ]);
 const B2B_UPLOAD_TMP_DIR = path.resolve(process.cwd(), 'tmp', 'b2b-requests');
 const NEED_PART_UPLOAD_TMP_DIR = path.resolve(process.cwd(), 'tmp', 'need-part-requests');
+const DEFAULT_PRIVACY_POLICY_VERSION = '2026-05-03';
+const PRIVACY_POLICY_VERSION =
+  (process.env.PRIVACY_POLICY_VERSION ?? '').trim() || DEFAULT_PRIVACY_POLICY_VERSION;
 
 type RawBodyRequest = Request & {
   rawBody?: string;
@@ -417,6 +420,51 @@ const getRequestIp = (req: Request) => {
   const fromExpress = typeof req.ip === 'string' ? req.ip : undefined;
   return normalizeIp(fromExpress ?? req.socket.remoteAddress ?? undefined);
 };
+
+const parseBooleanLike = (value: unknown) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+};
+
+type PrivacyConsentSource = 'checkout' | 'b2b' | 'need_part' | 'need_part_catalog';
+
+type PrivacyConsentEvidence = {
+  acceptedAt: string;
+  policyVersion: string;
+  source: PrivacyConsentSource;
+  requestIp: string | null;
+  userAgent: string | null;
+};
+
+const getRequestUserAgent = (req: Request) => {
+  const value = req.header('user-agent');
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.slice(0, 512);
+};
+
+const buildPrivacyConsentEvidence = (
+  req: Request,
+  source: PrivacyConsentSource
+): PrivacyConsentEvidence => ({
+  acceptedAt: new Date().toISOString(),
+  policyVersion: PRIVACY_POLICY_VERSION,
+  source,
+  requestIp: getRequestIp(req) ?? null,
+  userAgent: getRequestUserAgent(req)
+});
 
 const parsePositiveEnvInt = (value: string | undefined, fallback: number) => {
   if (!value) {
@@ -2862,6 +2910,7 @@ export const createApp = () => {
     const deliveryQuoteToken =
       typeof req.body.deliveryQuoteToken === 'string' ? req.body.deliveryQuoteToken.trim() : '';
     const deliveryTariffCode = parseCdekTariffCode(req.body.deliveryTariffCode);
+    const privacyConsentAccepted = parseBooleanLike(req.body?.privacyConsent);
     const errors: string[] = [];
     if (!fullName) {
       errors.push('ФИО обязательно');
@@ -2886,6 +2935,9 @@ export const createApp = () => {
     }
     if (deliveryProvider && deliveryProvider !== 'cdek' && !destinationCode) {
       errors.push('Код пункта назначения обязателен');
+    }
+    if (!privacyConsentAccepted) {
+      errors.push('Privacy consent is required');
     }
     if (errors.length > 0) {
       res.status(400).json({ errors });
@@ -2936,7 +2988,7 @@ export const createApp = () => {
           const requestDestinationUpper = requestDestination.toUpperCase();
           let isCdekDestinationMatched = quoteDestinationUpper === requestDestinationUpper;
           const quoteLooksLikeCityCode = /^\d+$/.test(quoteDestination);
-          const requestLooksLikeOfficeCode = /[A-Za-zА-Яа-я]/.test(requestDestination);
+          const requestLooksLikeOfficeCode = /[^\d]/.test(requestDestination);
 
           // Typical CDEK widget flow: quote token keeps city code (e.g. "869"),
           // checkout request sends office code (e.g. "BRZ9").
@@ -2997,6 +3049,7 @@ export const createApp = () => {
         0
       );
       const totalCents = itemsTotalCents + deliveryCostCents;
+      const privacyConsent = buildPrivacyConsentEvidence(req, 'checkout');
       orderAmountCents = totalCents;
       const order = await createOrder({
         userId,
@@ -3006,6 +3059,11 @@ export const createApp = () => {
         pickupPoint,
         deliveryCostCents,
         totalCents,
+        privacyConsentAt: privacyConsent.acceptedAt,
+        privacyPolicyVersion: privacyConsent.policyVersion,
+        privacyConsentSource: privacyConsent.source,
+        privacyConsentIp: privacyConsent.requestIp,
+        privacyConsentUserAgent: privacyConsent.userAgent,
         items: cartItems.map((item) => ({
           productId: item.product_id,
           name: item.name,
@@ -3507,6 +3565,7 @@ export const createApp = () => {
       const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
       const comment = typeof req.body.comment === 'string' ? req.body.comment.trim() : '';
       const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+      const privacyConsentAccepted = parseBooleanLike(req.body?.privacyConsent);
       const file = req.file as Express.Multer.File | undefined;
 
       const errors: string[] = [];
@@ -3518,6 +3577,10 @@ export const createApp = () => {
       }
       if (email && !isValidEmail(email)) {
         errors.push('Некорректный email');
+      }
+
+      if (!privacyConsentAccepted) {
+        errors.push('Privacy consent is required');
       }
 
       if (errors.length > 0) {
@@ -3549,6 +3612,7 @@ export const createApp = () => {
       ].filter(Boolean);
 
       let leadRequestId: string | null = null;
+      const privacyConsent = buildPrivacyConsentEvidence(req, 'b2b');
 
       try {
         const lead = await createLeadRequest({
@@ -3561,6 +3625,7 @@ export const createApp = () => {
             contactPerson: contactPerson || null,
             comment: comment || null,
             requestIp: requestIp ?? null,
+            privacyConsent,
             enterpriseCard:
               file && file.originalname
                 ? {
@@ -3609,6 +3674,7 @@ export const createApp = () => {
     const productId =
       typeof req.body.productId === 'string' ? req.body.productId.trim() : '';
     const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+    const privacyConsentAccepted = parseBooleanLike(req.body?.privacyConsent);
     const requestIp = getRequestIp(req);
 
     const errors: string[] = [];
@@ -3620,6 +3686,10 @@ export const createApp = () => {
     }
     if (!productId || !isUuid(productId)) {
       errors.push('Некорректный товар');
+    }
+
+    if (!privacyConsentAccepted) {
+      errors.push('Privacy consent is required');
     }
 
     if (errors.length > 0) {
@@ -3668,6 +3738,7 @@ export const createApp = () => {
     ].filter(Boolean);
 
     let leadRequestId: string | null = null;
+    const privacyConsent = buildPrivacyConsentEvidence(req, 'need_part');
 
     try {
       const lead = await createLeadRequest({
@@ -3679,7 +3750,8 @@ export const createApp = () => {
           productName: product.name,
           productSku: product.sku,
           productStockSnapshot: product.stock,
-          requestIp: requestIp ?? null
+          requestIp: requestIp ?? null,
+          privacyConsent
         }
       });
       leadRequestId = lead.id;
@@ -3733,6 +3805,7 @@ export const createApp = () => {
       const categoryName =
         typeof req.body.categoryName === 'string' ? req.body.categoryName.trim() : '';
       const captchaToken = typeof req.body.captchaToken === 'string' ? req.body.captchaToken : '';
+      const privacyConsentAccepted = parseBooleanLike(req.body?.privacyConsent);
 
       const errors: string[] = [];
       if (!fullName) {
@@ -3746,6 +3819,10 @@ export const createApp = () => {
       }
       if (files.length > 3) {
         errors.push('Можно загрузить не более 3 фото');
+      }
+
+      if (!privacyConsentAccepted) {
+        errors.push('Privacy consent is required');
       }
 
       if (errors.length > 0) {
@@ -3791,6 +3868,7 @@ export const createApp = () => {
       ].filter(Boolean);
 
       let leadRequestId: string | null = null;
+      const privacyConsent = buildPrivacyConsentEvidence(req, 'need_part_catalog');
 
       try {
         const lead = await createLeadRequest({
@@ -3801,6 +3879,7 @@ export const createApp = () => {
             categoryName: categoryName || null,
             productQuery,
             requestIp: requestIp ?? null,
+            privacyConsent,
             imagesCount: files.length,
             images: files.map((file) => ({
               fileName: file.originalname || null,

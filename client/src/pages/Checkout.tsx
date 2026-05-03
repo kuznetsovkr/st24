@@ -566,6 +566,7 @@ const CheckoutPage = () => {
         pickupPointCode,
         deliveryProvider,
         deliveryQuoteToken,
+        privacyConsent: true,
         deliveryTariffCode:
           deliveryProvider === 'cdek' ? deliveryTariffCode ?? undefined : undefined,
         destinationCode: deliveryProvider === 'cdek' ? undefined : pickupPointCode,
