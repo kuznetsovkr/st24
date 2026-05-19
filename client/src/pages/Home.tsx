@@ -20,6 +20,7 @@ const TOUCH_DEVICE_QUERY = '(hover: none) and (pointer: coarse)';
 const MOBILE_BANNER_MEDIA_QUERY = '(max-width: 1024px), (hover: none) and (pointer: coarse)';
 const FEATURED_PRODUCTS_CACHE_KEY = 'home_featured_products_v1';
 const FEATURED_PRODUCTS_CACHE_MAX_ITEMS = 40;
+const HOME_BANNER_CACHE_KEY = 'home_banner_v1';
 
 const readCachedFeaturedProducts = (): Product[] => {
   if (typeof window === 'undefined') {
@@ -49,6 +50,52 @@ const writeCachedFeaturedProducts = (items: Product[]) => {
   try {
     const limitedItems = items.slice(0, FEATURED_PRODUCTS_CACHE_MAX_ITEMS);
     window.localStorage.setItem(FEATURED_PRODUCTS_CACHE_KEY, JSON.stringify(limitedItems));
+  } catch {
+    // Ignore storage write errors (private mode, quota, etc.).
+  }
+};
+
+const isNullableString = (value: unknown): value is string | null =>
+  typeof value === 'string' || value === null;
+
+const readCachedHomeBanner = (): HomeBanner | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(HOME_BANNER_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<HomeBanner>;
+    if (
+      parsed?.key !== 'home' ||
+      !isNullableString(parsed.desktopImage) ||
+      !isNullableString(parsed.mobileImage)
+    ) {
+      return null;
+    }
+
+    return {
+      key: 'home',
+      desktopImage: parsed.desktopImage,
+      mobileImage: parsed.mobileImage,
+      createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : '',
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : ''
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedHomeBanner = (banner: HomeBanner) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(HOME_BANNER_CACHE_KEY, JSON.stringify(banner));
   } catch {
     // Ignore storage write errors (private mode, quota, etc.).
   }
@@ -97,9 +144,16 @@ const HomePage = () => {
   const loopResetTimeoutRef = useRef<number | null>(null);
   const isProgrammaticScrollRef = useRef(false);
 
+  const [homeBannerState, setHomeBannerState] = useState(() => {
+    const cachedBanner = readCachedHomeBanner();
+    return {
+      banner: cachedBanner as HomeBanner | null,
+      isResolved: Boolean(cachedBanner)
+    };
+  });
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
-  const [homeBanner, setHomeBanner] = useState<HomeBanner | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const homeBanner = homeBannerState.banner;
 
   usePageSeo(
     'Купить запчасти для Karcher',
@@ -152,11 +206,18 @@ const HomePage = () => {
         if (!active) {
           return;
         }
-        setHomeBanner(banner);
+        writeCachedHomeBanner(banner);
+        setHomeBannerState({
+          banner,
+          isResolved: true
+        });
       })
       .catch(() => {
         if (active) {
-          setHomeBanner(null);
+          setHomeBannerState((prev) => ({
+            banner: prev.banner,
+            isResolved: true
+          }));
         }
       });
 
@@ -500,17 +561,22 @@ const HomePage = () => {
         </div>
       </div>
 
-      <picture className="home-banner">
-        <source
-          media={MOBILE_BANNER_MEDIA_QUERY}
-          srcSet={homeBanner?.mobileImage ?? FALLBACK_MOBILE_BANNER}
-        />
-        <img
-          src={homeBanner?.desktopImage ?? FALLBACK_DESKTOP_BANNER}
-          alt=""
-          aria-hidden="true"
-        />
-      </picture>
+      {homeBannerState.isResolved ? (
+        <picture className="home-banner">
+          <source
+            media={MOBILE_BANNER_MEDIA_QUERY}
+            srcSet={homeBanner?.mobileImage ?? FALLBACK_MOBILE_BANNER}
+          />
+          <img
+            src={homeBanner?.desktopImage ?? FALLBACK_DESKTOP_BANNER}
+            alt=""
+            aria-hidden="true"
+            loading="eager"
+          />
+        </picture>
+      ) : (
+        <div className="home-banner home-banner--placeholder" aria-hidden="true" />
+      )}
 
       <div className="slider-controls home-slider-controls">
         <a
