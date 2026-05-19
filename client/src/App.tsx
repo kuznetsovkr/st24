@@ -8,6 +8,7 @@ import { UIProvider } from './context/UIContext.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import NeedPartModal from './components/NeedPartModal.tsx';
 import RouteErrorBoundary from './components/RouteErrorBoundary.tsx';
+import HomePage from './pages/Home.tsx';
 
 const ROUTE_CHUNK_TIMEOUT_MS = 15000;
 
@@ -42,7 +43,6 @@ const B2BPage = lazyRoute(() => import('./pages/B2B.tsx'));
 const CartPage = lazyRoute(() => import('./pages/Cart.tsx'));
 const CatalogPage = lazyRoute(() => import('./pages/Catalog.tsx'));
 const CategoryPage = lazyRoute(() => import('./pages/Category.tsx'));
-const HomePage = lazyRoute(() => import('./pages/Home.tsx'));
 const AccountPage = lazyRoute(() => import('./pages/Account.tsx'));
 const CheckoutPage = lazyRoute(() => import('./pages/Checkout.tsx'));
 const NotFoundPage = lazyRoute(() => import('./pages/NotFound.tsx'));
