@@ -18,6 +18,41 @@ const FEATURED_PRODUCTS_LIMIT_DESKTOP = 80;
 const FEATURED_PRODUCTS_LIMIT_TOUCH = 40;
 const TOUCH_DEVICE_QUERY = '(hover: none) and (pointer: coarse)';
 const MOBILE_BANNER_MEDIA_QUERY = '(max-width: 1024px), (hover: none) and (pointer: coarse)';
+const FEATURED_PRODUCTS_CACHE_KEY = 'home_featured_products_v1';
+const FEATURED_PRODUCTS_CACHE_MAX_ITEMS = 40;
+
+const readCachedFeaturedProducts = (): Product[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(FEATURED_PRODUCTS_CACHE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed as Product[];
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedFeaturedProducts = (items: Product[]) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const limitedItems = items.slice(0, FEATURED_PRODUCTS_CACHE_MAX_ITEMS);
+    window.localStorage.setItem(FEATURED_PRODUCTS_CACHE_KEY, JSON.stringify(limitedItems));
+  } catch {
+    // Ignore storage write errors (private mode, quota, etc.).
+  }
+};
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -86,11 +121,18 @@ const HomePage = () => {
         if (!active) {
           return;
         }
+        writeCachedFeaturedProducts(items);
         setFeaturedProducts(items);
         setStatus('ready');
       } catch {
         if (active) {
-          setStatus('error');
+          const cachedItems = readCachedFeaturedProducts();
+          if (cachedItems.length > 0) {
+            setFeaturedProducts(cachedItems);
+            setStatus('ready');
+          } else {
+            setStatus('error');
+          }
         }
       }
     };

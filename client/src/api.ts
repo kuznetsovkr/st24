@@ -202,6 +202,11 @@ export const API_BASE = resolveApiBase();
 const CSRF_COOKIE_NAME = 'her_csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const REQUEST_TIMEOUT_MS = 20000;
+const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
+const REQUEST_RETRY_COUNT = 2;
+const REQUEST_RETRY_DELAY_MS = 400;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const getCookieValue = (name: string) => {
   if (typeof document === 'undefined') {
@@ -272,8 +277,7 @@ const normalizeCatalogPage = (page: CatalogPageSettings): CatalogPageSettings =>
 const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const method = (options?.method ?? 'GET').toUpperCase();
   const headers = new Headers(options?.headers);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const maxAttempts = RETRYABLE_METHODS.has(method) ? REQUEST_RETRY_COUNT + 1 : 1;
 
   if (!SAFE_METHODS.has(method)) {
     const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
@@ -282,26 +286,43 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
     }
   }
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      credentials: 'include',
-      headers,
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || 'Request failed');
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers,
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Request failed');
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      const isAbortError = error instanceof DOMException && error.name === 'AbortError';
+      const isNetworkError = error instanceof TypeError;
+      const canRetry = attempt < maxAttempts && (isAbortError || isNetworkError);
+
+      if (canRetry) {
+        await wait(REQUEST_RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      if (isAbortError) {
+        throw new Error('Request timeout');
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return (await response.json()) as T;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Request timeout');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  throw new Error('Request failed');
 };
 
 export const fetchPrivacyPolicyMeta = async () => {
