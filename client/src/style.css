@@ -776,6 +776,12 @@ a {
   display: block;
 }
 
+@media (max-width: 1024px) {
+  .home-banner {
+    aspect-ratio: 4 / 3;
+  }
+}
+
 .slider-track::-webkit-scrollbar {
   display: none;
 }

@@ -14,6 +14,10 @@ const PROGRAMMATIC_SCROLL_LOCK_MS = 450;
 const LOOP_RESET_DELAY_MS = 520;
 const FALLBACK_DESKTOP_BANNER = '/banners/16_9.png';
 const FALLBACK_MOBILE_BANNER = '/banners/4_3.png';
+const FEATURED_PRODUCTS_LIMIT_DESKTOP = 80;
+const FEATURED_PRODUCTS_LIMIT_TOUCH = 40;
+const TOUCH_DEVICE_QUERY = '(hover: none) and (pointer: coarse)';
+const MOBILE_BANNER_MEDIA_QUERY = '(max-width: 1024px), (hover: none) and (pointer: coarse)';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -75,7 +79,10 @@ const HomePage = () => {
 
     const load = async () => {
       try {
-        const items = await fetchProducts({ featured: true, limit: 120 });
+        const isTouchDevice =
+          typeof window !== 'undefined' && window.matchMedia(TOUCH_DEVICE_QUERY).matches;
+        const limit = isTouchDevice ? FEATURED_PRODUCTS_LIMIT_TOUCH : FEATURED_PRODUCTS_LIMIT_DESKTOP;
+        const items = await fetchProducts({ featured: true, limit });
         if (!active) {
           return;
         }
@@ -453,7 +460,7 @@ const HomePage = () => {
 
       <picture className="home-banner">
         <source
-          media="(max-width: 700px)"
+          media={MOBILE_BANNER_MEDIA_QUERY}
           srcSet={homeBanner?.mobileImage ?? FALLBACK_MOBILE_BANNER}
         />
         <img

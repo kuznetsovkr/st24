@@ -201,6 +201,7 @@ const resolveApiBase = () => {
 export const API_BASE = resolveApiBase();
 const CSRF_COOKIE_NAME = 'her_csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const REQUEST_TIMEOUT_MS = 20000;
 
 const getCookieValue = (name: string) => {
   if (typeof document === 'undefined') {
@@ -271,6 +272,8 @@ const normalizeCatalogPage = (page: CatalogPageSettings): CatalogPageSettings =>
 const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const method = (options?.method ?? 'GET').toUpperCase();
   const headers = new Headers(options?.headers);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   if (!SAFE_METHODS.has(method)) {
     const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
@@ -279,16 +282,26 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
     }
   }
 
-  const response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || 'Не удалось выполнить запрос');
+  try {
+    const response = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Request failed');
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return (await response.json()) as T;
 };
 
 export const fetchPrivacyPolicyMeta = async () => {
