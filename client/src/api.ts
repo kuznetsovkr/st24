@@ -179,7 +179,26 @@ export type ProductsPage = {
   nextOffset: number | null;
 };
 
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+const normalizeApiBaseUrl = (value: string) => value.trim().replace(/\/+$/, '');
+
+const resolveApiBase = () => {
+  const envApiBase = (import.meta.env.VITE_API_URL ?? '').trim();
+  if (envApiBase) {
+    return normalizeApiBaseUrl(envApiBase);
+  }
+
+  if (import.meta.env.DEV) {
+    return 'http://localhost:4000';
+  }
+
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return normalizeApiBaseUrl(window.location.origin);
+  }
+
+  return 'http://localhost:4000';
+};
+
+export const API_BASE = resolveApiBase();
 const CSRF_COOKIE_NAME = 'her_csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
