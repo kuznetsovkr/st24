@@ -3,14 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "description": "E-commerce MVP (frontend + backend)",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "monitor"
   ],
   "scripts": {
-    "test": "echo \"No root tests\"",
+    "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "lint:fix": "npm run lint:fix --workspaces --if-present"
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "monitor:check": "npm run check --workspace monitor",
+    "monitor:summary": "npm run summary --workspace monitor"
   },
   "keywords": [],
   "author": "",

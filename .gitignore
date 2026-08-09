@@ -7,4 +7,6 @@ server/uploads
 client/node_modules
 client/dist
 .npm-cache
+.monitor-state.json*
+monitor/dist
 .DS_Store

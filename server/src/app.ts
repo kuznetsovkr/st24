@@ -158,6 +158,11 @@ import {
 } from './superAdminLogs';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
 import { createScopedRateLimiter } from './rateLimiter';
+import {
+  createLivenessReport,
+  getReadinessReport,
+  type ReadinessReport
+} from './health';
 
 const CODE_TTL_MINUTES = 5;
 const PHONE_CODE_LENGTH = 4;
@@ -1454,8 +1459,13 @@ const mapCartItem = (row: CartItemRow) => {
   };
 };
 
-export const createApp = () => {
+export type CreateAppOptions = {
+  readinessCheck?: () => Promise<ReadinessReport>;
+};
+
+export const createApp = (options: CreateAppOptions = {}) => {
   const app = express();
+  const readinessCheck = options.readinessCheck ?? getReadinessReport;
   app.set('trust proxy', TRUST_PROXY);
 
   app.use(
@@ -1491,6 +1501,7 @@ export const createApp = () => {
       next();
     },
     express.static(path.join(process.cwd(), 'uploads'), {
+      dotfiles: 'deny',
       fallthrough: false,
       index: false,
       setHeaders: (res, filePath) => {
@@ -1505,6 +1516,17 @@ export const createApp = () => {
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
+  });
+
+  app.get('/api/health/live', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(createLivenessReport());
+  });
+
+  app.get('/api/health/ready', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const report = await readinessCheck();
+    res.status(report.status === 'ok' ? 200 : 503).json(report);
   });
 
   app.get('/api/legal/privacy-policy', (_req: Request, res: Response) => {

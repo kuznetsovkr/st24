@@ -91,7 +91,7 @@
 
 ## Требования
 
-- Node.js 20+ (рекомендуется LTS).
+- Node.js 20.19+, 22.13+ или 24+; используйте LTS-ветку.
 - PostgreSQL 14+.
 - npm 10+.
 
@@ -248,3 +248,24 @@ npm run build --workspace server
 - В `server/src/app.ts` есть in-memory кэш для поиска ПВЗ и расчета доставки. После деплоя/рестарта кэш очищается.
 - Для CSV-выгрузок используется BOM (`\uFEFF`) для корректного открытия в Excel.
 - Для продакшена лучше включить `TRUST_PROXY`, корректно настроить CORS и HTTPS.
+
+## Мониторинг
+
+Backend предоставляет:
+
+- `GET /api/health/live` — liveness Node-процесса;
+- `GET /api/health/ready` — readiness PostgreSQL и локального uploads.
+
+В каталоге `monitor/` находится независимый runner для DNS, TLS, сайта, API, каталога и трёх Telegram-ботов через production proxy. Он поддерживает warning/fail/recovery алерты, ежедневную сводку, защиту от параллельных запусков и внешний dead-man heartbeat. В production heartbeat обязателен; явный opt-out предназначен только для local/staging.
+
+Быстрая локальная проверка:
+
+```bash
+npm ci --workspace monitor --include-workspace-root=false
+install -m 600 monitor/.env.example monitor/.env
+npm test --workspace monitor
+# заполнить monitor/.env, затем:
+npm run monitor:check
+```
+
+Runner необходимо размещать вне production-сервера. Полная настройка, расписание и fault-injection checklist описаны в [документации мониторинга](docs/monitoring.md).

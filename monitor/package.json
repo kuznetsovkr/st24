@@ -1,0 +1,24 @@
+{
+  "name": "her-external-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent synthetic checks for the HER storefront and Telegram integrations",
+  "type": "commonjs",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/config.test.js dist/checks.test.js dist/lock.test.js dist/state.test.js dist/telegram.test.js",
+    "check": "node dist/cli.js check",
+    "summary": "node dist/cli.js summary"
+  },
+  "dependencies": {
+    "undici": "^7.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.30",
+    "typescript": "^5.8.3"
+  }
+}
