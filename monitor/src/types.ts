@@ -13,9 +13,13 @@ export interface CheckResult {
 export interface TelegramBotConfig {
   id: 'telegram-main' | 'telegram-orders' | 'telegram-b2b';
   label: string;
-  token: string;
+  token?: string;
   expectedUsername?: string;
+  mode: TelegramBotMode;
+  expectedWebhookUrl?: string;
 }
+
+export type TelegramBotMode = 'polling' | 'webhook' | 'disabled';
 
 export interface MonitorConfig {
   siteUrl: URL;
@@ -24,6 +28,7 @@ export interface MonitorConfig {
   tlsPort: number;
   liveUrl: URL;
   readyUrl: URL;
+  notificationsUrl: URL;
   catalogUrl: URL;
   catalogMinItems: number;
   homepageMarker: string;
@@ -37,10 +42,13 @@ export interface MonitorConfig {
   failureThreshold: number;
   recoveryThreshold: number;
   telegramProxyUrl: string;
+  telegramMaxPendingUpdates: number;
   telegramBots: TelegramBotConfig[];
+  telegramCanaryChatId?: string;
   notifier: {
     token: string;
     chatId: string;
+    expectedUsername?: string;
     proxyUrl?: string;
   };
   heartbeatUrl?: URL;

@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import { logIntegrationEvent } from './integrationEvents';
 import { resilientFetch } from './httpClient';
 
@@ -38,7 +37,11 @@ const parseIntEnvInRange = (
 
 const getShopId = () => trimToUndefined(process.env.YOOKASSA_SHOP_ID);
 const getSecretKey = () => trimToUndefined(process.env.YOOKASSA_SECRET_KEY);
-const getApiBaseUrl = () => trimToUndefined(process.env.YOOKASSA_API_BASE_URL) ?? YOOKASSA_BASE_URL;
+const getApiBaseUrl = () => {
+  const value =
+    trimToUndefined(process.env.YOOKASSA_API_BASE_URL) ?? YOOKASSA_BASE_URL;
+  return value.endsWith('/') ? value.slice(0, -1) : value;
+};
 
 export const getYooKassaWebhookSecret = () =>
   trimToUndefined(process.env.YOOKASSA_WEBHOOK_SECRET);
@@ -59,6 +62,68 @@ export const getYooKassaReceiptVatCode = () =>
   parseIntEnvInRange(process.env.YOOKASSA_RECEIPT_VAT_CODE, 1, 1, 6);
 
 export const isYooKassaConfigured = () => Boolean(getShopId() && getSecretKey());
+
+export const validateYooKassaStartupConfig = () => {
+  const shopId = getShopId();
+  const secretKey = getSecretKey();
+  if (Boolean(shopId) !== Boolean(secretKey)) {
+    throw new Error(
+      'YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY must be configured together'
+    );
+  }
+  const isProduction =
+    (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+  if (!isProduction || !shopId || !secretKey) return;
+
+  let parsedApiBaseUrl: URL;
+  try {
+    parsedApiBaseUrl = new URL(getApiBaseUrl());
+  } catch {
+    throw new Error(
+      'YOOKASSA_API_BASE_URL must use the official YooKassa production endpoint'
+    );
+  }
+  if (
+    parsedApiBaseUrl.origin !== 'https://api.yookassa.ru' ||
+    parsedApiBaseUrl.pathname !== '/v3' ||
+    parsedApiBaseUrl.username ||
+    parsedApiBaseUrl.password ||
+    parsedApiBaseUrl.search ||
+    parsedApiBaseUrl.hash
+  ) {
+    throw new Error(
+      'YOOKASSA_API_BASE_URL must use the official YooKassa production endpoint'
+    );
+  }
+
+  const returnBaseUrl = getYooKassaReturnBaseUrl();
+  if (!returnBaseUrl) {
+    throw new Error(
+      'YOOKASSA_RETURN_BASE_URL is required when YooKassa is enabled in production'
+    );
+  }
+  let parsedReturnUrl: URL;
+  try {
+    parsedReturnUrl = new URL(returnBaseUrl);
+  } catch {
+    throw new Error('YOOKASSA_RETURN_BASE_URL must be a valid HTTPS origin');
+  }
+  if (
+    parsedReturnUrl.protocol !== 'https:' ||
+    parsedReturnUrl.username ||
+    parsedReturnUrl.password ||
+    parsedReturnUrl.pathname !== '/' ||
+    parsedReturnUrl.search ||
+    parsedReturnUrl.hash
+  ) {
+    throw new Error('YOOKASSA_RETURN_BASE_URL must be a valid HTTPS origin');
+  }
+  if (!isYooKassaUseOrderTotal()) {
+    throw new Error(
+      'YOOKASSA_USE_ORDER_TOTAL must be true when YooKassa is enabled in production'
+    );
+  }
+};
 
 const getAuthHeaderValue = () => {
   const shopId = getShopId();
@@ -200,6 +265,7 @@ export type YooKassaReceipt = {
 };
 
 type CreateYooKassaPaymentInput = {
+  idempotencyKey: string;
   amountCents: number;
   returnUrl: string;
   description: string;
@@ -231,7 +297,7 @@ export const createYooKassaPayment = async (
       method: 'POST',
       body: JSON.stringify(body)
     },
-    randomUUID(),
+    input.idempotencyKey,
     'create_payment'
   );
 };

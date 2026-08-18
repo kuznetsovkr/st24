@@ -4,7 +4,7 @@ import { createHttpClient, safeErrorDetail } from './http';
 import { loadEnvFile, parseConfig, parseMode } from './config';
 import { acquireMonitorLock } from './lock';
 import { renderConsoleReport, renderSummaryReport, renderTransitionReport } from './report';
-import { runChecks } from './runner';
+import { runChecks, shouldSendSuccessHeartbeat } from './runner';
 import {
   advanceState,
   emptyState,
@@ -27,7 +27,7 @@ const runMonitor = async (
     process.stderr.write(`Monitor state reset: ${safeErrorDetail(error)}\n`);
     return emptyState();
   });
-  const results = await runChecks(config);
+  const results = await runChecks(config, mode);
   process.stdout.write(`${renderConsoleReport(results)}\n`);
 
   const stateUpdate = advanceState(
@@ -73,7 +73,7 @@ const runMonitor = async (
   }
 
   await saveState(config.stateFile, stateUpdate.state);
-  if (config.heartbeatUrl) {
+  if (config.heartbeatUrl && shouldSendSuccessHeartbeat(results)) {
     const heartbeatClient = createHttpClient({
       timeoutMs: config.timeoutMs,
       maxBodyBytes: config.maxBodyBytes
@@ -89,6 +89,8 @@ const runMonitor = async (
     } finally {
       await heartbeatClient.close().catch(() => undefined);
     }
+  } else if (config.heartbeatUrl) {
+    process.stderr.write('Dead-man heartbeat skipped: Telegram notifier check failed.\n');
   }
   return results.some((result) => result.critical && result.status === 'failed') ? 1 : 0;
 };

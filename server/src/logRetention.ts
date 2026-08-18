@@ -1,4 +1,11 @@
 import { query } from './db';
+import {
+  expireDueTelegramOutboxEvents,
+  purgeDeadTelegramOutboxAttachments,
+  purgeSentTelegramOutboxEvents,
+  scrubDeadTelegramOutboxPayloads
+} from './db/telegramOutbox';
+import { getTelegramOutboxRetentionDays } from './telegramOutboxConfig';
 
 type RetentionTableConfig = {
   table: string;
@@ -99,6 +106,13 @@ const buildRetentionTables = (): RetentionTableConfig[] => [
       process.env.LEAD_REQUESTS_RETENTION_DAYS,
       LOG_RETENTION_DEFAULT_DAYS
     )
+  },
+  {
+    table: 'telegram_update_inbox',
+    retentionDays: parseNonNegativeIntEnv(
+      process.env.TELEGRAM_UPDATE_INBOX_RETENTION_DAYS,
+      LOG_RETENTION_DEFAULT_DAYS
+    )
   }
 ];
 
@@ -154,6 +168,47 @@ export const runLogRetentionCleanup = async () => {
     } catch (error) {
       console.error(`[log-retention] Failed to cleanup ${config.table}`, error);
     }
+  }
+
+  const outboxRetentionDays = getTelegramOutboxRetentionDays();
+  const deadAttachmentRetentionDays = Math.min(
+    3_650,
+    parsePositiveIntEnv(process.env.TELEGRAM_OUTBOX_DEAD_ATTACHMENT_RETENTION_DAYS, 30)
+  );
+  try {
+    for (let batch = 0; batch < LOG_RETENTION_MAX_BATCHES_PER_TABLE; batch += 1) {
+      const expired = await expireDueTelegramOutboxEvents(
+        Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)
+      );
+      totalDeleted += expired;
+      if (expired < Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)) break;
+    }
+    for (let batch = 0; batch < LOG_RETENTION_MAX_BATCHES_PER_TABLE; batch += 1) {
+      const deleted = await purgeDeadTelegramOutboxAttachments(
+        deadAttachmentRetentionDays,
+        Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)
+      );
+      totalDeleted += deleted;
+      if (deleted < Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)) break;
+    }
+    for (let batch = 0; batch < LOG_RETENTION_MAX_BATCHES_PER_TABLE; batch += 1) {
+      const deleted = await purgeSentTelegramOutboxEvents(
+        outboxRetentionDays,
+        Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)
+      );
+      totalDeleted += deleted;
+      if (deleted < Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)) break;
+    }
+    for (let batch = 0; batch < LOG_RETENTION_MAX_BATCHES_PER_TABLE; batch += 1) {
+      const scrubbed = await scrubDeadTelegramOutboxPayloads(
+        outboxRetentionDays,
+        Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)
+      );
+      totalDeleted += scrubbed;
+      if (scrubbed < Math.min(LOG_RETENTION_BATCH_SIZE, 1_000)) break;
+    }
+  } catch {
+    console.error('[log-retention] Failed to cleanup Telegram outbox retention data');
   }
 
   return totalDeleted;

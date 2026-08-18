@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/config.test.js dist/checks.test.js dist/lock.test.js dist/state.test.js dist/telegram.test.js",
+    "test": "npm run build && node --test dist/config.test.js dist/checks.test.js dist/lock.test.js dist/runner.test.js dist/state.test.js dist/telegram.test.js",
     "check": "node dist/cli.js check",
     "summary": "node dist/cli.js summary"
   },

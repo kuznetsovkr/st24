@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { MonitorConfig, MonitorMode } from './types';
+import type { MonitorConfig, MonitorMode, TelegramBotMode } from './types';
 
 type Environment = Record<string, string | undefined>;
 
@@ -95,6 +95,49 @@ const optionalBotUsername = (env: Environment, name: string): string | undefined
   return username;
 };
 
+const parseBotMode = (env: Environment, name: string): TelegramBotMode => {
+  const mode = required(env, name);
+  if (mode !== 'polling' && mode !== 'webhook' && mode !== 'disabled') {
+    throw new Error(`${name} must be polling, webhook or disabled`);
+  }
+  return mode;
+};
+
+const expectedWebhookUrl = (
+  env: Environment,
+  mode: TelegramBotMode,
+  name: string
+): string | undefined => {
+  const raw = trimToUndefined(env[name]);
+  if (mode !== 'webhook') {
+    if (raw) {
+      throw new Error(`${name} must be empty unless the bot mode is webhook`);
+    }
+    return undefined;
+  }
+  const value = parseHttpUrl(required(env, name), name);
+  if (value.protocol !== 'https:') {
+    throw new Error(`${name} must use https`);
+  }
+  return value.href;
+};
+
+const parseTelegramChatId = (
+  env: Environment,
+  name: string,
+  requiredValue = true
+): string | undefined => {
+  const value = trimToUndefined(env[name]);
+  if (!value) {
+    if (requiredValue) throw new Error(`Missing required environment variable: ${name}`);
+    return undefined;
+  }
+  if (!/^-?[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error(`${name} must be a canonical safe integer`);
+  }
+  return value;
+};
+
 export const parseConfig = (env: Environment, cwd = process.cwd()): MonitorConfig => {
   const siteUrl = parseHttpUrl(required(env, 'MONITOR_SITE_URL'), 'MONITOR_SITE_URL');
   const dnsHost = trimToUndefined(env.MONITOR_DNS_HOST) ?? siteUrl.hostname;
@@ -115,15 +158,40 @@ export const parseConfig = (env: Environment, cwd = process.cwd()): MonitorConfi
     throw new Error('MONITOR_TLS_CRITICAL_DAYS must be less than MONITOR_TLS_WARN_DAYS');
   }
 
-  const mainBotToken = required(env, 'TELEGRAM_BOT_TOKEN');
-  const ordersBotToken = required(env, 'TELEGRAM_ORDERS_BOT_TOKEN');
-  const b2bBotToken = required(env, 'TELEGRAM_B2B_BOT_TOKEN');
+  const mainBotMode = parseBotMode(env, 'MONITOR_TELEGRAM_MAIN_MODE');
+  const ordersBotMode = parseBotMode(env, 'MONITOR_TELEGRAM_ORDERS_MODE');
+  const b2bBotMode = parseBotMode(env, 'MONITOR_TELEGRAM_B2B_MODE');
+  const parseProductionToken = (name: string, mode: TelegramBotMode) => {
+    const token = trimToUndefined(env[name]);
+    if (!token && mode !== 'disabled') {
+      throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return token;
+  };
+  const mainBotToken = parseProductionToken('TELEGRAM_BOT_TOKEN', mainBotMode);
+  const ordersBotToken = parseProductionToken('TELEGRAM_ORDERS_BOT_TOKEN', ordersBotMode);
+  const b2bBotToken = parseProductionToken('TELEGRAM_B2B_BOT_TOKEN', b2bBotMode);
   const notifierToken = required(env, 'MONITOR_TELEGRAM_BOT_TOKEN');
-  if (new Set([mainBotToken, ordersBotToken, b2bBotToken]).size !== 3) {
+  const productionTokens = [mainBotToken, ordersBotToken, b2bBotToken].filter(
+    (token): token is string => Boolean(token)
+  );
+  if (new Set(productionTokens).size !== productionTokens.length) {
     throw new Error('Production Telegram bot tokens must be unique');
   }
-  if ([mainBotToken, ordersBotToken, b2bBotToken].includes(notifierToken)) {
+  if (productionTokens.includes(notifierToken)) {
     throw new Error('MONITOR_TELEGRAM_BOT_TOKEN must not match a production bot token');
+  }
+  const mainBotUsername = optionalBotUsername(env, 'MONITOR_TELEGRAM_MAIN_USERNAME');
+  const ordersBotUsername = optionalBotUsername(env, 'MONITOR_TELEGRAM_ORDERS_USERNAME');
+  const b2bBotUsername = optionalBotUsername(env, 'MONITOR_TELEGRAM_B2B_USERNAME');
+  if (mainBotToken && !mainBotUsername) {
+    throw new Error('MONITOR_TELEGRAM_MAIN_USERNAME is required for a configured bot');
+  }
+  if (ordersBotToken && !ordersBotUsername) {
+    throw new Error('MONITOR_TELEGRAM_ORDERS_USERNAME is required for a configured bot');
+  }
+  if (b2bBotToken && !b2bBotUsername) {
+    throw new Error('MONITOR_TELEGRAM_B2B_USERNAME is required for a configured bot');
   }
 
   const heartbeatRaw = trimToUndefined(env.MONITOR_HEARTBEAT_URL);
@@ -141,6 +209,7 @@ export const parseConfig = (env: Environment, cwd = process.cwd()): MonitorConfi
   if (notifierProxyUrl === telegramProxyUrl) {
     throw new Error('MONITOR_TELEGRAM_PROXY_URL must differ from TELEGRAM_OUTBOUND_PROXY_URL');
   }
+  const notifierUsername = optionalBotUsername(env, 'MONITOR_TELEGRAM_BOT_USERNAME');
 
   return {
     siteUrl,
@@ -155,6 +224,11 @@ export const parseConfig = (env: Environment, cwd = process.cwd()): MonitorConfi
     readyUrl: parseHttpUrl(
       trimToUndefined(env.MONITOR_READY_URL) ?? '/api/health/ready',
       'MONITOR_READY_URL',
+      siteUrl
+    ),
+    notificationsUrl: parseHttpUrl(
+      trimToUndefined(env.MONITOR_NOTIFICATIONS_URL) ?? '/api/health/notifications',
+      'MONITOR_NOTIFICATIONS_URL',
       siteUrl
     ),
     catalogUrl: parseHttpUrl(
@@ -174,29 +248,60 @@ export const parseConfig = (env: Environment, cwd = process.cwd()): MonitorConfi
     failureThreshold: parseInteger(env, 'MONITOR_FAILURE_THRESHOLD', 2, 1, 100),
     recoveryThreshold: parseInteger(env, 'MONITOR_RECOVERY_THRESHOLD', 1, 1, 100),
     telegramProxyUrl,
+    telegramMaxPendingUpdates: parseInteger(
+      env,
+      'MONITOR_TELEGRAM_MAX_PENDING_UPDATES',
+      100,
+      0,
+      1_000_000
+    ),
     telegramBots: [
       {
         id: 'telegram-main',
         label: 'Telegram main bot',
         token: mainBotToken,
-        expectedUsername: optionalBotUsername(env, 'MONITOR_TELEGRAM_MAIN_USERNAME')
+        expectedUsername: mainBotUsername,
+        mode: mainBotMode,
+        expectedWebhookUrl: expectedWebhookUrl(
+          env,
+          mainBotMode,
+          'MONITOR_TELEGRAM_MAIN_WEBHOOK_URL'
+        )
       },
       {
         id: 'telegram-orders',
         label: 'Telegram orders bot',
         token: ordersBotToken,
-        expectedUsername: optionalBotUsername(env, 'MONITOR_TELEGRAM_ORDERS_USERNAME')
+        expectedUsername: ordersBotUsername,
+        mode: ordersBotMode,
+        expectedWebhookUrl: expectedWebhookUrl(
+          env,
+          ordersBotMode,
+          'MONITOR_TELEGRAM_ORDERS_WEBHOOK_URL'
+        )
       },
       {
         id: 'telegram-b2b',
         label: 'Telegram B2B bot',
         token: b2bBotToken,
-        expectedUsername: optionalBotUsername(env, 'MONITOR_TELEGRAM_B2B_USERNAME')
+        expectedUsername: b2bBotUsername,
+        mode: b2bBotMode,
+        expectedWebhookUrl: expectedWebhookUrl(
+          env,
+          b2bBotMode,
+          'MONITOR_TELEGRAM_B2B_WEBHOOK_URL'
+        )
       }
     ],
+    telegramCanaryChatId: parseTelegramChatId(
+      env,
+      'MONITOR_TELEGRAM_CANARY_CHAT_ID',
+      false
+    ),
     notifier: {
       token: notifierToken,
       chatId: required(env, 'MONITOR_TELEGRAM_CHAT_ID'),
+      expectedUsername: notifierUsername,
       proxyUrl: notifierProxyUrl
     },
     heartbeatUrl,

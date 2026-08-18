@@ -1,5 +1,10 @@
 import { randomUUID } from 'crypto';
-import { query } from '../db';
+import type { PoolClient } from 'pg';
+import { query, withClient } from '../db';
+import {
+  enqueueTelegramOutboxEvent,
+  type TelegramOutboxAttachmentInput
+} from './telegramOutbox';
 
 export type LeadRequestKind = 'b2b' | 'need_part' | 'need_part_catalog';
 
@@ -19,12 +24,18 @@ export type LeadRequestRow = {
   updated_at: string;
 };
 
-type CreateLeadRequestInput = {
+export type CreateLeadRequestInput = {
   kind: LeadRequestKind;
   fullName?: string | null;
   phone?: string | null;
   email?: string | null;
   payload?: Record<string, unknown>;
+};
+
+export type LeadRequestTelegramOutboxInput = {
+  botKind: 'main' | 'b2b';
+  text: string;
+  attachments?: TelegramOutboxAttachmentInput[];
 };
 
 const trimToUndefined = (value?: string | null) => {
@@ -52,8 +63,12 @@ const normalizeTelegramError = (value?: string | null) => {
   return trimmed.length > 4000 ? `${trimmed.slice(0, 3997)}...` : trimmed;
 };
 
-export const createLeadRequest = async (input: CreateLeadRequestInput): Promise<LeadRequestRow> => {
-  const result = await query(
+const insertLeadRequest = async (
+  client: Pick<PoolClient, 'query'>,
+  id: string,
+  input: CreateLeadRequestInput
+): Promise<LeadRequestRow> => {
+  const result = await client.query(
     `
       INSERT INTO lead_requests (
         id,
@@ -68,7 +83,7 @@ export const createLeadRequest = async (input: CreateLeadRequestInput): Promise<
       RETURNING id, kind, full_name, phone, email, payload, telegram_status, telegram_error, telegram_sent_at, created_at, updated_at;
     `,
     [
-      randomUUID(),
+      id,
       input.kind,
       trimToNull(input.fullName),
       normalizePhone(input.phone),
@@ -80,6 +95,38 @@ export const createLeadRequest = async (input: CreateLeadRequestInput): Promise<
 
   return result.rows[0] as LeadRequestRow;
 };
+
+export const createLeadRequest = async (input: CreateLeadRequestInput): Promise<LeadRequestRow> =>
+  withClient((client) => insertLeadRequest(client, randomUUID(), input));
+
+export const createLeadRequestWithTelegramOutbox = async (
+  input: CreateLeadRequestInput,
+  notification: LeadRequestTelegramOutboxInput
+): Promise<LeadRequestRow> =>
+  withClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      const id = randomUUID();
+      const lead = await insertLeadRequest(client, id, input);
+      await enqueueTelegramOutboxEvent(client, {
+        eventKey: `lead-created:${id}`,
+        eventType: 'lead_created',
+        botKind: notification.botKind,
+        aggregateType: 'lead',
+        aggregateId: id,
+        payload: {
+          version: 1,
+          text: notification.text
+        },
+        attachments: notification.attachments
+      });
+      await client.query('COMMIT');
+      return lead;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });
 
 export const markLeadRequestTelegramSent = async (id: string) => {
   await query(
@@ -107,4 +154,3 @@ export const markLeadRequestTelegramFailed = async (id: string, error?: string |
     [id, normalizeTelegramError(error)]
   );
 };
-

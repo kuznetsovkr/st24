@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import { randomInt, randomUUID } from 'crypto';
+import { isIP } from 'net';
 import path from 'path';
 import {
   CSRF_COOKIE_NAME,
@@ -16,8 +17,8 @@ import {
 } from './auth';
 import {
   CdekProxyError,
+  isCdekOfficeBoundToQuoteDestination,
   proxyCdekWidgetRequest,
-  resolveCdekDestinationCodeByOffice
 } from './cdek';
 import {
   findAuthCode,
@@ -45,6 +46,7 @@ import {
   filterValidCartItems,
   listCartItems,
   mergeCartItems,
+  removeOrderItemsFromCart,
   replaceCartItems,
   type CartItemRow,
   type CartSyncItem
@@ -60,7 +62,10 @@ import {
 } from './db/categories';
 import { getCatalogPage, updateCatalogPage, type CatalogPageRow } from './db/catalogPage';
 import {
+  CartChangedError,
   createOrder,
+  completeOrderPaymentCreation,
+  ensurePaidOrderNotification,
   findOrderById,
   findOrderByIdForUser,
   findOrderByPaymentId,
@@ -69,16 +74,19 @@ import {
   listOrdersByUser,
   markOrderPaid,
   markOrderPaidById,
+  recordOrderPaymentAnomaly,
+  reserveOrderPaymentCreation,
   updateOrderPayment,
-  updateOrderPaymentStatusById,
   type OrderItemRow,
   type OrderRow
 } from './db/orders';
 import {
-  createLeadRequest,
-  markLeadRequestTelegramFailed,
-  markLeadRequestTelegramSent
+  createLeadRequestWithTelegramOutbox
 } from './db/leadRequests';
+import {
+  recordOrphanPaymentAnomaly,
+  recordPaymentAnomaly
+} from './db/paymentAnomalies';
 import {
   createProduct,
   deleteProduct,
@@ -109,10 +117,7 @@ import {
 import {
   handleTelegramB2BUpdate,
   handleTelegramOrderUpdate,
-  handleTelegramUpdate,
-  sendB2BTelegramMessage,
-  sendOrderTelegramMessage,
-  sendTelegramMessage
+  handleTelegramUpdate
 } from './telegram';
 import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile';
 import { removeUploadedFiles, toPublicUrl, upload, UploadValidationError } from './uploads';
@@ -157,12 +162,26 @@ import {
   superAdminLogsToCsv
 } from './superAdminLogs';
 import { logSecurityEventFromRequest, maskPhone } from './securityEvents';
+import { getTrustProxySetting } from './runtimeConfig';
+import { StockReservationInvariantError } from './stockReservation';
+import {
+  hasPaymentOrderAssociationConflict,
+  isYooKassaPaymentForCurrentAttempt,
+  isYooKassaPaymentSucceeded,
+  isSupportedYooKassaPaymentEvent,
+  validateYooKassaPaymentForOrder,
+  YooKassaPaymentInvariantError
+} from './paymentInvariants';
 import { createScopedRateLimiter } from './rateLimiter';
 import {
   createLivenessReport,
   getReadinessReport,
   type ReadinessReport
 } from './health';
+import {
+  getNotificationHealthReport,
+  type NotificationHealthReport
+} from './notificationHealth';
 
 const CODE_TTL_MINUTES = 5;
 const PHONE_CODE_LENGTH = 4;
@@ -255,29 +274,7 @@ const getTelegramOrdersWebhookSecret = () =>
   process.env.TELEGRAM_ORDERS_WEBHOOK_SECRET;
 const getTelegramB2BWebhookSecret = () => process.env.TELEGRAM_B2B_WEBHOOK_SECRET;
 
-const parseTrustProxy = (value: string | undefined): boolean | number | string => {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  const normalized = trimmed.toLowerCase();
-  if (normalized === 'true' || normalized === '1') {
-    return true;
-  }
-  if (normalized === 'false' || normalized === '0') {
-    return false;
-  }
-
-  const asNumber = Number.parseInt(trimmed, 10);
-  if (Number.isFinite(asNumber) && asNumber >= 0) {
-    return asNumber;
-  }
-
-  return trimmed;
-};
-
-const TRUST_PROXY = parseTrustProxy(process.env.TRUST_PROXY);
+const TRUST_PROXY = getTrustProxySetting();
 const REQUEST_ID_HEADER = 'x-request-id';
 const SUPER_ADMIN_LOGS_PATH =
   (process.env.SUPER_ADMIN_LOGS_PATH ?? '/api/private/super-admin/logs').trim() ||
@@ -437,6 +434,10 @@ const parseBooleanLike = (value: unknown) => {
   const normalized = value.trim().toLowerCase();
   return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 };
+
+const isManualPaymentEnabled = () =>
+  !isProduction() &&
+  parseBooleanLike(process.env.ENABLE_MANUAL_PAYMENT);
 
 type PrivacyConsentSource = 'checkout' | 'b2b' | 'need_part' | 'need_part_catalog';
 
@@ -1146,12 +1147,6 @@ const mapOrderItem = (row: OrderItemRow) => ({
   quantity: row.quantity
 });
 
-const formatRubles = (cents: number) =>
-  `${new Intl.NumberFormat('ru-RU', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(cents / 100)} ₽`;
-
 const toAmountValue = (cents: number) => (Math.max(0, cents) / 100).toFixed(2);
 
 const toReceiptQuantity = (quantity: number) => {
@@ -1223,33 +1218,6 @@ const buildYooKassaOrderReceipt = (
   };
 };
 
-const buildPaidOrderNotification = (order: OrderRow, items: OrderItemRow[]) => {
-  const pickupPoint = order.pickup_point?.trim() ? order.pickup_point : 'не указан';
-  const phone = formatPhoneE164(order.phone);
-  const orderItemsBlock =
-    items.length > 0
-      ? items
-          .map((item, index) => {
-            const lineTotal = item.price_cents * item.quantity;
-            return `🔹 ${index + 1}. ${item.name} x${item.quantity} — ${formatRubles(lineTotal)}`;
-          })
-          .join('\n')
-      : '🔹 Состав заказа пуст';
-
-  return [
-    '✅ Новый оплаченный заказ',
-    `🧾 Номер заказа: ${order.order_number}`,
-    `👤 ФИО: ${order.full_name}`,
-    `📞 Телефон: ${phone}`,
-    `✉️ Email: ${order.email}`,
-    '📦 Состав заказа:',
-    orderItemsBlock,
-    `🚚 Доставка: ${formatRubles(order.delivery_cost_cents)}`,
-    `💰 Стоимость: ${formatRubles(order.total_cents)}`,
-    `📍 Пункт выдачи: ${pickupPoint}`
-  ].join('\n');
-};
-
 const mapUser = (user: {
   id: string;
   phone: string;
@@ -1300,57 +1268,188 @@ const getPublicOrigin = (req: Request) => {
 const getYooKassaReturnUrl = (req: Request, orderId: string) =>
   `${getPublicOrigin(req)}/payment/${orderId}?fromYooKassa=1`;
 
-const isYooKassaWebhookAllowed = (req: Request) => {
-  const expectedSecret = getYooKassaWebhookSecret();
-  if (!expectedSecret) {
-    return false;
+const parseIpv4 = (value: string) => {
+  const parts = value.split('.');
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => Number(part));
+  if (
+    octets.some(
+      (octet, index) =>
+        !Number.isInteger(octet) ||
+        octet < 0 ||
+        octet > 255 ||
+        String(octet) !== parts[index]
+    )
+  ) {
+    return null;
   }
-  const providedSecret = req.header('x-yookassa-webhook-secret')?.trim();
-  if (!providedSecret) {
-    return false;
-  }
-  return providedSecret === expectedSecret;
+  return octets.reduce((result, octet) => (result * 256 + octet) >>> 0, 0);
 };
 
-const finalizePaidOrder = async (order: OrderRow) => {
-  await replaceCartItems(order.user_id, []);
+const isIpv4InCidr = (ip: string, network: string, prefixLength: number) => {
+  const parsedIp = parseIpv4(ip);
+  const parsedNetwork = parseIpv4(network);
+  if (parsedIp === null || parsedNetwork === null) return false;
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
+  return (parsedIp & mask) === (parsedNetwork & mask);
+};
+
+export const isYooKassaNotificationIp = (value: string | undefined) => {
+  const ip = normalizeIp(value)?.trim().toLowerCase();
+  if (!ip) return false;
+  if (isIP(ip) === 6 && ip.startsWith('2a02:5180:')) return true;
+  return [
+    ['185.71.76.0', 27],
+    ['185.71.77.0', 27],
+    ['77.75.153.0', 25],
+    ['77.75.154.128', 25],
+    ['77.75.156.11', 32],
+    ['77.75.156.35', 32]
+  ].some(([network, prefixLength]) =>
+    isIpv4InCidr(ip, String(network), Number(prefixLength))
+  );
+};
+
+const isYooKassaWebhookAllowed = (req: Request) => {
+  const expectedSecret = getYooKassaWebhookSecret();
+  const providedSecret = req.header('x-yookassa-webhook-secret')?.trim();
+  return (
+    (Boolean(expectedSecret) && providedSecret === expectedSecret) ||
+    isYooKassaNotificationIp(getRequestIp(req))
+  );
+};
+
+const clearPaidOrderCart = async (order: OrderRow) => {
   try {
-    const orderItems = await listOrderItemsForUser(order.id, order.user_id);
-    const notification = buildPaidOrderNotification(order, orderItems);
-    await sendOrderTelegramMessage(notification);
-  } catch (error) {
-    console.error('Failed to process request', error);
+    await removeOrderItemsFromCart(order.user_id, order.id);
+  } catch {
+    console.error('[ORDER] Failed to clear the paid order cart');
+  }
+};
+
+const recordStockReservationReconciliation = async (
+  order: OrderRow | null
+): Promise<OrderRow | null> => {
+  if (!order) {
+    return null;
+  }
+  try {
+    return await recordOrderPaymentAnomaly(
+      order.id,
+      'payment_reconciliation_required'
+    );
+  } catch {
+    return null;
   }
 };
 
 const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPayment) => {
   const previousPaymentStatus = order.payment_status ?? null;
-  const amountCents = parseYooKassaAmountCents(payment.amount?.value) ?? order.total_cents;
+  const { amountCents } = validateYooKassaPaymentForOrder(order, payment);
+  const paymentSucceeded = isYooKassaPaymentSucceeded(payment);
+  const staleAttempt = !isYooKassaPaymentForCurrentAttempt(order, payment);
 
-  await updateOrderPayment(order.id, {
-    provider: 'yookassa',
-    paymentId: payment.id,
-    paymentStatus: payment.status
-  });
-
-  void logOrderLifecycleEvent({
-    eventType: 'payment_status_synced',
-    orderId: order.id,
-    orderNumber: order.order_number,
-    paymentId: payment.id,
-    oldStatus: previousPaymentStatus,
-    newStatus: payment.status,
-    amountCents,
-    provider: 'yookassa'
-  });
-
-  if (payment.status === 'succeeded' || payment.paid === true) {
+  if (staleAttempt && !paymentSucceeded) {
+    void logOrderLifecycleEvent({
+      eventType: 'payment_status_ignored_for_stale_attempt',
+      orderId: order.id,
+      orderNumber: order.order_number,
+      paymentId: payment.id,
+      oldStatus: previousPaymentStatus,
+      newStatus: payment.status,
+      amountCents,
+      provider: 'yookassa'
+    });
     if (order.status === 'paid') {
-      const paidOrder = await findOrderById(order.id);
-      return paidOrder ?? order;
+      await clearPaidOrderCart(order);
     }
-    const paidOrder = await markOrderPaidById(order.id);
+    return order;
+  }
+
+  if (staleAttempt && paymentSucceeded && order.status !== 'paid') {
+    await recordOrderPaymentAnomaly(order.id, 'stale_succeeded_payment');
+  }
+
+  if (paymentSucceeded) {
+    if (order.status === 'paid') {
+      if (staleAttempt || order.payment_id !== payment.id) {
+        await recordOrderPaymentAnomaly(order.id, 'multiple_succeeded_payments');
+        void logOrderLifecycleEvent({
+          eventType: 'payment_status_conflict',
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentId: payment.id,
+          oldStatus: order.payment_id,
+          newStatus: payment.status,
+          amountCents,
+          provider: 'yookassa',
+          error: 'multiple_succeeded_payments'
+        });
+      }
+      const paidOrder = await ensurePaidOrderNotification(order.id);
+      const reconciledOrder = paidOrder ?? order;
+      await clearPaidOrderCart(reconciledOrder);
+      return reconciledOrder;
+    }
+    let paidOrder: OrderRow | null;
+    try {
+      paidOrder = await markOrderPaidById(order.id, {
+        provider: 'yookassa',
+        paymentId: payment.id
+      });
+    } catch (error) {
+      if (error instanceof InsufficientStockError) {
+        const inconsistentOrder =
+          (await updateOrderPayment(order.id, {
+            provider: 'yookassa',
+            paymentId: payment.id,
+            paymentStatus: 'succeeded'
+          })) ??
+          (await findOrderById(order.id)) ??
+          order;
+        await recordOrderPaymentAnomaly(order.id, 'paid_stock_unavailable');
+        void logOrderLifecycleEvent({
+          eventType: 'payment_status_conflict',
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentId: payment.id,
+          oldStatus: previousPaymentStatus,
+          newStatus: 'succeeded',
+          amountCents,
+          provider: 'yookassa',
+          error: 'paid_stock_unavailable'
+        });
+        return inconsistentOrder;
+      }
+      throw error;
+    }
     if (paidOrder) {
+      if (paidOrder.payment_id !== payment.id) {
+        await recordOrderPaymentAnomaly(order.id, 'multiple_succeeded_payments');
+        void logOrderLifecycleEvent({
+          eventType: 'payment_status_conflict',
+          orderId: paidOrder.id,
+          orderNumber: paidOrder.order_number,
+          paymentId: payment.id,
+          oldStatus: paidOrder.payment_id,
+          newStatus: payment.status,
+          amountCents,
+          provider: 'yookassa',
+          error: 'multiple_succeeded_payments'
+        });
+        await clearPaidOrderCart(paidOrder);
+        return paidOrder;
+      }
+      void logOrderLifecycleEvent({
+        eventType: 'payment_status_synced',
+        orderId: paidOrder.id,
+        orderNumber: paidOrder.order_number,
+        paymentId: payment.id,
+        oldStatus: previousPaymentStatus,
+        newStatus: 'succeeded',
+        amountCents,
+        provider: 'yookassa'
+      });
       void logOrderLifecycleEvent({
         eventType: 'order_status_changed',
         orderId: paidOrder.id,
@@ -1361,50 +1460,46 @@ const syncOrderWithYooKassaPayment = async (order: OrderRow, payment: YooKassaPa
         amountCents: paidOrder.total_cents,
         provider: 'yookassa'
       });
-      await finalizePaidOrder(paidOrder);
+      await clearPaidOrderCart(paidOrder);
       return paidOrder;
     }
+    const concurrentlyPaid = await ensurePaidOrderNotification(order.id);
+    const reconciledOrder = concurrentlyPaid ?? order;
+    await clearPaidOrderCart(reconciledOrder);
+    return reconciledOrder;
   }
 
-  if (payment.status === 'canceled') {
-    const canceledOrder = await updateOrderPaymentStatusById(order.id, 'canceled');
+  if (order.status === 'paid') {
     void logOrderLifecycleEvent({
-      eventType: 'payment_status_changed',
+      eventType: 'payment_status_ignored_after_paid',
       orderId: order.id,
       orderNumber: order.order_number,
       paymentId: payment.id,
       oldStatus: previousPaymentStatus,
-      newStatus: 'canceled',
+      newStatus: payment.status,
       amountCents,
       provider: 'yookassa'
     });
-    return canceledOrder ?? order;
+    await clearPaidOrderCart(order);
+    return order;
   }
 
-  const refreshed = await findOrderById(order.id);
-  return refreshed ?? order;
-};
-
-const markLeadTelegramSentSafe = async (leadRequestId: string | null) => {
-  if (!leadRequestId) {
-    return;
-  }
-  try {
-    await markLeadRequestTelegramSent(leadRequestId);
-  } catch (error) {
-    console.error('Failed to mark lead request as telegram_sent', error);
-  }
-};
-
-const markLeadTelegramFailedSafe = async (leadRequestId: string | null, message: string) => {
-  if (!leadRequestId) {
-    return;
-  }
-  try {
-    await markLeadRequestTelegramFailed(leadRequestId, message);
-  } catch (error) {
-    console.error('Failed to mark lead request as telegram_failed', error);
-  }
+  const updated = await updateOrderPayment(order.id, {
+    provider: 'yookassa',
+    paymentId: payment.id,
+    paymentStatus: payment.status
+  });
+  void logOrderLifecycleEvent({
+    eventType: 'payment_status_synced',
+    orderId: order.id,
+    orderNumber: order.order_number,
+    paymentId: payment.id,
+    oldStatus: previousPaymentStatus,
+    newStatus: payment.status,
+    amountCents,
+    provider: 'yookassa'
+  });
+  return updated ?? order;
 };
 
 const normalizeCartItems = (input: unknown): CartSyncItem[] => {
@@ -1461,11 +1556,14 @@ const mapCartItem = (row: CartItemRow) => {
 
 export type CreateAppOptions = {
   readinessCheck?: () => Promise<ReadinessReport>;
+  notificationHealthCheck?: () => Promise<NotificationHealthReport>;
 };
 
 export const createApp = (options: CreateAppOptions = {}) => {
   const app = express();
   const readinessCheck = options.readinessCheck ?? getReadinessReport;
+  const notificationHealthCheck =
+    options.notificationHealthCheck ?? getNotificationHealthReport;
   app.set('trust proxy', TRUST_PROXY);
 
   app.use(
@@ -1527,6 +1625,20 @@ export const createApp = (options: CreateAppOptions = {}) => {
     res.setHeader('Cache-Control', 'no-store');
     const report = await readinessCheck();
     res.status(report.status === 'ok' ? 200 : 503).json(report);
+  });
+
+  app.get('/api/health/notifications', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const report = await notificationHealthCheck();
+      res.status(report.status === 'ok' ? 200 : 503).json(report);
+    } catch {
+      console.error('[HEALTH] Failed to build the notification health report');
+      res.status(503).json({
+        status: 'error',
+        checkedAt: new Date().toISOString()
+      });
+    }
   });
 
   app.get('/api/legal/privacy-policy', (_req: Request, res: Response) => {
@@ -1897,9 +2009,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
         ...estimate,
         quoteToken
       });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Не удалось выполнить запрос';
+   } catch (error) {
+     const message =
+       error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       res.status(502).json({ error: message });
     }
   });
@@ -3008,50 +3120,29 @@ export const createApp = (options: CreateAppOptions = {}) => {
       }
       const destinationCodeToCheck =
         deliveryProvider === 'cdek' ? pickupPointCode : destinationCode || pickupPointCode;
+      if (deliveryProvider === 'cdek' && !quote.payload.destinationCode?.trim()) {
+        res.status(400).json({ error: 'Некорректные данные запроса' });
+        return;
+      }
       if (quote.payload.destinationCode) {
         const quoteDestination = quote.payload.destinationCode.trim();
         const requestDestination = destinationCodeToCheck.trim();
 
         if (deliveryProvider === 'cdek') {
-          const quoteDestinationUpper = quoteDestination.toUpperCase();
-          const requestDestinationUpper = requestDestination.toUpperCase();
-          let isCdekDestinationMatched = quoteDestinationUpper === requestDestinationUpper;
-          const quoteLooksLikeCityCode = /^\d+$/.test(quoteDestination);
-          const requestLooksLikeOfficeCode = /[^\d]/.test(requestDestination);
-
-          // Typical CDEK widget flow: quote token keeps city code (e.g. "869"),
-          // checkout request sends office code (e.g. "BRZ9").
-          // Accept this known pair immediately to avoid an extra network call to CDEK
-          // on order creation (can add up to tens of seconds on retries/timeouts).
-          if (
-            !isCdekDestinationMatched &&
-            quoteLooksLikeCityCode &&
-            requestLooksLikeOfficeCode
-          ) {
-            console.warn('[CDEK] Destination code mismatch accepted by fallback', {
+          let isCdekDestinationMatched: boolean;
+          try {
+            isCdekDestinationMatched = await isCdekOfficeBoundToQuoteDestination(
               quoteDestination,
-              requestDestination
+              pickupPointCode
+            );
+          } catch (error) {
+            console.warn('[CDEK] Failed to resolve destination code by office', {
+              pickupPointCode,
+              quoteDestination,
+              error: error instanceof Error ? error.message : String(error)
             });
-            isCdekDestinationMatched = true;
-          }
-
-          if (!isCdekDestinationMatched) {
-            try {
-              const resolvedDestinationCode =
-                await resolveCdekDestinationCodeByOffice(pickupPointCode);
-              if (
-                resolvedDestinationCode &&
-                resolvedDestinationCode.toUpperCase() === quoteDestinationUpper
-              ) {
-                isCdekDestinationMatched = true;
-              }
-            } catch (error) {
-              console.warn('[CDEK] Failed to resolve destination code by office', {
-                pickupPointCode,
-                quoteDestination,
-                error: error instanceof Error ? error.message : String(error)
-              });
-            }
+            res.status(503).json({ error: 'Сервис доставки временно недоступен' });
+            return;
           }
 
           if (!isCdekDestinationMatched) {
@@ -3121,6 +3212,12 @@ export const createApp = (options: CreateAppOptions = {}) => {
         res.status(409).json({
           error: 'Недостаточно товара на складе',
           issues: error.issues
+        });
+        return;
+      }
+      if (error instanceof CartChangedError) {
+        res.status(409).json({
+          error: 'Состав корзины изменился. Повторите оформление заказа.'
         });
         return;
       }
@@ -3205,14 +3302,16 @@ export const createApp = (options: CreateAppOptions = {}) => {
     let paymentIdForLog: string | null = null;
     let amountForLog: number | null = null;
     try {
-      const order = await findOrderByIdForUser(req.params.id, userId);
+      const reservation = await reserveOrderPaymentCreation(req.params.id, userId);
+      const order = reservation?.order ?? null;
       orderForLog = order;
-      if (!order) {
+      if (!reservation || !order) {
         res.status(404).json({ error: 'Заказ не найден' });
         return;
       }
 
-      if (order.status === 'paid') {
+      if (reservation.state === 'paid') {
+        await clearPaidOrderCart(order);
         void logOrderLifecycleEvent({
           eventType: 'payment_attempt_skipped',
           orderId: order.id,
@@ -3230,35 +3329,76 @@ export const createApp = (options: CreateAppOptions = {}) => {
         return;
       }
 
+      if (reservation.state === 'reconcile') {
+        res.status(409).json({
+          error: 'Предыдущая попытка оплаты требует ручной сверки',
+          code: 'payment_reconciliation_required',
+          order: mapOrder(order)
+        });
+        return;
+      }
+
       const amountCents = order.total_cents;
       amountForLog = amountCents;
       const orderItems = await listOrderItemsForUser(order.id, userId);
       const receipt = buildYooKassaOrderReceipt(order, orderItems, amountCents);
 
-      const payment = await createYooKassaPayment({
+      const payment =
+        reservation.state === 'existing'
+          ? await fetchYooKassaPayment(reservation.paymentId)
+          : await createYooKassaPayment({
+        idempotencyKey: reservation.idempotencyKey,
         amountCents,
         returnUrl: getYooKassaReturnUrl(req, order.id),
         description: `Оплата заказа №${order.order_number}`,
         metadata: {
           orderId: order.id,
           orderNumber: String(order.order_number),
-          userId: order.user_id
+          userId: order.user_id,
+          paymentAttemptId: reservation.idempotencyKey
         },
         receipt
       });
       paymentIdForLog = payment.id;
+
+      const orderToSync =
+        reservation.state === 'existing'
+          ? order
+          : (await completeOrderPaymentCreation(order.id, reservation.idempotencyKey, {
+              provider: 'yookassa',
+              paymentId: payment.id,
+              paymentStatus: payment.status
+            })) ?? (await findOrderById(order.id)) ?? order;
+      const updatedOrder = await syncOrderWithYooKassaPayment(orderToSync, payment);
+
+      if (updatedOrder.status === 'paid') {
+        res.json({ order: mapOrder(updatedOrder), alreadyPaid: true });
+        return;
+      }
+
+      if (payment.status === 'succeeded') {
+        res.status(409).json({
+          error: 'Оплата получена, но заказ требует ручной сверки',
+          code: 'payment_reconciliation_required',
+          order: mapOrder(updatedOrder)
+        });
+        return;
+      }
+
+      if (payment.status === 'canceled') {
+        res.status(409).json({
+          error: 'Платёж отменён; повторите создание оплаты',
+          code: 'payment_canceled',
+          order: mapOrder(updatedOrder)
+        });
+        return;
+      }
 
       const confirmationUrl = payment.confirmation?.confirmation_url;
       if (!confirmationUrl) {
         res.status(502).json({ error: 'YooKassa не вернула confirmation_url' });
         return;
       }
-
-      const updatedOrder = await updateOrderPayment(order.id, {
-        provider: 'yookassa',
-        paymentId: payment.id,
-        paymentStatus: payment.status
-      });
 
       void logOrderLifecycleEvent({
         eventType: 'payment_attempt_created',
@@ -3272,13 +3412,93 @@ export const createApp = (options: CreateAppOptions = {}) => {
       });
 
       res.json({
-        order: mapOrder(updatedOrder ?? order),
+        order: mapOrder(updatedOrder),
         confirmationUrl,
         paymentId: payment.id,
         paymentStatus: payment.status,
         amountCents
       });
     } catch (error) {
+      if (error instanceof InsufficientStockError) {
+        const affectedOrder =
+          orderForLog ??
+          (await findOrderByIdForUser(req.params.id, userId).catch(() => null));
+        orderForLog = affectedOrder;
+        void logOrderLifecycleEvent({
+          eventType: 'payment_attempt_failed',
+          orderId: affectedOrder?.id,
+          orderNumber: affectedOrder?.order_number,
+          paymentId: paymentIdForLog,
+          oldStatus: affectedOrder?.payment_status,
+          newStatus: null,
+          amountCents: amountForLog,
+          provider: 'yookassa',
+          error: 'insufficient_stock'
+        });
+        if (
+          affectedOrder?.payment_id &&
+          affectedOrder.payment_status !== 'canceled'
+        ) {
+          const reconciledOrder =
+            await recordStockReservationReconciliation(affectedOrder);
+          if (!reconciledOrder) {
+            res.status(500).json({
+              error: 'Не удалось зафиксировать состояние оплаты',
+              code: 'payment_reconciliation_record_failed'
+            });
+            return;
+          }
+          res.status(409).json({
+            error: 'Оплата требует ручной сверки',
+            code: 'payment_reconciliation_required',
+            order: mapOrder(reconciledOrder)
+          });
+          return;
+        }
+        res.status(409).json({
+          error: 'Недостаточно товара на складе',
+          code: 'insufficient_stock'
+        });
+        return;
+      }
+      if (error instanceof StockReservationInvariantError) {
+        const affectedOrder =
+          orderForLog ??
+          (await findOrderByIdForUser(req.params.id, userId).catch(() => null));
+        orderForLog = affectedOrder;
+        const reconciledOrder =
+          await recordStockReservationReconciliation(affectedOrder);
+        void logOrderLifecycleEvent({
+          eventType: 'payment_attempt_failed',
+          orderId: affectedOrder?.id,
+          orderNumber: affectedOrder?.order_number,
+          paymentId: paymentIdForLog,
+          oldStatus: affectedOrder?.payment_status,
+          newStatus: null,
+          amountCents: amountForLog,
+          provider: 'yookassa',
+          error: error.code
+        });
+        if (!reconciledOrder) {
+          res.status(500).json({
+            error: 'Не удалось зафиксировать состояние оплаты',
+            code: 'payment_reconciliation_record_failed'
+          });
+          return;
+        }
+        res.status(409).json({
+          error: 'Оплата требует ручной сверки',
+          code: 'payment_reconciliation_required',
+          order: mapOrder(reconciledOrder)
+        });
+        return;
+      }
+      if (error instanceof YooKassaPaymentInvariantError && orderForLog) {
+        await recordOrderPaymentAnomaly(
+          orderForLog.id,
+          'payment_invariant_violation'
+        ).catch(() => undefined);
+      }
       const message =
         error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       void logOrderLifecycleEvent({
@@ -3322,6 +3542,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
       }
 
       if (order.status === 'paid') {
+        await clearPaidOrderCart(order);
         res.json({ order: mapOrder(order) });
         return;
       }
@@ -3349,6 +3570,29 @@ export const createApp = (options: CreateAppOptions = {}) => {
         paymentStatus: payment.status
       });
     } catch (error) {
+      if (error instanceof StockReservationInvariantError) {
+        const reconciledOrder =
+          await recordStockReservationReconciliation(refreshOrderForLog);
+        if (!reconciledOrder) {
+          res.status(500).json({
+            error: 'Не удалось зафиксировать состояние оплаты',
+            code: 'payment_reconciliation_record_failed'
+          });
+          return;
+        }
+        res.status(409).json({
+          error: 'Оплата требует ручной сверки',
+          code: 'payment_reconciliation_required',
+          order: mapOrder(reconciledOrder)
+        });
+        return;
+      }
+      if (error instanceof YooKassaPaymentInvariantError && refreshOrderForLog) {
+        await recordOrderPaymentAnomaly(
+          refreshOrderForLog.id,
+          'payment_invariant_violation'
+        ).catch(() => undefined);
+      }
       const message =
         error instanceof Error ? error.message : 'Не удалось выполнить запрос';
       void logOrderLifecycleEvent({
@@ -3374,15 +3618,17 @@ export const createApp = (options: CreateAppOptions = {}) => {
       return;
     }
 
-    if (isYooKassaConfigured()) {
-      res.status(400).json({
-        error: 'Ручная оплата отключена при включенной YooKassa. Используйте /api/orders/:id/payment.'
+    if (!isManualPaymentEnabled()) {
+      res.status(404).json({
+        error: 'Ручная оплата недоступна.'
       });
       return;
     }
 
+    let manualOrderForLog: OrderRow | null = null;
     try {
       const existingOrder = await findOrderByIdForUser(req.params.id, userId);
+      manualOrderForLog = existingOrder;
       if (!existingOrder) {
         res.status(404).json({ error: 'Заказ не найден' });
         return;
@@ -3403,12 +3649,29 @@ export const createApp = (options: CreateAppOptions = {}) => {
         }
       }
 
-      if (existingOrder.status !== 'paid') {
-        await finalizePaidOrder(order);
-      }
+      await clearPaidOrderCart(order);
 
       res.json({ order: mapOrder(order) });
-    } catch {
+    } catch (error) {
+      if (error instanceof InsufficientStockError) {
+        res.status(409).json({
+          error: 'Недостаточно товара на складе',
+          code: 'insufficient_stock'
+        });
+        return;
+      }
+      if (error instanceof StockReservationInvariantError) {
+        const reconciledOrder =
+          await recordStockReservationReconciliation(manualOrderForLog);
+        if (reconciledOrder) {
+          res.status(409).json({
+            error: 'Оплата требует ручной сверки',
+            code: 'payment_reconciliation_required',
+            order: mapOrder(reconciledOrder)
+          });
+          return;
+        }
+      }
       res.status(500).json({ error: 'Не удалось выполнить запрос' });
     }
   });
@@ -3431,6 +3694,17 @@ export const createApp = (options: CreateAppOptions = {}) => {
     let webhookPaymentIdForLog: string | null = null;
     let webhookOrderForLog: OrderRow | null = null;
     try {
+      const webhookEvent =
+        typeof req.body?.event === 'string' ? req.body.event.trim() : '';
+      if (!webhookEvent) {
+        res.status(400).json({ error: 'Некорректный payload вебхука YooKassa' });
+        return;
+      }
+      if (!isSupportedYooKassaPaymentEvent(webhookEvent)) {
+        res.json({ ok: true, ignored: true });
+        return;
+      }
+
       const paymentId =
         req.body?.object &&
         typeof req.body.object === 'object' &&
@@ -3455,10 +3729,53 @@ export const createApp = (options: CreateAppOptions = {}) => {
           ? payment.metadata.orderId.trim()
           : '';
 
-      const orderByMetadata = metadataOrderId ? await findOrderById(metadataOrderId) : null;
-      const order = orderByMetadata ?? (await findOrderByPaymentId(payment.id));
+      const orderByMetadata =
+        metadataOrderId && isUuid(metadataOrderId)
+          ? await findOrderById(metadataOrderId)
+          : null;
+      const orderByPaymentId = await findOrderByPaymentId(payment.id);
+      if (
+        hasPaymentOrderAssociationConflict(
+          orderByMetadata?.id ?? null,
+          orderByPaymentId?.id ?? null
+        )
+      ) {
+        if (!orderByMetadata || !orderByPaymentId) {
+          throw new Error('payment_order_association_conflict_state_invalid');
+        }
+        const recorded = await recordPaymentAnomaly({
+          provider: 'yookassa',
+          paymentId: payment.id,
+          anomalyCode: 'payment_order_association_conflict',
+          paymentStatus: payment.status,
+          amountCents: parseYooKassaAmountCents(payment.amount?.value),
+          metadataOrderId: orderByMetadata.id,
+          linkedOrderId: orderByPaymentId.id
+        });
+        if (!recorded) {
+          throw new Error('payment_order_association_conflict_not_recorded');
+        }
+        res.json({ ok: true, anomaly: true });
+        return;
+      }
+      const order = orderByMetadata ?? orderByPaymentId;
       webhookOrderForLog = order;
       if (!order) {
+        if (payment.status === 'succeeded') {
+          const recorded = await recordOrphanPaymentAnomaly({
+            provider: 'yookassa',
+            paymentId: payment.id,
+            paymentStatus: payment.status,
+            amountCents: parseYooKassaAmountCents(payment.amount?.value),
+            metadataOrderId:
+              metadataOrderId && isUuid(metadataOrderId)
+                ? metadataOrderId
+                : null
+          });
+          if (!recorded) {
+            throw new Error('orphan_payment_anomaly_not_recorded');
+          }
+        }
         void logOrderLifecycleEvent({
           eventType: 'payment_webhook_order_not_found',
           paymentId: payment.id,
@@ -3486,6 +3803,25 @@ export const createApp = (options: CreateAppOptions = {}) => {
 
       res.json({ ok: true });
     } catch (error) {
+      const anomalyCode =
+        error instanceof YooKassaPaymentInvariantError
+          ? 'payment_invariant_violation'
+          : error instanceof StockReservationInvariantError
+            ? 'payment_reconciliation_required'
+            : null;
+      let anomalyPersisted = anomalyCode === null;
+      if (anomalyCode && webhookOrderForLog) {
+        try {
+          anomalyPersisted = Boolean(
+            await recordOrderPaymentAnomaly(
+              webhookOrderForLog.id,
+              anomalyCode
+            )
+          );
+        } catch {
+          anomalyPersisted = false;
+        }
+      }
       void logOrderLifecycleEvent({
         eventType: 'payment_webhook_failed',
         orderId: webhookOrderForLog?.id,
@@ -3498,7 +3834,11 @@ export const createApp = (options: CreateAppOptions = {}) => {
         error: error instanceof Error ? error.message : 'unknown_error'
       });
       console.error('Failed to process YooKassa webhook', error);
-      res.status(500).json({ ok: false });
+      if (anomalyCode && anomalyPersisted) {
+        res.json({ ok: true, anomaly: true });
+      } else {
+        res.status(500).json({ ok: false });
+      }
     }
   });
 
@@ -3516,6 +3856,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
       await handleTelegramUpdate(req.body ?? {});
     } catch (error) {
       console.error('Failed to process telegram webhook update', error);
+      res.status(500).json({ ok: false });
+      return;
     }
 
     res.json({ ok: true });
@@ -3535,6 +3877,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
       await handleTelegramOrderUpdate(req.body ?? {});
     } catch (error) {
       console.error('Failed to process telegram orders webhook update', error);
+      res.status(500).json({ ok: false });
+      return;
     }
 
     res.json({ ok: true });
@@ -3554,6 +3898,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
       await handleTelegramB2BUpdate(req.body ?? {});
     } catch (error) {
       console.error('Failed to process telegram B2B webhook update', error);
+      res.status(500).json({ ok: false });
+      return;
     }
 
     res.json({ ok: true });
@@ -3640,35 +3986,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
         file ? `📎 Карточка предприятия: ${file.originalname || 'прикреплена'}` : '📎 Карточка предприятия: не приложена'
       ].filter(Boolean);
 
-      let leadRequestId: string | null = null;
       const privacyConsent = buildPrivacyConsentEvidence(req, 'b2b');
-
-      try {
-        const lead = await createLeadRequest({
-          kind: 'b2b',
-          fullName: contactPerson || companyName,
-          phone,
-          email: email || null,
-          payload: {
-            companyName,
-            contactPerson: contactPerson || null,
-            comment: comment || null,
-            requestIp: requestIp ?? null,
-            privacyConsent,
-            enterpriseCard:
-              file && file.originalname
-                ? {
-                    fileName: file.originalname,
-                    mimeType: file.mimetype,
-                    sizeBytes: file.size
-                  }
-                : null
-          }
-        });
-        leadRequestId = lead.id;
-      } catch (error) {
-        console.error('Failed to persist B2B lead request', error);
-      }
 
       try {
         const document =
@@ -3681,16 +3999,38 @@ export const createApp = (options: CreateAppOptions = {}) => {
               }
             : undefined;
 
-        await sendB2BTelegramMessage(
-          messageLines.join('\n'),
-          document
+        await createLeadRequestWithTelegramOutbox(
+          {
+            kind: 'b2b',
+            fullName: contactPerson || companyName,
+            phone,
+            email: email || null,
+            payload: {
+              companyName,
+              contactPerson: contactPerson || null,
+              comment: comment || null,
+              requestIp: requestIp ?? null,
+              privacyConsent,
+              enterpriseCard:
+                file && file.originalname
+                  ? {
+                      fileName: file.originalname,
+                      mimeType: file.mimetype,
+                      sizeBytes: file.size
+                    }
+                  : null
+            }
+          },
+          {
+            botKind: 'b2b',
+            text: messageLines.join('\n'),
+            attachments: document ? [document] : undefined
+          }
         );
-        await markLeadTelegramSentSafe(leadRequestId);
-        res.json({ ok: true });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
-        await markLeadTelegramFailedSafe(leadRequestId, message);
-        res.status(500).json({ error: message });
+        res.status(202).json({ ok: true, queued: true });
+      } catch {
+        console.error('[OUTBOX] Failed to queue B2B lead request');
+        res.status(503).json({ error: 'Не удалось сохранить заявку. Повторите позже.' });
       } finally {
         await removeB2BTempFile(file);
       }
@@ -3766,36 +4106,32 @@ export const createApp = (options: CreateAppOptions = {}) => {
       `📞 Телефон: ${normalizedPhone}`
     ].filter(Boolean);
 
-    let leadRequestId: string | null = null;
     const privacyConsent = buildPrivacyConsentEvidence(req, 'need_part');
 
     try {
-      const lead = await createLeadRequest({
-        kind: 'need_part',
-        fullName,
-        phone,
-        payload: {
-          productId: product.id,
-          productName: product.name,
-          productSku: product.sku,
-          productStockSnapshot: product.stock,
-          requestIp: requestIp ?? null,
-          privacyConsent
+      await createLeadRequestWithTelegramOutbox(
+        {
+          kind: 'need_part',
+          fullName,
+          phone,
+          payload: {
+            productId: product.id,
+            productName: product.name,
+            productSku: product.sku,
+            productStockSnapshot: product.stock,
+            requestIp: requestIp ?? null,
+            privacyConsent
+          }
+        },
+        {
+          botKind: 'main',
+          text: lines.join('\n')
         }
-      });
-      leadRequestId = lead.id;
-    } catch (error) {
-      console.error('Failed to persist need-part lead request', error);
-    }
-
-    try {
-      await sendTelegramMessage(lines.join('\n'));
-      await markLeadTelegramSentSafe(leadRequestId);
-      res.json({ ok: true });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
-      await markLeadTelegramFailedSafe(leadRequestId, message);
-      res.status(500).json({ error: message });
+      );
+      res.status(202).json({ ok: true, queued: true });
+    } catch {
+      console.error('[OUTBOX] Failed to queue need-part lead request');
+      res.status(503).json({ error: 'Не удалось сохранить заявку. Повторите позже.' });
     }
   });
 
@@ -3896,31 +4232,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
         files.length > 0 ? `🖼 Фото: ${files.length}` : '🖼 Фото: не приложены'
       ].filter(Boolean);
 
-      let leadRequestId: string | null = null;
       const privacyConsent = buildPrivacyConsentEvidence(req, 'need_part_catalog');
-
-      try {
-        const lead = await createLeadRequest({
-          kind: 'need_part_catalog',
-          fullName,
-          phone,
-          payload: {
-            categoryName: categoryName || null,
-            productQuery,
-            requestIp: requestIp ?? null,
-            privacyConsent,
-            imagesCount: files.length,
-            images: files.map((file) => ({
-              fileName: file.originalname || null,
-              mimeType: file.mimetype || null,
-              sizeBytes: file.size
-            }))
-          }
-        });
-        leadRequestId = lead.id;
-      } catch (error) {
-        console.error('Failed to persist need-part-catalog lead request', error);
-      }
 
       try {
         const documents = await Promise.all(
@@ -3930,13 +4242,34 @@ export const createApp = (options: CreateAppOptions = {}) => {
             mimeType: file.mimetype
           }))
         );
-        await sendTelegramMessage(lines.join('\n'), documents);
-        await markLeadTelegramSentSafe(leadRequestId);
-        res.json({ ok: true });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Не удалось выполнить запрос';
-        await markLeadTelegramFailedSafe(leadRequestId, message);
-        res.status(500).json({ error: message });
+        await createLeadRequestWithTelegramOutbox(
+          {
+            kind: 'need_part_catalog',
+            fullName,
+            phone,
+            payload: {
+              categoryName: categoryName || null,
+              productQuery,
+              requestIp: requestIp ?? null,
+              privacyConsent,
+              imagesCount: files.length,
+              images: files.map((file) => ({
+                fileName: file.originalname || null,
+                mimeType: file.mimetype || null,
+                sizeBytes: file.size
+              }))
+            }
+          },
+          {
+            botKind: 'main',
+            text: lines.join('\n'),
+            attachments: documents
+          }
+        );
+        res.status(202).json({ ok: true, queued: true });
+      } catch {
+        console.error('[OUTBOX] Failed to queue need-part catalog request');
+        res.status(503).json({ error: 'Не удалось сохранить заявку. Повторите позже.' });
       } finally {
         await removeNeedPartTempFiles(files);
       }

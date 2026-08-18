@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import { createApp } from './app';
 import { initDb } from './db/init';
 import { assertPhoneVerificationConfiguration } from './phoneVerification';
@@ -7,13 +7,20 @@ import { ensureUploadsDir } from './uploads';
 import { startLogRetentionScheduler } from './logRetention';
 import {
   startTelegramB2BPolling,
+  startTelegramBotSupervision,
   startTelegramOrderPolling,
-  startTelegramPolling
+  startTelegramPolling,
+  validateTelegramStartupConfig
 } from './telegram';
+import { startTelegramOutboxWorker } from './telegramOutboxWorker';
+import { validateYooKassaStartupConfig } from './yookassa';
+import { validateTrustProxyStartupConfig } from './runtimeConfig';
 
-dotenv.config();
 assertPhoneVerificationConfiguration();
 assertTurnstileConfiguration();
+validateTelegramStartupConfig();
+validateYooKassaStartupConfig();
+validateTrustProxyStartupConfig();
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
@@ -22,6 +29,8 @@ const start = async () => {
   await initDb();
   ensureUploadsDir();
   startLogRetentionScheduler();
+  startTelegramOutboxWorker();
+  startTelegramBotSupervision();
   startTelegramPolling();
   startTelegramOrderPolling();
   startTelegramB2BPolling();

@@ -1,7 +1,10 @@
 import { categories } from '../data/categories';
 import { query } from '../db';
+import { getTelegramOutboxMaxRetryAgeDays } from '../telegramOutboxConfig';
 
 export const initDb = async () => {
+  const telegramOutboxMaxRetryAgeDays =
+    getTelegramOutboxMaxRetryAgeDays();
   await query(`
     CREATE TABLE IF NOT EXISTS categories (
       slug TEXT PRIMARY KEY,
@@ -461,13 +464,27 @@ export const initDb = async () => {
       total_cents INTEGER NOT NULL DEFAULT 0,
       payment_provider TEXT,
       payment_id TEXT,
+      payment_idempotency_key TEXT,
+      payment_creation_started_at TIMESTAMPTZ,
       payment_status TEXT,
       payment_confirmed_at TIMESTAMPTZ,
+      payment_anomaly_code TEXT,
+      payment_anomaly_at TIMESTAMPTZ,
+      stock_reservation_status TEXT,
+      stock_reservation_attempt_key TEXT,
+      stock_reserved_at TIMESTAMPTZ,
+      stock_reservation_consumed_at TIMESTAMPTZ,
+      stock_reservation_released_at TIMESTAMPTZ,
+      stock_reservation_reason TEXT,
+      cart_reconciled_at TIMESTAMPTZ,
       privacy_consent_at TIMESTAMPTZ,
       privacy_policy_version TEXT,
       privacy_consent_source TEXT,
       privacy_consent_ip TEXT,
       privacy_consent_user_agent TEXT,
+      telegram_notification_required_at TIMESTAMPTZ,
+      telegram_notified_at TIMESTAMPTZ,
+      telegram_notification_exempted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -490,12 +507,67 @@ export const initDb = async () => {
 
   await query(`
     ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_idempotency_key TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_creation_started_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS payment_status TEXT;
   `);
 
   await query(`
     ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_anomaly_code TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS payment_anomaly_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS stock_reservation_status TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS stock_reservation_attempt_key TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS stock_reserved_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS stock_reservation_consumed_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS stock_reservation_released_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS stock_reservation_reason TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS cart_reconciled_at TIMESTAMPTZ;
   `);
 
   await query(`
@@ -524,6 +596,59 @@ export const initDb = async () => {
   `);
 
   await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS telegram_notification_required_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS telegram_notified_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS telegram_notification_exempted_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS application_schema_migrations (
+      migration_key TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    WITH applied AS (
+      INSERT INTO application_schema_migrations (migration_key)
+      VALUES ('telegram_outbox_paid_baseline_v1')
+      ON CONFLICT (migration_key) DO NOTHING
+      RETURNING applied_at
+    )
+    UPDATE orders
+    SET telegram_notification_exempted_at = applied.applied_at,
+        updated_at = NOW()
+    FROM applied
+    WHERE orders.status = 'paid'
+      AND orders.telegram_notification_required_at IS NULL
+      AND orders.telegram_notified_at IS NULL
+      AND orders.telegram_notification_exempted_at IS NULL;
+  `);
+
+  await query(`
+    WITH applied AS (
+      INSERT INTO application_schema_migrations (migration_key)
+      VALUES ('order_cart_reconciliation_baseline_v1')
+      ON CONFLICT (migration_key) DO NOTHING
+      RETURNING applied_at
+    )
+    UPDATE orders
+    SET cart_reconciled_at = applied.applied_at,
+        updated_at = NOW()
+    FROM applied
+    WHERE orders.cart_reconciled_at IS NULL;
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS order_items (
       order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       product_id UUID NOT NULL,
@@ -532,6 +657,247 @@ export const initDb = async () => {
       quantity INTEGER NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (order_id, product_id)
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS order_stock_reservation_events (
+      id UUID PRIMARY KEY,
+      order_id UUID NOT NULL,
+      attempt_key TEXT NOT NULL,
+      event_type TEXT NOT NULL
+        CHECK (event_type IN ('reserved', 'consumed', 'released', 'baseline')),
+      previous_status TEXT
+        CHECK (
+          previous_status IS NULL
+          OR previous_status IN ('reserved', 'consumed', 'released')
+        ),
+      new_status TEXT NOT NULL
+        CHECK (new_status IN ('reserved', 'consumed', 'released')),
+      reason TEXT NOT NULL CHECK (
+        reason IN (
+          'payment_creation',
+          'payment_canceled',
+          'payment_succeeded',
+          'manual_payment',
+          'legacy_paid_baseline'
+        )
+      ),
+      items JSONB NOT NULL CHECK (jsonb_typeof(items) = 'array'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE OR REPLACE FUNCTION reject_order_stock_reservation_event_mutation()
+    RETURNS TRIGGER AS $function$
+    BEGIN
+      RAISE EXCEPTION 'order stock reservation events are immutable';
+    END
+    $function$ LANGUAGE plpgsql;
+  `);
+
+  await query(`
+    DO $trigger$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(
+        hashtext('order_stock_reservation_events_immutable_trigger_v1')
+      );
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'order_stock_reservation_events_immutable'
+          AND tgrelid = 'order_stock_reservation_events'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER order_stock_reservation_events_immutable
+        BEFORE UPDATE OR DELETE ON order_stock_reservation_events
+        FOR EACH ROW
+        EXECUTE FUNCTION reject_order_stock_reservation_event_mutation();
+      END IF;
+    END
+    $trigger$;
+  `);
+
+  await query(`
+    DO $migration$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(hashtext('stock_reservation_paid_baseline_v1'));
+      IF NOT EXISTS (
+        SELECT 1
+        FROM application_schema_migrations
+        WHERE migration_key = 'stock_reservation_paid_baseline_v1'
+      ) THEN
+        WITH transitioned AS (
+          UPDATE orders
+          SET stock_reservation_status = 'consumed',
+              stock_reservation_attempt_key = COALESCE(
+                payment_idempotency_key,
+                'baseline:' || id::text
+              ),
+              stock_reserved_at = COALESCE(
+                payment_confirmed_at,
+                updated_at,
+                created_at,
+                NOW()
+              ),
+              stock_reservation_consumed_at = COALESCE(
+                payment_confirmed_at,
+                updated_at,
+                created_at,
+                NOW()
+              ),
+              stock_reservation_released_at = NULL,
+              stock_reservation_reason = 'legacy_paid_baseline'
+          WHERE status = 'paid'
+            AND stock_reservation_status IS NULL
+          RETURNING id, stock_reservation_attempt_key
+        )
+        INSERT INTO order_stock_reservation_events (
+          id,
+          order_id,
+          attempt_key,
+          event_type,
+          previous_status,
+          new_status,
+          reason,
+          items
+        )
+        SELECT
+          md5('stock-reservation-paid-baseline-v1:' || transitioned.id::text)::uuid,
+          transitioned.id,
+          transitioned.stock_reservation_attempt_key,
+          'baseline',
+          NULL,
+          'consumed',
+          'legacy_paid_baseline',
+          COALESCE(
+            (
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'productId', order_items.product_id::text,
+                  'quantity', order_items.quantity
+                )
+                ORDER BY order_items.product_id
+              )
+              FROM order_items
+              WHERE order_items.order_id = transitioned.id
+            ),
+            '[]'::jsonb
+          )
+        FROM transitioned
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO application_schema_migrations (migration_key)
+        VALUES ('stock_reservation_paid_baseline_v1')
+        ON CONFLICT (migration_key) DO NOTHING;
+      END IF;
+    END
+    $migration$;
+  `);
+
+  await query(`
+    ALTER TABLE orders
+    DROP CONSTRAINT IF EXISTS orders_stock_reservation_state_check;
+    ALTER TABLE orders
+    ADD CONSTRAINT orders_stock_reservation_state_check
+    CHECK (
+      (
+        stock_reservation_status IS NULL
+        AND stock_reservation_attempt_key IS NULL
+        AND stock_reserved_at IS NULL
+        AND stock_reservation_consumed_at IS NULL
+        AND stock_reservation_released_at IS NULL
+        AND stock_reservation_reason IS NULL
+      )
+      OR (
+        stock_reservation_status = 'reserved'
+        AND stock_reservation_attempt_key IS NOT NULL
+        AND stock_reserved_at IS NOT NULL
+        AND stock_reservation_consumed_at IS NULL
+        AND stock_reservation_released_at IS NULL
+        AND stock_reservation_reason IS NOT NULL
+      )
+      OR (
+        stock_reservation_status = 'consumed'
+        AND stock_reservation_attempt_key IS NOT NULL
+        AND stock_reserved_at IS NOT NULL
+        AND stock_reservation_consumed_at IS NOT NULL
+        AND stock_reservation_released_at IS NULL
+        AND stock_reservation_reason IS NOT NULL
+      )
+      OR (
+        stock_reservation_status = 'released'
+        AND stock_reservation_attempt_key IS NOT NULL
+        AND stock_reserved_at IS NOT NULL
+        AND stock_reservation_consumed_at IS NULL
+        AND stock_reservation_released_at IS NOT NULL
+        AND stock_reservation_reason IS NOT NULL
+      )
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_anomalies (
+      id BIGSERIAL PRIMARY KEY,
+      provider TEXT NOT NULL,
+      external_payment_id TEXT NOT NULL,
+      anomaly_code TEXT NOT NULL,
+      payment_status TEXT,
+      amount_cents INTEGER,
+      metadata_order_id UUID,
+      linked_order_id UUID,
+      resolved_at TIMESTAMPTZ,
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      seen_count INTEGER NOT NULL DEFAULT 1 CHECK (seen_count > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (provider, external_payment_id),
+      CHECK (amount_cents IS NULL OR amount_cents >= 0)
+    );
+  `);
+
+  await query(`
+    ALTER TABLE payment_anomalies
+    ADD COLUMN IF NOT EXISTS metadata_order_id UUID;
+  `);
+
+  await query(`
+    ALTER TABLE payment_anomalies
+    ADD COLUMN IF NOT EXISTS linked_order_id UUID;
+  `);
+
+  await query(`
+    ALTER TABLE payment_anomalies
+    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  `);
+
+  await query(`
+    ALTER TABLE payment_anomalies
+    ADD COLUMN IF NOT EXISTS seen_count INTEGER NOT NULL DEFAULT 1;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_anomaly_resolutions (
+      id BIGSERIAL PRIMARY KEY,
+      scope TEXT NOT NULL CHECK (scope IN ('order', 'provider_payment')),
+      order_id UUID,
+      provider_payment_anomaly_id BIGINT
+        REFERENCES payment_anomalies(id) ON DELETE RESTRICT,
+      original_anomaly_code TEXT NOT NULL,
+      external_payment_id TEXT,
+      resolved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_by TEXT NOT NULL
+        CHECK (char_length(resolved_by) BETWEEN 1 AND 256),
+      source TEXT NOT NULL CHECK (source = 'cli'),
+      reason TEXT NOT NULL CHECK (char_length(reason) BETWEEN 10 AND 1000),
+      CHECK (
+        (scope = 'order' AND order_id IS NOT NULL
+          AND provider_payment_anomaly_id IS NULL)
+        OR
+        (scope = 'provider_payment' AND order_id IS NULL
+          AND provider_payment_anomaly_id IS NOT NULL)
+      )
     );
   `);
 
@@ -578,6 +944,456 @@ export const initDb = async () => {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS telegram_outbox_events (
+      id UUID PRIMARY KEY,
+      event_key TEXT NOT NULL UNIQUE,
+      event_type TEXT NOT NULL CHECK (event_type IN ('order_paid', 'lead_created')),
+      bot_kind TEXT NOT NULL CHECK (bot_kind IN ('main', 'orders', 'b2b')),
+      aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('order', 'lead')),
+      aggregate_id UUID NOT NULL,
+      payload_version INTEGER NOT NULL DEFAULT 1 CHECK (payload_version > 0),
+      payload JSONB NOT NULL,
+      payload_scrubbed_at TIMESTAMPTZ,
+      attachment_count INTEGER NOT NULL DEFAULT 0 CHECK (attachment_count >= 0),
+      attachments_expired_at TIMESTAMPTZ,
+      retry_expires_at TIMESTAMPTZ NOT NULL DEFAULT (
+        NOW() + INTERVAL '${telegramOutboxMaxRetryAgeDays} days'
+      ),
+      deliveries_expired_at TIMESTAMPTZ,
+      terminal_delivery_count INTEGER CHECK (terminal_delivery_count >= 0),
+      terminal_sent_part_count INTEGER CHECK (terminal_sent_part_count >= 0),
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'processing', 'retry', 'sent', 'dead')),
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      lease_owner TEXT,
+      lease_until TIMESTAMPTZ,
+      target_count INTEGER NOT NULL DEFAULT 0 CHECK (target_count >= 0),
+      last_error_code TEXT CHECK (
+        last_error_code IS NULL OR last_error_code IN (
+          'no_targets',
+          'config_missing',
+          'timeout',
+          'network_error',
+          'proxy_error',
+          'telegram_api_error',
+          'telegram_auth_error',
+          'telegram_rate_limited',
+          'telegram_chat_blocked',
+          'telegram_chat_not_found',
+          'subscriber_inactive',
+          'invalid_payload',
+          'attachment_missing',
+          'retry_window_expired',
+          'lease_lost',
+          'max_attempts',
+          'unknown_error'
+        )
+      ),
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (
+        (event_type = 'order_paid' AND bot_kind = 'orders' AND aggregate_type = 'order')
+        OR
+        (event_type = 'lead_created' AND bot_kind IN ('main', 'b2b') AND aggregate_type = 'lead')
+      ),
+      CONSTRAINT telegram_outbox_events_lease_pair_check
+        CHECK ((lease_owner IS NULL) = (lease_until IS NULL)),
+      CONSTRAINT telegram_outbox_events_lease_state_check
+        CHECK ((status = 'processing') = (lease_owner IS NOT NULL)),
+      CHECK (jsonb_typeof(payload) = 'object'),
+      CHECK (payload ? 'version' AND payload ? 'text'),
+      CHECK ((payload->>'version') ~ '^[1-9][0-9]*$'),
+      CHECK (payload_version = (payload->>'version')::integer),
+      CHECK (jsonb_typeof(payload->'text') = 'string')
+    );
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS payload_scrubbed_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS attachment_count INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS attachments_expired_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS retry_expires_at TIMESTAMPTZ;
+  `);
+
+  await query(
+    `
+      UPDATE telegram_outbox_events
+      SET retry_expires_at =
+            created_at + ($1::int * INTERVAL '1 day')
+      WHERE retry_expires_at IS NULL;
+    `,
+    [telegramOutboxMaxRetryAgeDays]
+  );
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ALTER COLUMN retry_expires_at SET NOT NULL;
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ALTER COLUMN retry_expires_at
+    SET DEFAULT (
+      NOW() + INTERVAL '${telegramOutboxMaxRetryAgeDays} days'
+    );
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS deliveries_expired_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS terminal_delivery_count INTEGER;
+  `);
+
+  await query(`
+    ALTER TABLE telegram_outbox_events
+    ADD COLUMN IF NOT EXISTS terminal_sent_part_count INTEGER;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS telegram_outbox_attachments (
+      id UUID PRIMARY KEY,
+      event_id UUID NOT NULL REFERENCES telegram_outbox_events(id) ON DELETE CASCADE,
+      part_no INTEGER NOT NULL CHECK (part_no >= 1),
+      file_name TEXT NOT NULL CHECK (char_length(file_name) BETWEEN 1 AND 255),
+      mime_type TEXT NOT NULL CHECK (char_length(mime_type) BETWEEN 1 AND 127),
+      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+      bytes BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (event_id, part_no),
+      CHECK (octet_length(bytes) = size_bytes)
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS telegram_outbox_deliveries (
+      event_id UUID NOT NULL REFERENCES telegram_outbox_events(id) ON DELETE CASCADE,
+      chat_id BIGINT NOT NULL,
+      part_no INTEGER NOT NULL CHECK (part_no >= 0),
+      delivery_kind TEXT NOT NULL CHECK (delivery_kind IN ('text', 'document')),
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'sent', 'skipped', 'dead')),
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      telegram_message_id BIGINT,
+      last_error_code TEXT CHECK (
+        last_error_code IS NULL OR last_error_code IN (
+          'no_targets',
+          'config_missing',
+          'timeout',
+          'network_error',
+          'proxy_error',
+          'telegram_api_error',
+          'telegram_auth_error',
+          'telegram_rate_limited',
+          'telegram_chat_blocked',
+          'telegram_chat_not_found',
+          'subscriber_inactive',
+          'invalid_payload',
+          'attachment_missing',
+          'retry_window_expired',
+          'lease_lost',
+          'max_attempts',
+          'unknown_error'
+        )
+      ),
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (event_id, chat_id, part_no),
+      CHECK (
+        (part_no = 0 AND delivery_kind = 'text')
+        OR
+        (part_no >= 1 AND delivery_kind = 'document')
+      )
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS telegram_outbox_acknowledgements (
+      event_id UUID PRIMARY KEY
+        REFERENCES telegram_outbox_events(id) ON DELETE RESTRICT,
+      event_key TEXT NOT NULL,
+      acknowledged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      acknowledged_by TEXT NOT NULL
+        CHECK (char_length(acknowledged_by) BETWEEN 1 AND 256),
+      source TEXT NOT NULL CHECK (source = 'cli'),
+      reason TEXT NOT NULL CHECK (char_length(reason) BETWEEN 10 AND 1000),
+      terminal_error_code TEXT NOT NULL,
+      target_count INTEGER NOT NULL CHECK (target_count >= 0),
+      attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0)
+    );
+  `);
+
+  await query(`
+    CREATE OR REPLACE FUNCTION reject_telegram_outbox_acknowledgement_mutation()
+    RETURNS TRIGGER AS $function$
+    BEGIN
+      RAISE EXCEPTION 'Telegram outbox acknowledgements are immutable'
+        USING ERRCODE = '55000';
+      RETURN OLD;
+    END;
+    $function$ LANGUAGE plpgsql;
+  `);
+
+  await query(`
+    DO $trigger$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgname = 'telegram_outbox_acknowledgements_immutable'
+          AND tgrelid = 'telegram_outbox_acknowledgements'::regclass
+          AND NOT tgisinternal
+      ) THEN
+        CREATE TRIGGER telegram_outbox_acknowledgements_immutable
+        BEFORE UPDATE OR DELETE ON telegram_outbox_acknowledgements
+        FOR EACH ROW
+        EXECUTE FUNCTION reject_telegram_outbox_acknowledgement_mutation();
+      END IF;
+    END
+    $trigger$;
+  `);
+
+  await query(`
+    DO $migration$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(
+        hashtext('telegram_outbox_privacy_ack_v2')
+      );
+      IF NOT EXISTS (
+        SELECT 1
+        FROM application_schema_migrations
+        WHERE migration_key = 'telegram_outbox_privacy_ack_v2'
+      ) THEN
+        UPDATE telegram_outbox_events AS events
+        SET attachment_count = stored.attachment_count
+        FROM (
+          SELECT event_id, COUNT(*)::int AS attachment_count
+          FROM (
+            SELECT event_id, part_no
+            FROM telegram_outbox_attachments
+            UNION
+            SELECT event_id, part_no
+            FROM telegram_outbox_deliveries
+            WHERE delivery_kind = 'document'
+          ) AS attachment_parts
+          GROUP BY event_id
+        ) AS stored
+        WHERE events.id = stored.event_id
+          AND events.attachment_count = 0
+          AND stored.attachment_count > 0;
+
+        ALTER TABLE telegram_outbox_events
+          DROP CONSTRAINT IF EXISTS telegram_outbox_events_attachment_count_check;
+        ALTER TABLE telegram_outbox_events
+          ADD CONSTRAINT telegram_outbox_events_attachment_count_check
+          CHECK (attachment_count >= 0);
+
+        INSERT INTO application_schema_migrations (migration_key)
+        VALUES ('telegram_outbox_privacy_ack_v2')
+        ON CONFLICT (migration_key) DO NOTHING;
+      END IF;
+    END
+    $migration$;
+  `);
+
+  await query(`
+    DO $migration$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(
+        hashtext('telegram_outbox_retry_expiry_v1')
+      );
+      IF NOT EXISTS (
+        SELECT 1
+        FROM application_schema_migrations
+        WHERE migration_key = 'telegram_outbox_retry_expiry_v1'
+      ) THEN
+        ALTER TABLE telegram_outbox_events
+          DROP CONSTRAINT IF EXISTS telegram_outbox_events_last_error_code_check;
+        ALTER TABLE telegram_outbox_events
+          ADD CONSTRAINT telegram_outbox_events_last_error_code_check
+          CHECK (
+            last_error_code IS NULL OR last_error_code IN (
+              'no_targets', 'config_missing', 'timeout', 'network_error',
+              'proxy_error', 'telegram_api_error', 'telegram_auth_error',
+              'telegram_rate_limited', 'telegram_chat_blocked',
+              'telegram_chat_not_found', 'subscriber_inactive',
+              'invalid_payload', 'attachment_missing',
+              'retry_window_expired', 'lease_lost', 'max_attempts',
+              'unknown_error'
+            )
+          );
+        ALTER TABLE telegram_outbox_deliveries
+          DROP CONSTRAINT IF EXISTS telegram_outbox_deliveries_last_error_code_check;
+        ALTER TABLE telegram_outbox_deliveries
+          ADD CONSTRAINT telegram_outbox_deliveries_last_error_code_check
+          CHECK (
+            last_error_code IS NULL OR last_error_code IN (
+              'no_targets', 'config_missing', 'timeout', 'network_error',
+              'proxy_error', 'telegram_api_error', 'telegram_auth_error',
+              'telegram_rate_limited', 'telegram_chat_blocked',
+              'telegram_chat_not_found', 'subscriber_inactive',
+              'invalid_payload', 'attachment_missing',
+              'retry_window_expired', 'lease_lost', 'max_attempts',
+              'unknown_error'
+            )
+          );
+        ALTER TABLE telegram_outbox_events
+          DROP CONSTRAINT IF EXISTS telegram_outbox_events_terminal_delivery_count_check;
+        ALTER TABLE telegram_outbox_events
+          ADD CONSTRAINT telegram_outbox_events_terminal_delivery_count_check
+          CHECK (
+            terminal_delivery_count IS NULL OR terminal_delivery_count >= 0
+          );
+        ALTER TABLE telegram_outbox_events
+          DROP CONSTRAINT IF EXISTS telegram_outbox_events_terminal_sent_part_count_check;
+        ALTER TABLE telegram_outbox_events
+          ADD CONSTRAINT telegram_outbox_events_terminal_sent_part_count_check
+          CHECK (
+            terminal_sent_part_count IS NULL OR terminal_sent_part_count >= 0
+          );
+        INSERT INTO application_schema_migrations (migration_key)
+        VALUES ('telegram_outbox_retry_expiry_v1')
+        ON CONFLICT (migration_key) DO NOTHING;
+      END IF;
+    END
+    $migration$;
+  `);
+
+  await query(`
+    DO $migration$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(
+        hashtext('telegram_outbox_lease_state_v1')
+      );
+      IF NOT EXISTS (
+        SELECT 1
+        FROM application_schema_migrations
+        WHERE migration_key = 'telegram_outbox_lease_state_v1'
+      ) THEN
+        UPDATE telegram_outbox_events
+        SET status = 'retry',
+            next_attempt_at = NOW(),
+            lease_owner = NULL,
+            lease_until = NULL,
+            last_error_code = COALESCE(last_error_code, 'lease_lost'),
+            updated_at = NOW()
+        WHERE status = 'processing'
+          AND (lease_owner IS NULL OR lease_until IS NULL);
+
+        UPDATE telegram_outbox_events
+        SET lease_owner = NULL,
+            lease_until = NULL,
+            updated_at = NOW()
+        WHERE status <> 'processing'
+          AND (lease_owner IS NOT NULL OR lease_until IS NOT NULL);
+
+        ALTER TABLE telegram_outbox_events
+          DROP CONSTRAINT IF EXISTS telegram_outbox_events_lease_pair_check;
+        ALTER TABLE telegram_outbox_events
+          ADD CONSTRAINT telegram_outbox_events_lease_pair_check
+          CHECK ((lease_owner IS NULL) = (lease_until IS NULL));
+        ALTER TABLE telegram_outbox_events
+          DROP CONSTRAINT IF EXISTS telegram_outbox_events_lease_state_check;
+        ALTER TABLE telegram_outbox_events
+          ADD CONSTRAINT telegram_outbox_events_lease_state_check
+          CHECK ((status = 'processing') = (lease_owner IS NOT NULL));
+
+        INSERT INTO application_schema_migrations (migration_key)
+        VALUES ('telegram_outbox_lease_state_v1')
+        ON CONFLICT (migration_key) DO NOTHING;
+      END IF;
+    END
+    $migration$;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS telegram_update_state (
+      bot_kind TEXT PRIMARY KEY CHECK (bot_kind IN ('main', 'orders', 'b2b')),
+      bot_instance_key TEXT NOT NULL DEFAULT 'legacy',
+      update_offset BIGINT NOT NULL DEFAULT 0 CHECK (update_offset >= 0),
+      last_update_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    ALTER TABLE telegram_update_state
+    ADD COLUMN IF NOT EXISTS bot_instance_key TEXT NOT NULL DEFAULT 'legacy';
+  `);
+
+  await query(`
+    ALTER TABLE telegram_update_state
+    ADD COLUMN IF NOT EXISTS last_update_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    UPDATE telegram_update_state
+    SET last_update_at = updated_at
+    WHERE update_offset > 0
+      AND last_update_at IS NULL;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS telegram_update_inbox (
+      bot_kind TEXT NOT NULL CHECK (bot_kind IN ('main', 'orders', 'b2b')),
+      bot_instance_key TEXT NOT NULL DEFAULT 'legacy',
+      update_id BIGINT NOT NULL CHECK (update_id >= 0),
+      status TEXT NOT NULL DEFAULT 'processing'
+        CHECK (status IN ('processing', 'processed')),
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      last_error_code TEXT CHECK (
+        last_error_code IS NULL OR last_error_code IN (
+          'no_targets',
+          'config_missing',
+          'timeout',
+          'network_error',
+          'proxy_error',
+          'telegram_api_error',
+          'telegram_auth_error',
+          'telegram_rate_limited',
+          'telegram_chat_blocked',
+          'telegram_chat_not_found',
+          'subscriber_inactive',
+          'invalid_payload',
+          'attachment_missing',
+          'lease_lost',
+          'max_attempts',
+          'unknown_error'
+        )
+      ),
+      processed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (bot_kind, update_id)
+    );
+  `);
+
+  await query(`
+    ALTER TABLE telegram_update_inbox
+    ADD COLUMN IF NOT EXISTS bot_instance_key TEXT NOT NULL DEFAULT 'legacy';
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS cart_items (
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -598,7 +1414,22 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS delivery_providers_sort_idx ON delivery_providers (sort_order);`);
   await query(`CREATE INDEX IF NOT EXISTS cart_items_user_idx ON cart_items (user_id);`);
   await query(`CREATE INDEX IF NOT EXISTS orders_user_idx ON orders (user_id);`);
-  await query(`CREATE INDEX IF NOT EXISTS orders_payment_id_idx ON orders (payment_id);`);
+  const duplicatePaymentIds = await query(`
+    SELECT 1
+    FROM orders
+    WHERE payment_id IS NOT NULL
+    GROUP BY payment_id
+    HAVING COUNT(*) > 1
+    LIMIT 1;
+  `);
+  if ((duplicatePaymentIds.rowCount ?? 0) > 0) {
+    throw new Error('Duplicate order payment identifiers require reconciliation');
+  }
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_payment_id_unique
+    ON orders (payment_id)
+    WHERE payment_id IS NOT NULL;
+  `);
   await query(`CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events (created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS security_events_type_created_idx ON security_events (event_type, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS security_events_user_created_idx ON security_events (user_id, created_at DESC);`);
@@ -623,6 +1454,63 @@ export const initDb = async () => {
   await query(`CREATE INDEX IF NOT EXISTS lead_requests_kind_created_idx ON lead_requests (kind, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS lead_requests_telegram_status_created_idx ON lead_requests (telegram_status, created_at DESC);`);
   await query(`CREATE INDEX IF NOT EXISTS lead_requests_phone_created_idx ON lead_requests (phone, created_at DESC);`);
+  await query(`
+    CREATE INDEX IF NOT EXISTS telegram_outbox_events_claim_idx
+    ON telegram_outbox_events (next_attempt_at, created_at)
+    WHERE status IN ('pending', 'retry');
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS telegram_outbox_events_stale_lease_idx
+    ON telegram_outbox_events (lease_until, created_at)
+    WHERE status = 'processing';
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS telegram_outbox_events_expiry_idx
+    ON telegram_outbox_events (retry_expires_at, created_at)
+    WHERE status IN ('pending', 'processing', 'retry');
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS telegram_outbox_deliveries_due_idx
+    ON telegram_outbox_deliveries (event_id, next_attempt_at)
+    WHERE status = 'pending';
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS telegram_outbox_events_aggregate_idx
+    ON telegram_outbox_events (aggregate_type, aggregate_id, event_type);
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS orders_telegram_notification_pending_idx
+    ON orders (telegram_notification_required_at)
+    WHERE telegram_notification_required_at IS NOT NULL AND telegram_notified_at IS NULL;
+  `);
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_payment_idempotency_key_unique
+    ON orders (payment_idempotency_key)
+    WHERE payment_idempotency_key IS NOT NULL;
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS orders_stock_reservation_status_idx
+    ON orders (stock_reservation_status, stock_reserved_at)
+    WHERE stock_reservation_status IS NOT NULL;
+  `);
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_stock_reservation_attempt_key_unique
+    ON orders (stock_reservation_attempt_key)
+    WHERE stock_reservation_attempt_key IS NOT NULL;
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS order_stock_reservation_events_order_created_idx
+    ON order_stock_reservation_events (order_id, created_at DESC);
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS order_stock_reservation_events_attempt_created_idx
+    ON order_stock_reservation_events (attempt_key, created_at DESC);
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS telegram_update_inbox_processing_idx
+    ON telegram_update_inbox (updated_at)
+    WHERE status = 'processing';
+  `);
   await query(`CREATE INDEX IF NOT EXISTS auth_codes_provider_request_idx ON auth_codes (provider_request_id);`);
   await query(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique

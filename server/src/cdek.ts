@@ -333,8 +333,31 @@ export const resolveCdekDestinationCodeByOffice = async (
     }
   });
 
-  const first = Array.isArray(response.body) ? response.body[0] : null;
+  return extractCdekDestinationCodeByOfficeResponse(
+    response.body,
+    normalizedOfficeCode
+  );
+};
+
+export const extractCdekDestinationCodeByOfficeResponse = (
+  responseBody: unknown,
+  officeCode: string
+): string | null => {
+  const normalizedOfficeCode = officeCode.trim();
+  if (!normalizedOfficeCode) {
+    return null;
+  }
+
+  const first = Array.isArray(responseBody) ? responseBody[0] : null;
   if (!isPlainObject(first)) {
+    return null;
+  }
+
+  const returnedOfficeCode = toTrimmedString(first.code);
+  if (
+    !returnedOfficeCode ||
+    returnedOfficeCode.toUpperCase() !== normalizedOfficeCode.toUpperCase()
+  ) {
     return null;
   }
 
@@ -347,6 +370,33 @@ export const resolveCdekDestinationCodeByOffice = async (
   );
 
   return destinationCode || null;
+};
+
+type CdekOfficeDestinationResolver = (
+  officeCode: string
+) => Promise<string | null>;
+
+export const isCdekOfficeBoundToQuoteDestination = async (
+  quoteDestinationCode: string,
+  officeCode: string,
+  resolveDestinationCode: CdekOfficeDestinationResolver =
+    resolveCdekDestinationCodeByOffice
+): Promise<boolean> => {
+  const normalizedQuoteDestination = quoteDestinationCode.trim().toUpperCase();
+  const normalizedOfficeCode = officeCode.trim().toUpperCase();
+  if (!normalizedQuoteDestination || !normalizedOfficeCode) {
+    return false;
+  }
+
+  const resolvedDestinationCode = await resolveDestinationCode(officeCode.trim());
+  if (normalizedQuoteDestination === normalizedOfficeCode) {
+    // Even when the signed quote contains an office code, require CDEK to
+    // confirm that the submitted office actually exists.
+    return resolvedDestinationCode !== null;
+  }
+  return (
+    resolvedDestinationCode?.trim().toUpperCase() === normalizedQuoteDestination
+  );
 };
 
 export const proxyCdekWidgetRequest = async (

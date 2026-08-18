@@ -92,3 +92,17 @@ export const withClient = async <T>(handler: (client: PoolClient) => Promise<T>)
     client.release();
   }
 };
+
+export const closeDatabasePools = async (): Promise<void> => {
+  const applicationPool = pool;
+  const readinessPool = healthPool;
+  pool = null;
+  healthPool = null;
+  healthPoolPhaseTimeoutMs = null;
+  await Promise.all([
+    applicationPool?.end(),
+    readinessPool && readinessPool !== applicationPool
+      ? readinessPool.end()
+      : undefined
+  ]);
+};

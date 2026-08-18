@@ -9,7 +9,11 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test dist/health.test.js",
+    "outbox:redrive": "node dist/telegramOutboxAdmin.js redrive",
+    "outbox:ack": "node dist/telegramOutboxAdmin.js acknowledge-loss",
+    "payment-anomaly:resolve-order": "node dist/paymentAnomalyAdmin.js resolve-order",
+    "payment-anomaly:resolve-provider": "node dist/paymentAnomalyAdmin.js resolve-provider",
+    "test": "npm run build && node --test dist/cdek.test.js dist/health.test.js dist/notificationHealth.test.js dist/notificationMessages.test.js dist/paymentAnomalies.test.js dist/paymentInvariants.test.js dist/runtimeConfig.test.js dist/stockReservation.test.js dist/telegramOutboxWorker.test.js dist/telegramTransport.test.js dist/yookassaConfig.test.js",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "npm run lint -- --fix"
   },
@@ -32,7 +36,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",
-    "@types/node": "^25.0.3",
+    "@types/node": "^20.17.30",
     "@types/pg": "^8.16.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"

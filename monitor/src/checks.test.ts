@@ -6,7 +6,8 @@ import {
   checkDns,
   classifyTlsExpiry,
   validateCatalogPayload,
-  validateHealthPayload
+  validateHealthPayload,
+  validateNotificationsHealthPayload
 } from './checks';
 import type { DnsResolver } from './checks';
 import type { HttpClient, HttpResponseData } from './types';
@@ -156,6 +157,139 @@ test('health validation rejects a syntactically valid false-green response', () 
   );
 });
 
+test('notification health validation enforces delivery invariants and runtime state', () => {
+  const now = Date.parse('2026-08-08T00:00:00.000Z');
+  const checkedAt = new Date(now).toISOString();
+  const healthy = {
+    status: 'ok',
+    checkedAt,
+    worker: { status: 'ok', lastSuccessAt: checkedAt },
+    outbox: {
+      pending: 2, retry: 1, dead: 0, acknowledgedDead: 1,
+      oldestPendingAgeMs: 500
+    },
+    invariants: {
+      paidWithoutOutbox: 0,
+      overduePaidNotifications: 0,
+      paymentStatusDrift: 0,
+      stockReservationDrift: 0,
+      notificationMarkerDrift: 0,
+      failedLeadNotifications: 0,
+      piiRetentionDrift: 0
+    },
+    bots: [
+      {
+        kind: 'main', mode: 'polling', outboundEnabled: true, activeTargets: 1,
+        status: 'ok', botId: '101', username: 'main_bot', lastSuccessAt: checkedAt
+      },
+      {
+        kind: 'orders', mode: 'webhook', outboundEnabled: true, activeTargets: 1,
+        status: 'ok', botId: '102', username: 'orders_bot', lastSuccessAt: checkedAt
+      },
+      {
+        kind: 'b2b', mode: 'disabled', outboundEnabled: false, activeTargets: 0,
+        status: 'ok'
+      }
+    ]
+  };
+
+  assert.equal(validateNotificationsHealthPayload(healthy, 60_000, now), undefined);
+  assert.equal(
+    validateNotificationsHealthPayload(
+      {
+        ...healthy,
+        outbox: { ...healthy.outbox, acknowledgedDead: 2 }
+      },
+      60_000,
+      now
+    ),
+    undefined,
+    'acknowledged dead letters are audit history, not active failures'
+  );
+  assert.match(
+    validateNotificationsHealthPayload({ ...healthy, status: 'error' }, 60_000, now) ?? '',
+    /status is not ok/
+  );
+  assert.match(
+    validateNotificationsHealthPayload(
+      { ...healthy, checkedAt: '2026-08-07T23:00:00.000Z' },
+      60_000,
+      now
+    ) ?? '',
+    /outside the allowed window/
+  );
+  assert.match(
+    validateNotificationsHealthPayload(
+      { ...healthy, worker: { ...healthy.worker, status: 'error' } },
+      60_000,
+      now
+    ) ?? '',
+    /worker is not ok/
+  );
+  assert.match(
+    validateNotificationsHealthPayload(
+      { ...healthy, outbox: { ...healthy.outbox, dead: 1 } },
+      60_000,
+      now
+    ) ?? '',
+    /dead messages/
+  );
+
+  for (const invariant of [
+    'paidWithoutOutbox',
+    'overduePaidNotifications',
+    'paymentStatusDrift',
+    'stockReservationDrift',
+    'notificationMarkerDrift',
+    'failedLeadNotifications',
+    'piiRetentionDrift'
+  ] as const) {
+    const error = validateNotificationsHealthPayload(
+      {
+        ...healthy,
+        invariants: { ...healthy.invariants, [invariant]: 1 }
+      },
+      60_000,
+      now
+    );
+    assert.ok(error, `${invariant} must fail validation`);
+  }
+
+  assert.match(
+    validateNotificationsHealthPayload(
+      {
+        ...healthy,
+        invariants: { ...healthy.invariants, piiRetentionDrift: 1 }
+      },
+      60_000,
+      now
+    ) ?? '',
+    /PII retention drift/
+  );
+
+  assert.match(
+    validateNotificationsHealthPayload(
+      {
+        ...healthy,
+        bots: healthy.bots.map((bot) =>
+          bot.kind === 'orders' ? { ...bot, status: 'error' } : bot
+        )
+      },
+      60_000,
+      now
+    ) ?? '',
+    /runtime is not ok/
+  );
+  assert.match(
+    validateNotificationsHealthPayload(
+      { ...healthy, bots: healthy.bots.slice(0, 2) },
+      60_000,
+      now
+    ) ?? '',
+    /missing a bot state/
+  );
+});
+
 test('catalog validation requires the expected schema and minimum data', () => {
   assert.equal(validateCatalogPayload({}, 1), 'catalog response has no items array');
   assert.equal(validateCatalogPayload({ items: [] }, 1), 'catalog contains fewer than 1 item(s)');
@@ -183,6 +317,16 @@ test('unknown request errors cannot leak token-bearing URLs', () => {
   assert.equal(
     safeErrorDetail(new Error('Another monitor process is already running')),
     'Another monitor process is already running'
+  );
+  assert.equal(
+    safeErrorDetail(
+      new Error('MONITOR_TELEGRAM_CANARY_CHAT_ID is required in summary mode')
+    ),
+    'MONITOR_TELEGRAM_CANARY_CHAT_ID is required in summary mode'
+  );
+  assert.equal(
+    safeErrorDetail(new Error('Notifier returned an invalid delivery receipt')),
+    'Notifier returned an invalid delivery receipt'
   );
 });
 

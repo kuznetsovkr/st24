@@ -205,6 +205,7 @@ export interface HttpCheckOptions {
   marker?: string;
   requireJson?: boolean;
   validateJson?: (payload: unknown) => string | undefined;
+  validateErrorJson?: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -212,6 +213,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isNonNegativeFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const isNonNegativeInteger = (value: unknown): value is number =>
+  isNonNegativeFiniteNumber(value) && Number.isSafeInteger(value);
+
+const parseTimestamp = (value: unknown): number =>
+  typeof value === 'string' ? Date.parse(value) : Number.NaN;
 
 export const validateHealthPayload = (
   payload: unknown,
@@ -267,6 +274,151 @@ export const validateHealthPayload = (
   return undefined;
 };
 
+export const validateNotificationsHealthPayload = (
+  payload: unknown,
+  maxAgeMs = 60_000,
+  now = Date.now(),
+  expectedBots?: MonitorConfig['telegramBots']
+): string | undefined => {
+  if (!isRecord(payload)) {
+    return 'notifications health response is invalid';
+  }
+  const checkedAt = parseTimestamp(payload.checkedAt);
+  if (!Number.isFinite(checkedAt)) {
+    return 'notifications health has an invalid checkedAt';
+  }
+  if (now - checkedAt > maxAgeMs || checkedAt - now > maxAgeMs) {
+    return 'notifications health checkedAt is outside the allowed window';
+  }
+
+  const worker = payload.worker;
+  if (!isRecord(worker) || !['ok', 'error'].includes(String(worker.status))) {
+    return 'notifications worker state is invalid';
+  }
+  if (worker.status !== 'ok') {
+    return 'notifications worker is not ok';
+  }
+  if (!Number.isFinite(parseTimestamp(worker.lastSuccessAt))) {
+    return 'notifications worker has an invalid lastSuccessAt';
+  }
+
+  const outbox = payload.outbox;
+  if (
+    !isRecord(outbox) ||
+    !isNonNegativeInteger(outbox.pending) ||
+    !isNonNegativeInteger(outbox.retry) ||
+    !isNonNegativeInteger(outbox.dead) ||
+    !isNonNegativeInteger(outbox.acknowledgedDead) ||
+    !isNonNegativeFiniteNumber(outbox.oldestPendingAgeMs)
+  ) {
+    return 'notifications outbox metrics are invalid';
+  }
+  if (outbox.dead > 0) {
+    return 'notifications outbox contains dead messages';
+  }
+
+  const invariants = payload.invariants;
+  if (
+    !isRecord(invariants) ||
+    !isNonNegativeInteger(invariants.paidWithoutOutbox) ||
+    !isNonNegativeInteger(invariants.overduePaidNotifications) ||
+    !isNonNegativeInteger(invariants.paymentStatusDrift) ||
+    !isNonNegativeInteger(invariants.stockReservationDrift) ||
+    !isNonNegativeInteger(invariants.notificationMarkerDrift) ||
+    !isNonNegativeInteger(invariants.failedLeadNotifications) ||
+    !isNonNegativeInteger(invariants.piiRetentionDrift)
+  ) {
+    return 'notification invariant metrics are invalid';
+  }
+  if (invariants.paidWithoutOutbox > 0) {
+    return 'paid orders without outbox messages detected';
+  }
+  if (invariants.overduePaidNotifications > 0) {
+    return 'overdue paid order notifications detected';
+  }
+  if (invariants.paymentStatusDrift > 0) {
+    return 'payment status drift detected';
+  }
+  if (invariants.stockReservationDrift > 0) {
+    return 'stock reservation drift detected';
+  }
+  if (invariants.notificationMarkerDrift > 0) {
+    return 'paid order notification marker drift detected';
+  }
+  if (invariants.failedLeadNotifications > 0) {
+    return 'failed lead notifications detected';
+  }
+  if (invariants.piiRetentionDrift > 0) {
+    return 'Telegram outbox PII retention drift detected';
+  }
+
+  if (!Array.isArray(payload.bots)) {
+    return 'notifications health has no bot states';
+  }
+  const expectedKinds = new Set(['main', 'orders', 'b2b']);
+  const expectedByKind = new Map(
+    expectedBots?.map((bot) => [bot.id.replace('telegram-', ''), bot]) ?? []
+  );
+  const seenKinds = new Set<string>();
+  for (const bot of payload.bots) {
+    if (
+      !isRecord(bot) ||
+      typeof bot.kind !== 'string' ||
+      !expectedKinds.has(bot.kind) ||
+      seenKinds.has(bot.kind) ||
+      !['polling', 'webhook', 'disabled'].includes(String(bot.mode)) ||
+      typeof bot.outboundEnabled !== 'boolean' ||
+      !isNonNegativeInteger(bot.activeTargets)
+    ) {
+      return 'notifications health contains an invalid bot state';
+    }
+    seenKinds.add(bot.kind);
+    const expected = expectedByKind.get(bot.kind);
+    if (expected && bot.mode !== expected.mode) {
+      return 'a Telegram bot runtime mode differs from monitor configuration';
+    }
+    if (expected && bot.outboundEnabled !== Boolean(expected.token)) {
+      return 'a Telegram bot outbound state differs from monitor configuration';
+    }
+    if (bot.outboundEnabled) {
+      if (bot.activeTargets < 1) {
+        return 'an outbound Telegram bot has no active notification targets';
+      }
+      if (
+        typeof bot.botId !== 'string' ||
+        !/^[1-9]\d*$/.test(bot.botId) ||
+        typeof bot.username !== 'string' ||
+        !/^[A-Za-z0-9_]{5,32}$/.test(bot.username)
+      ) {
+        return 'an outbound Telegram bot has an invalid backend identity';
+      }
+      if (
+        expected?.expectedUsername &&
+        bot.username.toLocaleLowerCase('en-US') !==
+          expected.expectedUsername.toLocaleLowerCase('en-US')
+      ) {
+        return 'a backend Telegram bot identity differs from monitor configuration';
+      }
+      if (!Number.isFinite(parseTimestamp(bot.lastSuccessAt))) {
+        return 'an outbound Telegram bot has no valid probe success';
+      }
+    }
+    if (bot.status !== 'ok') {
+      return 'a Telegram bot runtime is not ok';
+    }
+    if (bot.lastSuccessAt !== undefined && !Number.isFinite(parseTimestamp(bot.lastSuccessAt))) {
+      return 'a Telegram bot runtime has an invalid lastSuccessAt';
+    }
+  }
+  if (seenKinds.size !== expectedKinds.size) {
+    return 'notifications health is missing a bot state';
+  }
+  if (payload.status !== 'ok') {
+    return 'notifications health status is not ok';
+  }
+  return undefined;
+};
+
 export const validateCatalogPayload = (
   payload: unknown,
   minimumItems: number
@@ -300,7 +452,8 @@ export const checkHttpEndpoint = async ({
   maxResponseMs,
   marker,
   requireJson = false,
-  validateJson
+  validateJson,
+  validateErrorJson = false
 }: HttpCheckOptions): Promise<CheckResult> => {
   const startedAt = performance.now();
   try {
@@ -313,6 +466,24 @@ export const checkHttpEndpoint = async ({
     });
     const latencyMs = elapsedMs(startedAt);
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (validateErrorJson && validateJson) {
+        try {
+          const payload = JSON.parse(response.body) as unknown;
+          const validationError = validateJson(payload);
+          if (validationError) {
+            return result({
+              id,
+              label,
+              status: 'failed',
+              critical: true,
+              detail: validationError,
+              latencyMs
+            });
+          }
+        } catch {
+          // Fall through to the safe HTTP status diagnostic.
+        }
+      }
       return result({
         id,
         label,
@@ -416,6 +587,22 @@ export const createSiteChecks = (config: MonitorConfig, client: HttpClient): Arr
     maxResponseMs: config.maxResponseMs,
     requireJson: true,
     validateJson: (payload) => validateHealthPayload(payload, true, config.healthMaxAgeMs)
+  }),
+  checkHttpEndpoint({
+    id: 'health-notifications',
+    label: 'Notification delivery health',
+    url: config.notificationsUrl,
+    client,
+    maxResponseMs: config.maxResponseMs,
+    requireJson: true,
+    validateJson: (payload) =>
+      validateNotificationsHealthPayload(
+        payload,
+        config.healthMaxAgeMs,
+        Date.now(),
+        config.telegramBots
+      ),
+    validateErrorJson: true
   }),
   checkHttpEndpoint({
     id: 'catalog',

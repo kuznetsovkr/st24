@@ -11,7 +11,15 @@ const validEnvironment = (): Record<string, string> => ({
   TELEGRAM_BOT_TOKEN: 'main-secret-token',
   TELEGRAM_ORDERS_BOT_TOKEN: 'orders-secret-token',
   TELEGRAM_B2B_BOT_TOKEN: 'b2b-secret-token',
+  MONITOR_TELEGRAM_MAIN_MODE: 'polling',
+  MONITOR_TELEGRAM_ORDERS_MODE: 'polling',
+  MONITOR_TELEGRAM_B2B_MODE: 'polling',
+  MONITOR_TELEGRAM_MAIN_USERNAME: 'main_bot',
+  MONITOR_TELEGRAM_ORDERS_USERNAME: 'orders_bot',
+  MONITOR_TELEGRAM_B2B_USERNAME: 'b2b_bot',
+  MONITOR_TELEGRAM_CANARY_CHAT_ID: '-100456',
   MONITOR_TELEGRAM_BOT_TOKEN: 'monitor-secret-token',
+  MONITOR_TELEGRAM_BOT_USERNAME: 'monitor_bot',
   MONITOR_TELEGRAM_CHAT_ID: '-100123'
 });
 
@@ -21,23 +29,43 @@ test('parseConfig derives public endpoints and keeps notifier independent', () =
   assert.equal(config.dnsHost, 'shop.example.test');
   assert.equal(config.liveUrl.href, 'https://shop.example.test/api/health/live');
   assert.equal(config.readyUrl.href, 'https://shop.example.test/api/health/ready');
+  assert.equal(
+    config.notificationsUrl.href,
+    'https://shop.example.test/api/health/notifications'
+  );
   assert.equal(config.catalogUrl.href, 'https://shop.example.test/api/categories');
   assert.equal(config.telegramBots.length, 3);
   assert.equal(config.notifier.token, 'monitor-secret-token');
+  assert.equal(config.notifier.expectedUsername, 'monitor_bot');
   assert.equal(config.notifier.proxyUrl, undefined);
   assert.equal(config.homepageMarker, 'Expected shop title');
   assert.notEqual(config.notifier.token, config.telegramBots[0]?.token);
+});
+
+test('notifier username pin is optional and normalized', () => {
+  const withoutPin = validEnvironment();
+  delete withoutPin.MONITOR_TELEGRAM_BOT_USERNAME;
+  assert.equal(parseConfig(withoutPin).notifier.expectedUsername, undefined);
+
+  const withAtPrefix = validEnvironment();
+  withAtPrefix.MONITOR_TELEGRAM_BOT_USERNAME = '@Monitor_Bot';
+  assert.equal(parseConfig(withAtPrefix).notifier.expectedUsername, 'Monitor_Bot');
 });
 
 test('parseConfig accepts configurable relative and absolute URLs', () => {
   const env = validEnvironment();
   env.MONITOR_CATALOG_URL = '/api/products?limit=1';
   env.MONITOR_READY_URL = 'https://api.example.test/ready';
+  env.MONITOR_NOTIFICATIONS_URL = '/internal/notification-health';
   env.MONITOR_HEARTBEAT_URL = 'https://heartbeat.example.test/monitor-secret';
   const config = parseConfig(env);
 
   assert.equal(config.catalogUrl.href, 'https://shop.example.test/api/products?limit=1');
   assert.equal(config.readyUrl.href, 'https://api.example.test/ready');
+  assert.equal(
+    config.notificationsUrl.href,
+    'https://shop.example.test/internal/notification-health'
+  );
   assert.equal(config.heartbeatUrl?.href, 'https://heartbeat.example.test/monitor-secret');
 });
 
@@ -82,6 +110,66 @@ test('production bot tokens must be unique', () => {
   env.TELEGRAM_B2B_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN ?? '';
   assert.throws(() => parseConfig(env), {
     message: 'Production Telegram bot tokens must be unique'
+  });
+});
+
+test('bot modes are required and webhook mode pins an HTTPS URL', () => {
+  const missingMode = validEnvironment();
+  delete missingMode.MONITOR_TELEGRAM_ORDERS_MODE;
+  assert.throws(() => parseConfig(missingMode), {
+    message: 'Missing required environment variable: MONITOR_TELEGRAM_ORDERS_MODE'
+  });
+
+  const webhook = validEnvironment();
+  webhook.MONITOR_TELEGRAM_MAIN_MODE = 'webhook';
+  webhook.MONITOR_TELEGRAM_MAIN_WEBHOOK_URL =
+    'https://shop.example.test/api/telegram/webhook';
+  assert.equal(
+    parseConfig(webhook).telegramBots[0]?.expectedWebhookUrl,
+    'https://shop.example.test/api/telegram/webhook'
+  );
+
+  const missingWebhook = validEnvironment();
+  missingWebhook.MONITOR_TELEGRAM_MAIN_MODE = 'webhook';
+  assert.throws(() => parseConfig(missingWebhook), {
+    message: 'Missing required environment variable: MONITOR_TELEGRAM_MAIN_WEBHOOK_URL'
+  });
+
+  const insecureWebhook = validEnvironment();
+  insecureWebhook.MONITOR_TELEGRAM_MAIN_MODE = 'webhook';
+  insecureWebhook.MONITOR_TELEGRAM_MAIN_WEBHOOK_URL = 'http://shop.example.test/hook';
+  assert.throws(() => parseConfig(insecureWebhook), {
+    message: 'MONITOR_TELEGRAM_MAIN_WEBHOOK_URL must use https'
+  });
+
+  const pollingWithWebhookUrl = validEnvironment();
+  pollingWithWebhookUrl.MONITOR_TELEGRAM_MAIN_WEBHOOK_URL =
+    'https://shop.example.test/api/telegram/webhook';
+  assert.throws(() => parseConfig(pollingWithWebhookUrl), {
+    message:
+      'MONITOR_TELEGRAM_MAIN_WEBHOOK_URL must be empty unless the bot mode is webhook'
+  });
+
+  const disabledWithWebhookUrl = validEnvironment();
+  disabledWithWebhookUrl.MONITOR_TELEGRAM_MAIN_MODE = 'disabled';
+  disabledWithWebhookUrl.MONITOR_TELEGRAM_MAIN_WEBHOOK_URL =
+    'https://shop.example.test/api/telegram/webhook';
+  assert.throws(() => parseConfig(disabledWithWebhookUrl), {
+    message:
+      'MONITOR_TELEGRAM_MAIN_WEBHOOK_URL must be empty unless the bot mode is webhook'
+  });
+});
+
+test('canary chat id must be a canonical safe integer', () => {
+  const env = validEnvironment();
+  env.MONITOR_TELEGRAM_CANARY_CHAT_ID = 'chat-name';
+  assert.throws(() => parseConfig(env), {
+    message: 'MONITOR_TELEGRAM_CANARY_CHAT_ID must be a canonical safe integer'
+  });
+
+  env.MONITOR_TELEGRAM_CANARY_CHAT_ID = '0';
+  assert.throws(() => parseConfig(env), {
+    message: 'MONITOR_TELEGRAM_CANARY_CHAT_ID must be a canonical safe integer'
   });
 });
 

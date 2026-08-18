@@ -13,21 +13,33 @@ import {
 import { logIntegrationEvent } from './integrationEvents';
 import { resilientFetch } from './httpClient';
 import { getTelegramOutboundDispatcher } from './telegramProxy';
-
-type TelegramConfig = {
-  token: string;
-};
+import {
+  beginTelegramUpdateInbox,
+  completeTelegramUpdateInbox,
+  failTelegramUpdateInbox,
+  loadTelegramUpdateCursor,
+  resetTelegramUpdateOffset,
+  saveTelegramUpdateOffset
+} from './db/telegramOutbox';
+import {
+  TELEGRAM_BOT_KINDS,
+  TelegramDeliveryError,
+  createTelegramRuntimeState,
+  getTelegramAllowedChatIds,
+  getTelegramBotInstanceKey,
+  isTelegramChatAllowed,
+  reduceTelegramRuntimeState,
+  resolveTelegramRuntimeConfig,
+  sendTelegramPartToChat,
+  type TelegramBotKind,
+  type TelegramBotRuntimeConfig,
+  type TelegramRuntimeState
+} from './telegramTransport';
 
 type TelegramDocumentInput = {
   bytes: Uint8Array;
   fileName: string;
   mimeType?: string;
-};
-
-type TelegramError = {
-  ok: boolean;
-  error_code?: number;
-  description?: string;
 };
 
 type TelegramUpdatePayload = {
@@ -74,7 +86,12 @@ type TelegramUpdatePayload = {
   };
 };
 
+type TelegramConfig = {
+  token: string;
+};
+
 type UpdateProcessorOptions = {
+  botKind: TelegramBotKind;
   upsertSubscriber: (input: TelegramSubscriberInput) => Promise<unknown>;
   deactivateSubscriber: (chatId: string) => Promise<unknown>;
   sendWelcomeMessage: (chatId: string) => Promise<void>;
@@ -105,33 +122,17 @@ const getTelegramB2BConfig = (): TelegramConfig => {
   return { token };
 };
 
-async function sendToChat(token: string, chatId: string, text: string) {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  const response = await resilientFetch(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text
-      }),
-      dispatcher: getTelegramOutboundDispatcher()
-    },
-    {
-      circuitKey: 'telegram:send_message',
-      timeoutMs: 10_000,
-      maxRetries: 2
-    }
-  );
+const resolveBotKindForToken = (token: string): TelegramBotKind => {
+  if (token === process.env.TELEGRAM_ORDERS_BOT_TOKEN) return 'orders';
+  if (token === process.env.TELEGRAM_B2B_BOT_TOKEN) return 'b2b';
+  return 'main';
+};
 
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as TelegramError | null;
-    const description = payload?.description ?? 'Не удалось отправить сообщение в Telegram';
-    const error = new Error(description);
-    (error as Error & { errorCode?: number }).errorCode = payload?.error_code;
-    throw error;
-  }
+async function sendToChat(token: string, chatId: string, text: string) {
+  await sendTelegramPartToChat(resolveBotKindForToken(token), chatId, {
+    type: 'text',
+    text
+  });
 }
 
 async function sendDocumentToChat(
@@ -140,43 +141,11 @@ async function sendDocumentToChat(
   document: TelegramDocumentInput,
   caption?: string
 ) {
-  const payload = new FormData();
-  payload.append('chat_id', chatId);
-  const normalizedBytes = new Uint8Array(document.bytes.byteLength);
-  normalizedBytes.set(document.bytes);
-  payload.append(
-    'document',
-    new Blob([normalizedBytes], {
-      type: document.mimeType ?? 'application/octet-stream'
-    }),
-    document.fileName
-  );
-  if (caption) {
-    payload.append('caption', caption);
-  }
-
-  const url = `https://api.telegram.org/bot${token}/sendDocument`;
-  const response = await resilientFetch(
-    url,
-    {
-      method: 'POST',
-      body: payload,
-      dispatcher: getTelegramOutboundDispatcher()
-    },
-    {
-      circuitKey: 'telegram:send_document',
-      timeoutMs: 15_000,
-      maxRetries: 2
-    }
-  );
-
-  if (!response.ok) {
-    const data = (await response.json().catch(() => null)) as TelegramError | null;
-    const description = data?.description ?? 'Не удалось отправить документ в Telegram';
-    const error = new Error(description);
-    (error as Error & { errorCode?: number }).errorCode = data?.error_code;
-    throw error;
-  }
+  await sendTelegramPartToChat(resolveBotKindForToken(token), chatId, {
+    type: 'document',
+    ...document,
+    caption
+  });
 }
 
 const sendWelcomeMessage = async (chatId: string) => {
@@ -260,6 +229,10 @@ const processTelegramUpdate = async (
         : null;
 
     if (text.startsWith('/start')) {
+      if (!isTelegramChatAllowed(options.botKind, chatId)) {
+        await options.deactivateSubscriber(chatId);
+        return;
+      }
       await options.upsertSubscriber({
         chatId,
         username,
@@ -292,6 +265,10 @@ const processTelegramUpdate = async (
     if (status === 'kicked' || status === 'left') {
       await options.deactivateSubscriber(chatId);
     } else if (status === 'member' || status === 'administrator' || status === 'creator') {
+      if (!isTelegramChatAllowed(options.botKind, chatId)) {
+        await options.deactivateSubscriber(chatId);
+        return;
+      }
       await options.upsertSubscriber({
         chatId,
         username:
@@ -310,31 +287,136 @@ const processTelegramUpdate = async (
   }
 };
 
+const telegramUpdateProcessors: Record<
+  TelegramBotKind,
+  (update: unknown) => Promise<void>
+> = {
+  main: (update) =>
+    processTelegramUpdate(update, {
+      botKind: 'main',
+      upsertSubscriber: upsertTelegramSubscriber,
+      deactivateSubscriber: deactivateTelegramSubscriber,
+      sendWelcomeMessage,
+      sendStopMessage
+    }),
+  orders: (update) =>
+    processTelegramUpdate(update, {
+      botKind: 'orders',
+      upsertSubscriber: upsertTelegramOrderSubscriber,
+      deactivateSubscriber: deactivateTelegramOrderSubscriber,
+      sendWelcomeMessage: sendOrdersWelcomeMessage,
+      sendStopMessage: sendOrdersStopMessage
+    }),
+  b2b: (update) =>
+    processTelegramUpdate(update, {
+      botKind: 'b2b',
+      upsertSubscriber: upsertTelegramB2BSubscriber,
+      deactivateSubscriber: deactivateTelegramB2BSubscriber,
+      sendWelcomeMessage: sendB2BWelcomeMessage,
+      sendStopMessage: sendB2BStopMessage
+    })
+};
+
+class TelegramUpdateInboxError extends Error {
+  constructor(code: 'invalid_update_id' | 'update_busy' | 'update_lease_lost') {
+    super(code);
+    this.name = 'TelegramUpdateInboxError';
+  }
+}
+
+const getTelegramUpdateId = (update: unknown) => {
+  if (!update || typeof update !== 'object' || Array.isArray(update)) {
+    throw new TelegramUpdateInboxError('invalid_update_id');
+  }
+  const updateId = (update as { update_id?: unknown }).update_id;
+  if (typeof updateId !== 'number' || !Number.isSafeInteger(updateId) || updateId < 0) {
+    throw new TelegramUpdateInboxError('invalid_update_id');
+  }
+  return updateId;
+};
+
+const processTelegramUpdateDurably = async (
+  botKind: TelegramBotKind,
+  update: unknown,
+  nextOffset?: number
+) => {
+  const updateId = getTelegramUpdateId(update);
+  const botInstanceKey = getTelegramBotInstanceKey(botKind);
+  const inbox = await beginTelegramUpdateInbox(botKind, botInstanceKey, updateId);
+  if (inbox.state === 'already_processed') {
+    if (nextOffset !== undefined) {
+      await saveTelegramUpdateOffset(botKind, botInstanceKey, nextOffset);
+    }
+    return;
+  }
+  if (inbox.state === 'busy') {
+    throw new TelegramUpdateInboxError('update_busy');
+  }
+
+  try {
+    await telegramUpdateProcessors[botKind](update);
+    const completed = await completeTelegramUpdateInbox(
+      botKind,
+      botInstanceKey,
+      updateId,
+      inbox.attemptCount,
+      nextOffset
+    );
+    if (!completed) throw new TelegramUpdateInboxError('update_lease_lost');
+  } catch (error) {
+    await failTelegramUpdateInbox(
+      botKind,
+      botInstanceKey,
+      updateId,
+      inbox.attemptCount,
+      'unknown_error'
+    ).catch(() => undefined);
+    throw error;
+  }
+};
+
 export const handleTelegramUpdate = async (update: unknown) => {
-  await processTelegramUpdate(update, {
-    upsertSubscriber: upsertTelegramSubscriber,
-    deactivateSubscriber: deactivateTelegramSubscriber,
-    sendWelcomeMessage,
-    sendStopMessage
-  });
+  await trackWebhookUpdate('main', () => processTelegramUpdateDurably('main', update));
 };
 
 export const handleTelegramOrderUpdate = async (update: unknown) => {
-  await processTelegramUpdate(update, {
-    upsertSubscriber: upsertTelegramOrderSubscriber,
-    deactivateSubscriber: deactivateTelegramOrderSubscriber,
-    sendWelcomeMessage: sendOrdersWelcomeMessage,
-    sendStopMessage: sendOrdersStopMessage
-  });
+  await trackWebhookUpdate('orders', () =>
+    processTelegramUpdateDurably('orders', update)
+  );
 };
 
 export const handleTelegramB2BUpdate = async (update: unknown) => {
-  await processTelegramUpdate(update, {
-    upsertSubscriber: upsertTelegramB2BSubscriber,
-    deactivateSubscriber: deactivateTelegramB2BSubscriber,
-    sendWelcomeMessage: sendB2BWelcomeMessage,
-    sendStopMessage: sendB2BStopMessage
-  });
+  await trackWebhookUpdate('b2b', () => processTelegramUpdateDurably('b2b', update));
+};
+
+export const listActiveTelegramChatIds = async (
+  botKind: TelegramBotKind
+): Promise<string[]> => {
+  const subscribers =
+    botKind === 'main'
+      ? await listTelegramSubscribers()
+      : botKind === 'orders'
+        ? await listTelegramOrderSubscribers()
+        : await listTelegramB2BSubscribers();
+  const allowed = new Set(getTelegramAllowedChatIds(botKind));
+  return subscribers
+    .map((subscriber) => subscriber.chat_id)
+    .filter((chatId) => allowed.has(chatId));
+};
+
+export const deactivateTelegramChat = async (
+  botKind: TelegramBotKind,
+  chatId: string
+) => {
+  if (botKind === 'main') {
+    await deactivateTelegramSubscriber(chatId);
+    return;
+  }
+  if (botKind === 'orders') {
+    await deactivateTelegramOrderSubscriber(chatId);
+    return;
+  }
+  await deactivateTelegramB2BSubscriber(chatId);
 };
 
 export const sendTelegramMessage = async (
@@ -365,8 +447,8 @@ export const sendTelegramMessage = async (
         successCount += 1;
       } catch (error) {
         const err = error instanceof Error ? error : new Error('Не удалось отправить');
-        const errorCode = (err as Error & { errorCode?: number }).errorCode;
-        if (errorCode === 403 || err.message.includes('blocked')) {
+        const errorCode = err instanceof TelegramDeliveryError ? err.code : null;
+        if (errorCode === 403) {
           await deactivateTelegramSubscriber(subscriber.chat_id);
           return;
         }
@@ -397,8 +479,8 @@ export const sendOrderTelegramMessage = async (text: string) => {
         successCount += 1;
       } catch (error) {
         const err = error instanceof Error ? error : new Error('Не удалось отправить');
-        const errorCode = (err as Error & { errorCode?: number }).errorCode;
-        if (errorCode === 403 || err.message.includes('blocked')) {
+        const errorCode = err instanceof TelegramDeliveryError ? err.code : null;
+        if (errorCode === 403) {
           await deactivateTelegramOrderSubscriber(subscriber.chat_id);
           return;
         }
@@ -438,8 +520,8 @@ export const sendB2BTelegramMessage = async (
         successCount += 1;
       } catch (error) {
         const err = error instanceof Error ? error : new Error('Не удалось отправить');
-        const errorCode = (err as Error & { errorCode?: number }).errorCode;
-        if (errorCode === 403 || err.message.includes('blocked')) {
+        const errorCode = err instanceof TelegramDeliveryError ? err.code : null;
+        if (errorCode === 403) {
           await deactivateTelegramB2BSubscriber(subscriber.chat_id);
           return;
         }
@@ -453,233 +535,486 @@ export const sendB2BTelegramMessage = async (
   }
 };
 
-export const startTelegramPolling = () => {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+type TelegramPollingUpdate = {
+  update_id: number;
+} & Record<string, unknown>;
+
+type TelegramPollingDefinition = {
+  tokenEnvironmentKey: string;
+  operation: string;
+};
+
+const TELEGRAM_POLLING_DEFINITIONS: Record<
+  TelegramBotKind,
+  TelegramPollingDefinition
+> = {
+  main: {
+    tokenEnvironmentKey: 'TELEGRAM_BOT_TOKEN',
+    operation: 'poll_updates'
+  },
+  orders: {
+    tokenEnvironmentKey: 'TELEGRAM_ORDERS_BOT_TOKEN',
+    operation: 'poll_updates_orders'
+  },
+  b2b: {
+    tokenEnvironmentKey: 'TELEGRAM_B2B_BOT_TOKEN',
+    operation: 'poll_updates_b2b'
+  }
+};
+
+const createDisabledRuntimeConfig = (
+  kind: TelegramBotKind
+): TelegramBotRuntimeConfig => ({
+  kind,
+  mode: 'disabled',
+  tokenConfigured: false,
+  webhookSecretConfigured: false,
+  expectedWebhookUrl: null,
+  allowedChatIds: []
+});
+
+const telegramRuntimeStates = Object.fromEntries(
+  TELEGRAM_BOT_KINDS.map((kind) => [
+    kind,
+    createTelegramRuntimeState(createDisabledRuntimeConfig(kind))
+  ])
+) as Record<TelegramBotKind, TelegramRuntimeState>;
+
+async function trackWebhookUpdate(
+  botKind: TelegramBotKind,
+  operation: () => Promise<void>
+) {
+  if (telegramRuntimeStates[botKind].mode !== 'webhook') {
+    throw new Error('telegram_webhook_mode_disabled');
+  }
+
+  const attemptedAt = new Date().toISOString();
+  telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+    telegramRuntimeStates[botKind],
+    { type: 'attempt', at: attemptedAt }
+  );
+  try {
+    await operation();
+    telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+      telegramRuntimeStates[botKind],
+      { type: 'success', at: new Date().toISOString() }
+    );
+  } catch (error) {
+    telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+      telegramRuntimeStates[botKind],
+      {
+        type: 'failure',
+        at: new Date().toISOString(),
+        errorCode: 'update_processing_error'
+      }
+    );
+    throw error;
+  }
+}
+
+const applyTelegramRuntimeConfigs = (configs: TelegramBotRuntimeConfig[]) => {
+  for (const config of configs) {
+    telegramRuntimeStates[config.kind] = reduceTelegramRuntimeState(
+      telegramRuntimeStates[config.kind],
+      { type: 'configured', config }
+    );
+  }
+};
+
+export const validateTelegramStartupConfig = (
+  environment: Record<string, string | undefined> = process.env
+) => {
+  const configs = resolveTelegramRuntimeConfig(environment);
+  applyTelegramRuntimeConfigs(configs);
+  return configs;
+};
+
+export const getTelegramRuntimeSnapshot = (): Record<
+  TelegramBotKind,
+  TelegramRuntimeState
+> => ({
+  main: { ...telegramRuntimeStates.main },
+  orders: { ...telegramRuntimeStates.orders },
+  b2b: { ...telegramRuntimeStates.b2b }
+});
+
+class TelegramPollingError extends Error {
+  readonly code: string;
+
+  constructor(code: string) {
+    super(code);
+    this.name = 'TelegramPollingError';
+    this.code = code;
+  }
+}
+
+const asPollingPayload = (value: unknown) =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+export type TelegramBotProbeState = {
+  running: boolean;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  lastErrorCode: string | null;
+  botId: string | null;
+  username: string | null;
+};
+
+const createTelegramBotProbeState = (): TelegramBotProbeState => ({
+  running: false,
+  lastAttemptAt: null,
+  lastSuccessAt: null,
+  consecutiveFailures: 0,
+  lastErrorCode: null,
+  botId: null,
+  username: null
+});
+
+const telegramBotProbeStates = Object.fromEntries(
+  TELEGRAM_BOT_KINDS.map((kind) => [kind, createTelegramBotProbeState()])
+) as Record<TelegramBotKind, TelegramBotProbeState>;
+
+export const getTelegramBotProbeSnapshot = (): Record<
+  TelegramBotKind,
+  TelegramBotProbeState
+> => ({
+  main: { ...telegramBotProbeStates.main },
+  orders: { ...telegramBotProbeStates.orders },
+  b2b: { ...telegramBotProbeStates.b2b }
+});
+
+class TelegramBotProbeError extends Error {
+  readonly code: string;
+
+  constructor(code: string) {
+    super(code);
+    this.name = 'TelegramBotProbeError';
+    this.code = code;
+  }
+}
+
+const parseProbeInteger = (
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number
+) => {
+  const raw = value?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return fallback;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum
+    ? parsed
+    : fallback;
+};
+
+const requestTelegramProbeMethod = async (
+  botKind: TelegramBotKind,
+  token: string,
+  method: 'getMe' | 'getWebhookInfo'
+) => {
+  const response = await resilientFetch(
+    `https://api.telegram.org/bot${token}/${method}`,
+    { dispatcher: getTelegramOutboundDispatcher() },
+    {
+      circuitKey: `telegram:runtime_probe:${botKind}:${method}`,
+      timeoutMs: 10_000,
+      maxRetries: 1
+    }
+  );
+  const payload = await response.json().catch(() => null);
+  const root = asPollingPayload(payload);
+  if (response.status < 200 || response.status >= 300 || root?.ok !== true) {
+    const telegramCode =
+      typeof root?.error_code === 'number' && Number.isInteger(root.error_code)
+        ? root.error_code
+        : response.status;
+    throw new TelegramBotProbeError(`telegram_api_${telegramCode}`);
+  }
+  const result = asPollingPayload(root.result);
+  if (!result) throw new TelegramBotProbeError('invalid_response');
+  return result;
+};
+
+const probeTelegramBot = async (config: TelegramBotRuntimeConfig) => {
+  const token = process.env[TELEGRAM_POLLING_DEFINITIONS[config.kind].tokenEnvironmentKey]?.trim();
+  if (!token) throw new TelegramBotProbeError('config_missing');
+
+  const identity = await requestTelegramProbeMethod(config.kind, token, 'getMe');
+  const botId = identity.id;
+  const username = identity.username;
+  if (
+    identity.is_bot !== true ||
+    !(
+      (typeof botId === 'number' && Number.isSafeInteger(botId) && botId > 0) ||
+      (typeof botId === 'string' && /^[1-9]\d*$/.test(botId))
+    ) ||
+    typeof username !== 'string' ||
+    !/^[A-Za-z0-9_]{5,32}$/.test(username)
+  ) {
+    throw new TelegramBotProbeError('invalid_identity');
+  }
+
+  const webhook = await requestTelegramProbeMethod(config.kind, token, 'getWebhookInfo');
+  const webhookUrl = typeof webhook.url === 'string' ? webhook.url : null;
+  const pending = webhook.pending_update_count;
+  const maxPending = parseProbeInteger(
+    process.env.TELEGRAM_MAX_PENDING_UPDATES,
+    100,
+    0,
+    1_000_000
+  );
+  if (
+    webhookUrl === null ||
+    typeof pending !== 'number' ||
+    !Number.isSafeInteger(pending) ||
+    pending < 0
+  ) {
+    throw new TelegramBotProbeError('invalid_webhook_info');
+  }
+  if (config.mode !== 'disabled' && pending > maxPending) {
+    throw new TelegramBotProbeError('updates_backlog');
+  }
+  if ((config.mode === 'polling' || config.mode === 'disabled') && webhookUrl !== '') {
+    throw new TelegramBotProbeError('unexpected_webhook');
+  }
+  if (config.mode === 'webhook' && webhookUrl !== config.expectedWebhookUrl) {
+    throw new TelegramBotProbeError('webhook_mismatch');
+  }
+  const recentErrorCutoffSeconds = Math.floor(Date.now() / 1_000) - 600;
+  const lastErrorDate = webhook.last_error_date;
+  if (
+    config.mode === 'webhook' &&
+    typeof lastErrorDate === 'number' &&
+    Number.isSafeInteger(lastErrorDate) &&
+    lastErrorDate >= recentErrorCutoffSeconds
+  ) {
+    throw new TelegramBotProbeError('webhook_delivery_error');
+  }
+  const lastSynchronizationErrorDate = webhook.last_synchronization_error_date;
+  if (
+    config.mode !== 'disabled' &&
+    typeof lastSynchronizationErrorDate === 'number' &&
+    Number.isSafeInteger(lastSynchronizationErrorDate) &&
+    lastSynchronizationErrorDate >= recentErrorCutoffSeconds
+  ) {
+    throw new TelegramBotProbeError('updates_synchronization_error');
+  }
+
+  return { botId: String(botId), username };
+};
+
+let telegramBotSupervisionStarted = false;
+
+export const startTelegramBotSupervision = () => {
+  if (telegramBotSupervisionStarted) return;
+  telegramBotSupervisionStarted = true;
+  const intervalMs = parseProbeInteger(
+    process.env.TELEGRAM_RUNTIME_PROBE_INTERVAL_MS,
+    60_000,
+    10_000,
+    3_600_000
+  );
+  const configs = validateTelegramStartupConfig();
+
+  for (const config of configs) {
+    if (!config.tokenConfigured) continue;
+    const state = telegramBotProbeStates[config.kind];
+    state.running = true;
+    const run = async () => {
+      state.lastAttemptAt = new Date().toISOString();
+      try {
+        const identity = await probeTelegramBot(config);
+        state.lastSuccessAt = new Date().toISOString();
+        state.consecutiveFailures = 0;
+        state.lastErrorCode = null;
+        state.botId = identity.botId;
+        state.username = identity.username;
+      } catch (error) {
+        state.consecutiveFailures += 1;
+        state.lastErrorCode =
+          error instanceof TelegramBotProbeError
+            ? error.code
+            : error instanceof TelegramDeliveryError
+              ? `${error.kind}_${String(error.code)}`
+              : 'runtime_probe_failed';
+        void logIntegrationEvent({
+          provider: 'telegram',
+          operation: `runtime_probe_${config.kind}`,
+          fallbackUsed: false,
+          error: state.lastErrorCode
+        });
+      } finally {
+        const timer = setTimeout(() => void run(), intervalMs);
+        timer.unref?.();
+      }
+    };
+    void run();
+  }
+};
+
+const parsePollingResponse = (
+  responseStatus: number,
+  payload: unknown
+): TelegramPollingUpdate[] => {
+  const root = asPollingPayload(payload);
+  if (
+    responseStatus < 200 ||
+    responseStatus >= 300 ||
+    root?.ok !== true ||
+    !Array.isArray(root.result)
+  ) {
+    const telegramCode =
+      typeof root?.error_code === 'number' && Number.isInteger(root.error_code)
+        ? root.error_code
+        : null;
+    throw new TelegramPollingError(
+      telegramCode !== null
+        ? `telegram_api_${telegramCode}`
+        : responseStatus >= 400
+          ? `http_${responseStatus}`
+          : 'invalid_response'
+    );
+  }
+
+  const updates: TelegramPollingUpdate[] = [];
+  for (const value of root.result) {
+    const update = asPollingPayload(value);
+    if (
+      !update ||
+      typeof update.update_id !== 'number' ||
+      !Number.isSafeInteger(update.update_id) ||
+      update.update_id < 0
+    ) {
+      throw new TelegramPollingError('invalid_response');
+    }
+    updates.push(update as TelegramPollingUpdate);
+  }
+  return updates;
+};
+
+const safePollingErrorCode = (error: unknown) => {
+  if (error instanceof TelegramPollingError) return error.code;
+  if (error instanceof TelegramDeliveryError) {
+    return `${error.kind}_${String(error.code)}`;
+  }
+  if (error instanceof Error && error.name === 'HttpTimeoutError') return 'timeout';
+  if (error instanceof Error && error.name === 'HttpCircuitOpenError') return 'circuit_open';
+  return 'polling_error';
+};
+
+const TELEGRAM_UPDATE_ID_RANDOMIZATION_IDLE_MS = 7 * 24 * 60 * 60_000;
+
+export const shouldResetTelegramUpdateOffset = (
+  offset: number,
+  lastUpdateAt: string | null,
+  now = Date.now()
+) => {
+  if (offset <= 0 || !lastUpdateAt) return false;
+  const timestamp = Date.parse(lastUpdateAt);
+  return Number.isFinite(timestamp) && now - timestamp >= TELEGRAM_UPDATE_ID_RANDOMIZATION_IDLE_MS;
+};
+
+const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
+  const configs = validateTelegramStartupConfig();
+  const config = configs.find((candidate) => candidate.kind === botKind);
+  if (!config || config.mode !== 'polling') return;
+  if (telegramRuntimeStates[botKind].running) return;
+
+  const definition = TELEGRAM_POLLING_DEFINITIONS[botKind];
+  const token = process.env[definition.tokenEnvironmentKey]?.trim();
   if (!token) {
-    return;
+    throw new Error(`${definition.tokenEnvironmentKey} is required in polling mode`);
   }
 
-  const pollingEnabled = process.env.TELEGRAM_POLLING === 'true';
-  if (!pollingEnabled) {
-    return;
-  }
+  telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+    telegramRuntimeStates[botKind],
+    { type: 'started' }
+  );
 
-  let offset = 0;
+  let offset: number | null = null;
+  let lastUpdateAt: string | null = null;
   let attempt = 0;
 
   const poll = async () => {
     const currentAttempt = (attempt += 1);
     const startedAt = Date.now();
+    const attemptedAt = new Date(startedAt).toISOString();
     let statusCode: number | null = null;
+    telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+      telegramRuntimeStates[botKind],
+      { type: 'attempt', at: attemptedAt }
+    );
+
     try {
+      const botInstanceKey = getTelegramBotInstanceKey(botKind);
+      if (offset === null) {
+        const cursor = await loadTelegramUpdateCursor(botKind, botInstanceKey);
+        offset = cursor.offset;
+        lastUpdateAt = cursor.lastUpdateAt;
+      }
+      if (shouldResetTelegramUpdateOffset(offset, lastUpdateAt)) {
+        if (!(await resetTelegramUpdateOffset(botKind, botInstanceKey))) {
+          throw new TelegramPollingError('offset_reset_failed');
+        }
+        offset = 0;
+        lastUpdateAt = null;
+      }
       const url = `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`;
       const response = await resilientFetch(
         url,
+        { dispatcher: getTelegramOutboundDispatcher() },
         {
-          dispatcher: getTelegramOutboundDispatcher()
-        },
-        {
-          circuitKey: 'telegram:poll_updates:main',
+          circuitKey: `telegram:poll_updates:${botKind}`,
           timeoutMs: 45_000,
           maxRetries: 1
         }
       );
       statusCode = response.status;
-      const data = (await response.json()) as {
-        ok?: boolean;
-        error_code?: number;
-        description?: string;
-        result?: Array<{ update_id: number } & Record<string, unknown>>;
-      };
+      const payload = await response.json().catch(() => null);
+      const updates = parsePollingResponse(response.status, payload);
 
-      if (response.ok && data.ok && Array.isArray(data.result)) {
-        for (const update of data.result) {
-          offset = Math.max(offset, update.update_id + 1);
-          await handleTelegramUpdate(update);
-        }
-      } else {
-        const message =
-          typeof data.description === 'string'
-            ? data.description
-            : 'telegram polling returned non-ok response';
-        void logIntegrationEvent({
-          provider: 'telegram',
-          operation: 'poll_updates',
-          attempt: currentAttempt,
-          statusCode,
-          latencyMs: Date.now() - startedAt,
-          fallbackUsed: false,
-          error: message
-        });
+      for (const update of updates) {
+        const nextOffset = Math.max(offset, update.update_id + 1);
+        await processTelegramUpdateDurably(botKind, update, nextOffset);
+        offset = nextOffset;
+        lastUpdateAt = new Date().toISOString();
       }
+
+      telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+        telegramRuntimeStates[botKind],
+        { type: 'success', at: new Date().toISOString() }
+      );
     } catch (error) {
+      const errorCode = safePollingErrorCode(error);
+      telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
+        telegramRuntimeStates[botKind],
+        { type: 'failure', at: new Date().toISOString(), errorCode }
+      );
       void logIntegrationEvent({
         provider: 'telegram',
-        operation: 'poll_updates',
+        operation: definition.operation,
         attempt: currentAttempt,
         statusCode,
         latencyMs: Date.now() - startedAt,
         fallbackUsed: false,
-        error: error instanceof Error ? error.message : 'unknown_error'
+        error: errorCode
       });
     } finally {
       setTimeout(poll, 1000);
     }
   };
 
-  poll();
+  void poll();
 };
 
-export const startTelegramOrderPolling = () => {
-  const token = process.env.TELEGRAM_ORDERS_BOT_TOKEN;
-  if (!token) {
-    return;
-  }
+export const startTelegramPolling = () => startTelegramPollingForBot('main');
 
-  const pollingEnabled = process.env.TELEGRAM_ORDERS_POLLING === 'true';
-  if (!pollingEnabled) {
-    return;
-  }
+export const startTelegramOrderPolling = () => startTelegramPollingForBot('orders');
 
-  let offset = 0;
-  let attempt = 0;
+export const startTelegramB2BPolling = () => startTelegramPollingForBot('b2b');
 
-  const poll = async () => {
-    const currentAttempt = (attempt += 1);
-    const startedAt = Date.now();
-    let statusCode: number | null = null;
-    try {
-      const url = `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`;
-      const response = await resilientFetch(
-        url,
-        {
-          dispatcher: getTelegramOutboundDispatcher()
-        },
-        {
-          circuitKey: 'telegram:poll_updates:orders',
-          timeoutMs: 45_000,
-          maxRetries: 1
-        }
-      );
-      statusCode = response.status;
-      const data = (await response.json()) as {
-        ok?: boolean;
-        error_code?: number;
-        description?: string;
-        result?: Array<{ update_id: number } & Record<string, unknown>>;
-      };
-
-      if (response.ok && data.ok && Array.isArray(data.result)) {
-        for (const update of data.result) {
-          offset = Math.max(offset, update.update_id + 1);
-          await handleTelegramOrderUpdate(update);
-        }
-      } else {
-        const message =
-          typeof data.description === 'string'
-            ? data.description
-            : 'telegram orders polling returned non-ok response';
-        void logIntegrationEvent({
-          provider: 'telegram',
-          operation: 'poll_updates_orders',
-          attempt: currentAttempt,
-          statusCode,
-          latencyMs: Date.now() - startedAt,
-          fallbackUsed: false,
-          error: message
-        });
-      }
-    } catch (error) {
-      void logIntegrationEvent({
-        provider: 'telegram',
-        operation: 'poll_updates_orders',
-        attempt: currentAttempt,
-        statusCode,
-        latencyMs: Date.now() - startedAt,
-        fallbackUsed: false,
-        error: error instanceof Error ? error.message : 'unknown_error'
-      });
-    } finally {
-      setTimeout(poll, 1000);
-    }
-  };
-
-  poll();
-};
-
-export const startTelegramB2BPolling = () => {
-  const token = process.env.TELEGRAM_B2B_BOT_TOKEN;
-  if (!token) {
-    return;
-  }
-
-  const pollingEnabled = process.env.TELEGRAM_B2B_POLLING === 'true';
-  if (!pollingEnabled) {
-    return;
-  }
-
-  let offset = 0;
-  let attempt = 0;
-
-  const poll = async () => {
-    const currentAttempt = (attempt += 1);
-    const startedAt = Date.now();
-    let statusCode: number | null = null;
-    try {
-      const url = `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`;
-      const response = await resilientFetch(
-        url,
-        {
-          dispatcher: getTelegramOutboundDispatcher()
-        },
-        {
-          circuitKey: 'telegram:poll_updates:b2b',
-          timeoutMs: 45_000,
-          maxRetries: 1
-        }
-      );
-      statusCode = response.status;
-      const data = (await response.json()) as {
-        ok?: boolean;
-        error_code?: number;
-        description?: string;
-        result?: Array<{ update_id: number } & Record<string, unknown>>;
-      };
-
-      if (response.ok && data.ok && Array.isArray(data.result)) {
-        for (const update of data.result) {
-          offset = Math.max(offset, update.update_id + 1);
-          await handleTelegramB2BUpdate(update);
-        }
-      } else {
-        const message =
-          typeof data.description === 'string'
-            ? data.description
-            : 'telegram b2b polling returned non-ok response';
-        void logIntegrationEvent({
-          provider: 'telegram',
-          operation: 'poll_updates_b2b',
-          attempt: currentAttempt,
-          statusCode,
-          latencyMs: Date.now() - startedAt,
-          fallbackUsed: false,
-          error: message
-        });
-      }
-    } catch (error) {
-      void logIntegrationEvent({
-        provider: 'telegram',
-        operation: 'poll_updates_b2b',
-        attempt: currentAttempt,
-        statusCode,
-        latencyMs: Date.now() - startedAt,
-        fallbackUsed: false,
-        error: error instanceof Error ? error.message : 'unknown_error'
-      });
-    } finally {
-      setTimeout(poll, 1000);
-    }
-  };
-
-  poll();
-};
+export { TelegramDeliveryError, sendTelegramPartToChat };
+export type { TelegramBotKind };

@@ -1,4 +1,4 @@
-import { query } from '../db';
+import { query, withClient } from '../db';
 
 export type CartItemRow = {
   product_id: string;
@@ -103,3 +103,88 @@ export const replaceCartItems = async (userId: string, items: CartSyncItem[]) =>
     values
   );
 };
+
+export const removeOrderItemsFromCart = async (
+  userId: string,
+  orderId: string
+): Promise<void> =>
+  withClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      const orderResult = await client.query(
+        `
+          SELECT cart_reconciled_at
+          FROM orders
+          WHERE id = $2
+            AND user_id = $1
+            AND status = 'paid'
+          FOR UPDATE;
+        `,
+        [userId, orderId]
+      );
+      if (!orderResult.rows[0] || orderResult.rows[0].cart_reconciled_at !== null) {
+        await client.query('COMMIT');
+        return;
+      }
+      await client.query(
+        `
+          SELECT cart.product_id
+          FROM cart_items AS cart
+          JOIN order_items AS ordered
+            ON ordered.product_id = cart.product_id
+           AND ordered.order_id = $2
+          WHERE cart.user_id = $1
+          FOR UPDATE OF cart;
+        `,
+        [userId, orderId]
+      );
+      await client.query(
+        `
+          WITH ordered AS (
+            SELECT product_id, SUM(quantity)::int AS quantity
+            FROM order_items
+            WHERE order_id = $2
+            GROUP BY product_id
+          )
+          DELETE FROM cart_items AS cart
+          USING ordered
+          WHERE cart.user_id = $1
+            AND cart.product_id = ordered.product_id
+            AND cart.quantity <= ordered.quantity;
+        `,
+        [userId, orderId]
+      );
+      await client.query(
+        `
+          WITH ordered AS (
+            SELECT product_id, SUM(quantity)::int AS quantity
+            FROM order_items
+            WHERE order_id = $2
+            GROUP BY product_id
+          )
+          UPDATE cart_items AS cart
+          SET quantity = cart.quantity - ordered.quantity,
+              updated_at = NOW()
+          FROM ordered
+          WHERE cart.user_id = $1
+            AND cart.product_id = ordered.product_id;
+        `,
+        [userId, orderId]
+      );
+      await client.query(
+        `
+          UPDATE orders
+          SET cart_reconciled_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $2
+            AND user_id = $1
+            AND cart_reconciled_at IS NULL;
+        `,
+        [userId, orderId]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });

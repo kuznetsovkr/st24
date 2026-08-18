@@ -1,5 +1,6 @@
 node_modules
-.env
+.env*
+!.env.example
 *.log
 server/dist
 server/.env
@@ -9,4 +10,5 @@ client/dist
 .npm-cache
 .monitor-state.json*
 monitor/dist
+.tmp-postgres-*/
 .DS_Store

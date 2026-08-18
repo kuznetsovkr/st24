@@ -162,7 +162,14 @@ npm run build --workspace server
 - `TELEGRAM_BOT_TOKEN` — заявки по деталям.
 - `TELEGRAM_ORDERS_BOT_TOKEN` — оплаченные заказы.
 - `TELEGRAM_B2B_BOT_TOKEN` — заявки юрлиц.
-- `TELEGRAM_*_POLLING` или webhook-режим с `TELEGRAM_*_WEBHOOK_SECRET`.
+- `TELEGRAM_MAIN_MODE`, `TELEGRAM_ORDERS_MODE`, `TELEGRAM_B2B_MODE` — явный режим `polling` | `webhook` | `disabled`.
+- Для каждого настроенного token обязателен соответствующий `TELEGRAM_*_ALLOWED_CHAT_IDS`: outbox фиксирует только активных подписчиков из этого списка в момент создания события. Перед приёмом заявок каждый разрешённый чат должен отправить боту `/start`.
+- Для webhook-режима обязательны соответствующие `TELEGRAM_*_WEBHOOK_SECRET` и точный публичный `TELEGRAM_*_WEBHOOK_URL`. В `polling`/`disabled` secret и URL запрещены, а ранее зарегистрированный webhook должен быть удалён через Bot API.
+- Старые `TELEGRAM_*_POLLING` временно поддерживаются только для совместимости; новые окружения должны задавать явные mode-переменные.
+- `TELEGRAM_OUTBOUND_PROXY_URL` — общий production proxy приложения; monitor использует его только для проверок и отправляет алерты через независимый канал.
+- `TELEGRAM_OUTBOX_MAX_RETRY_AGE_DAYS` — окно повторных попыток нового outbox-события (по умолчанию 7 дней); после него содержимое стирается и событие становится невосстановимым dead-letter.
+
+Безопасный минимальный шаблон без секретов находится в `server/.env.example`. Он не заменяет уже существующий production-конфиг: новые переменные добавляйте в него вручную. Только при первом создании, от имени пользователя сервиса, выполните `test ! -e server/.env && install -m 600 server/.env.example server/.env`; если команду запускает root, дополнительно задайте корректные `-o/-g`. Никогда не перезаписывайте рабочий `.env` шаблоном и не коммитьте его.
 
 ### Доставка
 
@@ -182,10 +189,12 @@ npm run build --workspace server
 
 - `YOOKASSA_SHOP_ID`
 - `YOOKASSA_SECRET_KEY`
-- `YOOKASSA_WEBHOOK_SECRET`
-- `YOOKASSA_RETURN_BASE_URL`
+- `YOOKASSA_WEBHOOK_SECRET` — только дополнительный секрет, который добавляет доверенный reverse proxy после проверки источника; proxy обязан удалить одноимённый клиентский header. Сама YooKassa такой header не отправляет. Backend также принимает webhook с официальных IP YooKassa и всегда перечитывает объект платежа через API.
+- `YOOKASSA_RETURN_BASE_URL` — обязательный в production точный публичный HTTPS origin без path/query/fragment, например `https://shop.example.com`.
+- `YOOKASSA_API_BASE_URL` в production может указывать только на официальный `https://api.yookassa.ru/v3`; произвольный endpoint разрешён лишь в dev/test, чтобы Basic credentials не ушли на чужой хост из-за ошибки конфигурации.
 - `YOOKASSA_RECEIPT_TAX_SYSTEM_CODE`
 - `YOOKASSA_RECEIPT_VAT_CODE`
+- `ENABLE_MANUAL_PAYMENT` — только локальный dev-флаг; в production endpoint ручной оплаты всегда закрыт независимо от значения.
 
 ### `client/.env` (основное)
 
@@ -212,7 +221,7 @@ npm run build --workspace server
 Используется скрипт в корне:
 
 ```bash
-/var/www/st24/deploy.sh
+bash /var/www/st24/deploy.sh
 ```
 
 Что делает скрипт:
@@ -225,13 +234,13 @@ npm run build --workspace server
 Параметры (опционально):
 
 ```bash
-./deploy.sh <ROOT> <API_URL> <SERVICE_NAME>
+bash ./deploy.sh <ROOT> <API_URL> <SERVICE_NAME>
 ```
 
 Пример:
 
 ```bash
-./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
+bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
 ```
 
 ## Бэкапы (рекомендуется)
@@ -247,25 +256,34 @@ npm run build --workspace server
 
 - В `server/src/app.ts` есть in-memory кэш для поиска ПВЗ и расчета доставки. После деплоя/рестарта кэш очищается.
 - Для CSV-выгрузок используется BOM (`\uFEFF`) для корректного открытия в Excel.
-- Для продакшена лучше включить `TRUST_PROXY`, корректно настроить CORS и HTTPS.
+- `TRUST_PROXY` не следует безусловно включать в production: при прямом доступе оставьте `false`, а за известным reverse proxy перечислите только его явные IP/CIDR. Число hops, `true` и символические preset-имена в production отклоняются. Proxy обязан перезаписывать forwarded headers, поскольку `req.ip` участвует в проверке IP webhook YooKassa.
 
 ## Мониторинг
 
 Backend предоставляет:
 
 - `GET /api/health/live` — liveness Node-процесса;
-- `GET /api/health/ready` — readiness PostgreSQL и локального uploads.
+- `GET /api/health/ready` — readiness PostgreSQL и локального uploads;
+- `GET /api/health/notifications` — состояние Telegram outbox/worker, polling/webhook, payment/stock-reservation/PII-инварианты и `paid → notified` без PII. Активный `dead` делает health красным; `acknowledgedDead` хранит аудит уже разобранной невосстановимой потери и сам по себе не является ошибкой.
 
-В каталоге `monitor/` находится независимый runner для DNS, TLS, сайта, API, каталога и трёх Telegram-ботов через production proxy. Он поддерживает warning/fail/recovery алерты, ежедневную сводку, защиту от параллельных запусков и внешний dead-man heartbeat. В production heartbeat обязателен; явный opt-out предназначен только для local/staging.
+В каталоге `monitor/` находится независимый runner для DNS, TLS, сайта, API, каталога и трёх Telegram-ботов через production proxy. Он проверяет identity и `getWebhookInfo`, читает notification-health, при каждом запуске отдельно проверяет monitor-бот через независимое соединение, а в ежедневном `summary` выполняет реальный `sendMessage` canary каждым production-ботом в отдельный canary-чат. Runner поддерживает warning/fail/recovery алерты, защиту от параллельных запусков и внешний dead-man heartbeat. Если critical `getMe` monitor-бота не проходит, success-heartbeat подавляется и dead-man становится резервным каналом; обычные target failures heartbeat не подавляют. В production heartbeat обязателен; явный opt-out предназначен только для local/staging.
 
 Быстрая локальная проверка:
 
 ```bash
 npm ci --workspace monitor --include-workspace-root=false
-install -m 600 monitor/.env.example monitor/.env
+test ! -e monitor/.env && install -m 600 monitor/.env.example monitor/.env
 npm test --workspace monitor
 # заполнить monitor/.env, затем:
 npm run monitor:check
 ```
+
+После устранения причины восстановимое dead-letter событие можно вернуть в очередь:
+
+```bash
+npm run outbox:redrive --workspace server -- <event-uuid>
+```
+
+Для безвозвратно scrubbed события и уже вручную разобранных payment anomalies предусмотрены аудитируемые команды `outbox:ack`, `payment-anomaly:resolve-order` и `payment-anomaly:resolve-provider`. Они требуют ожидаемый event key/anomaly code и тикет/причину; сами возврат денег или исправление заказа не выполняют. Точный runbook приведён в [документации мониторинга](docs/monitoring.md#операторское-восстановление).
 
 Runner необходимо размещать вне production-сервера. Полная настройка, расписание и fault-injection checklist описаны в [документации мониторинга](docs/monitoring.md).

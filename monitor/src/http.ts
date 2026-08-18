@@ -134,13 +134,14 @@ export const safeErrorDetail = (error: unknown): string => {
     /^MONITOR_DNS_HOST and MONITOR_TLS_HOST must be hostnames$/.test(message) ||
     message === 'MONITOR_TELEGRAM_BOT_TOKEN must not match a production bot token' ||
     message === 'Production Telegram bot tokens must be unique' ||
+    /^[A-Z0-9_]+ is required (?:for|in) .+$/.test(message) ||
     message === 'MONITOR_HEARTBEAT_URL must use https' ||
     message === 'MONITOR_TELEGRAM_PROXY_URL must differ from TELEGRAM_OUTBOUND_PROXY_URL' ||
     message === 'Another monitor process is already running' ||
     message === 'Monitor lock file contains invalid JSON' ||
     /^Usage: monitor <check\|summary>$/.test(message) ||
     /^Monitor state file (?:contains|has) .+$/.test(message) ||
-    /^Notifier (?:returned HTTP \d{3}|returned invalid JSON|rejected sendMessage)$/.test(message) ||
+    /^Notifier (?:returned HTTP \d{3}|returned invalid JSON|returned an invalid delivery receipt)$/.test(message) ||
     /^Heartbeat returned HTTP \d{3}$/.test(message) ||
     message === 'Unsafe redirect' ||
     message === 'Redirect changed origin' ||
