@@ -23,6 +23,7 @@ validateYooKassaStartupConfig();
 validateTrustProxyStartupConfig();
 
 const PORT = Number(process.env.PORT) || 4000;
+const BIND_HOST = process.env.API_BIND_HOST?.trim() || '127.0.0.1';
 const app = createApp();
 
 const start = async () => {
@@ -34,8 +35,8 @@ const start = async () => {
   startTelegramPolling();
   startTelegramOrderPolling();
   startTelegramB2BPolling();
-  app.listen(PORT, () => {
-    console.log(`API server listening on http://localhost:${PORT}`);
+  app.listen(PORT, BIND_HOST, () => {
+    console.log(`API server listening on http://${BIND_HOST}:${PORT}`);
   });
 };
 
