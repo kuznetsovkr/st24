@@ -344,3 +344,18 @@ test('cached readiness coalesces concurrent probes and expires after the TTL', a
   await checker();
   assert.equal(calls, 2);
 });
+
+test('cached readiness default monotonic clock remains bound', async () => {
+  const report: ReadinessReport = {
+    status: 'ok',
+    checkedAt: '2026-08-08T00:00:00.000Z',
+    durationMs: 1,
+    checks: {
+      postgres: { status: 'ok', latencyMs: 1 },
+      uploads: { status: 'ok', latencyMs: 1 }
+    }
+  };
+  const checker = createCachedReadinessChecker(async () => report, () => 100);
+
+  assert.equal(await checker(), report);
+});

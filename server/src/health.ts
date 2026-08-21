@@ -231,7 +231,7 @@ export const createCachedReadinessChecker = (
       250,
       60_000
     ),
-  now: () => number = performance.now
+  now: () => number = () => performance.now()
 ) => {
   let cached: { report: ReadinessReport; expiresAt: number } | undefined;
   let inFlight: Promise<ReadinessReport> | undefined;

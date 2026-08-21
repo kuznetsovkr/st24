@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createNotificationHealthReport } from './notificationHealth';
+import {
+  createCachedNotificationHealthChecker,
+  createNotificationHealthReport,
+  type NotificationHealthReport
+} from './notificationHealth';
 import {
   ACTIVE_YOOKASSA_WITHOUT_STOCK_RESERVATION_DRIFT_SQL,
   SENT_OUTBOX_RETENTION_DRIFT_SQL
@@ -158,4 +162,35 @@ test('notification health SQL detects sent rows only after the configured retent
     normalized,
     /events\.sent_at < NOW\(\) - \(\$2::int \* INTERVAL '1 day'\)/
   );
+});
+
+test('cached notification health default monotonic clock remains bound', async () => {
+  const report: NotificationHealthReport = {
+    status: 'ok',
+    checkedAt: '2026-08-09T00:00:00.000Z',
+    worker: { status: 'ok', lastSuccessAt: '2026-08-09T00:00:00.000Z' },
+    outbox: {
+      pending: 0,
+      retry: 0,
+      dead: 0,
+      acknowledgedDead: 0,
+      oldestPendingAgeMs: 0
+    },
+    invariants: {
+      paidWithoutOutbox: 0,
+      overduePaidNotifications: 0,
+      paymentStatusDrift: 0,
+      stockReservationDrift: 0,
+      notificationMarkerDrift: 0,
+      failedLeadNotifications: 0,
+      piiRetentionDrift: 0
+    },
+    bots: []
+  };
+  const checker = createCachedNotificationHealthChecker(
+    async () => report,
+    () => 100
+  );
+
+  assert.equal(await checker(), report);
 });

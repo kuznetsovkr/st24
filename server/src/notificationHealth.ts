@@ -251,7 +251,7 @@ export const createCachedNotificationHealthChecker = (
       250,
       60_000
     ),
-  now: () => number = performance.now
+  now: () => number = () => performance.now()
 ) => {
   let cached: { report: NotificationHealthReport; expiresAt: number } | undefined;
   let inFlight: Promise<NotificationHealthReport> | undefined;
