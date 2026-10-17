@@ -6,6 +6,9 @@ import { queryWithTimeout } from './db';
 
 export const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 3_000;
 export const DEFAULT_HEALTH_CHECK_CACHE_TTL_MS = 5_000;
+// Safe per-process identity lets deployment verify that nginx reaches the same
+// instance as the direct loopback probe, without exposing host or config data.
+const HEALTH_INSTANCE_ID = randomUUID();
 
 export type HealthCheckResult =
   | { status: 'ok'; latencyMs: number }
@@ -20,6 +23,7 @@ export type LivenessReport = {
 
 export type ReadinessReport = {
   status: 'ok' | 'error';
+  instanceId?: string;
   checkedAt: string;
   durationMs: number;
   checks: { postgres: HealthCheckResult; uploads: HealthCheckResult };
@@ -216,6 +220,7 @@ export const runReadinessChecks = async (
   ]);
   return {
     status: postgres.status === 'ok' && uploads.status === 'ok' ? 'ok' : 'error',
+    instanceId: HEALTH_INSTANCE_ID,
     checkedAt,
     durationMs: durationSince(startedAt, dependencies.now),
     checks: { postgres, uploads }

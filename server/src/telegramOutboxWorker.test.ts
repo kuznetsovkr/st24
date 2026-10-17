@@ -72,6 +72,111 @@ test('classifies Telegram throttling as retryable and preserves retry_after', ()
   });
 });
 
+test('shutdown finishes the current delivery acknowledgement then releases the lease', async () => {
+  const createdAt = '2026-08-09T00:00:00.000Z';
+  const event = {
+    id: '00000000-0000-4000-8000-000000000091',
+    event_key: 'order-paid:00000000-0000-4000-8000-000000000092',
+    event_type: 'order_paid' as const,
+    bot_kind: 'orders' as const,
+    aggregate_type: 'order' as const,
+    aggregate_id: '00000000-0000-4000-8000-000000000092',
+    payload_version: 1,
+    payload: { version: 1 as const, text: 'paid order' },
+    payload_scrubbed_at: null,
+    attachment_count: 0,
+    attachments_expired_at: null,
+    retry_expires_at: '2099-08-09T00:00:00.000Z',
+    deliveries_expired_at: null,
+    terminal_delivery_count: null,
+    terminal_sent_part_count: null,
+    status: 'processing' as const,
+    attempt_count: 1,
+    next_attempt_at: createdAt,
+    lease_owner: 'worker-test',
+    lease_until: '2099-08-09T01:00:00.000Z',
+    target_count: 2,
+    last_error_code: null,
+    sent_at: null,
+    created_at: createdAt,
+    updated_at: createdAt
+  };
+  const bundle: TelegramOutboxBundle = {
+    event,
+    attachments: [],
+    deliveries: ['-1001', '-1002'].map((chatId) => ({
+      event_id: event.id,
+      chat_id: chatId,
+      part_no: 0,
+      delivery_kind: 'text' as const,
+      status: 'pending' as const,
+      attempt_count: 0,
+      next_attempt_at: createdAt,
+      telegram_message_id: null,
+      last_error_code: null,
+      sent_at: null,
+      created_at: createdAt,
+      updated_at: createdAt
+    }))
+  };
+  let stopping = false;
+  let finishSend: (() => void) | undefined;
+  let notifySendStarted: (() => void) | undefined;
+  const sendStarted = new Promise<void>((resolve) => {
+    notifySendStarted = resolve;
+  });
+  const order: string[] = [];
+  const unexpected = async () => {
+    throw new Error('unexpected mutation');
+  };
+  const dependencies: WorkerDependencies = {
+    claim: async () => event,
+    load: async () => bundle,
+    extendLease: async () => true,
+    listActiveChatIds: async () => ['-1001', '-1002'],
+    deactivateChat: async () => undefined,
+    sendPart: async (_botKind, chatId) => {
+      order.push(`send:${chatId}`);
+      notifySendStarted?.();
+      await new Promise<void>((resolve) => {
+        finishSend = resolve;
+      });
+      return { botKind: 'orders', chatId, messageId: 91 };
+    },
+    logAttempt: () => undefined,
+    markSent: async (input) => {
+      order.push(`ack:${input.chatId}`);
+      const delivery = bundle.deliveries.find(
+        (candidate) => candidate.chat_id === input.chatId
+      );
+      if (delivery) delivery.status = 'sent';
+      return true;
+    },
+    markSkipped: unexpected,
+    markRetry: unexpected,
+    markDead: unexpected,
+    finalizeSent: unexpected,
+    finalizeRetry: unexpected,
+    finalizeDead: unexpected,
+    finalizeExpired: unexpected,
+    releaseLease: async () => {
+      order.push('release');
+      return true;
+    }
+  };
+
+  const cycle = runTelegramOutboxWorkerCycle('worker-test', {
+    dependencies,
+    shouldStop: () => stopping
+  });
+  await sendStarted;
+  stopping = true;
+  finishSend?.();
+
+  assert.equal(await cycle, true);
+  assert.deepEqual(order, ['send:-1001', 'ack:-1001', 'release']);
+});
+
 test('a document retry does not resend a text part that already succeeded', async () => {
   const event = {
     id: '00000000-0000-4000-8000-000000000001',

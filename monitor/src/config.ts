@@ -296,7 +296,7 @@ export const parseConfig = (env: Environment, cwd = process.cwd()): MonitorConfi
     telegramCanaryChatId: parseTelegramChatId(
       env,
       'MONITOR_TELEGRAM_CANARY_CHAT_ID',
-      false
+      Boolean(mainBotToken || ordersBotToken || b2bBotToken)
     ),
     notifier: {
       token: notifierToken,
@@ -341,10 +341,47 @@ export const loadEnvFile = (filePath: string, env: Environment = process.env): v
   }
 };
 
+export const loadMonitorConfiguration = (
+  environment: Environment = process.env,
+  options: { defaultEnvFile?: string; cwd?: string } = {}
+): MonitorConfig => {
+  const defaultEnvFile = options.defaultEnvFile ?? resolve(__dirname, '..', '.env');
+  loadEnvFile(environment.MONITOR_ENV_FILE ?? defaultEnvFile, environment);
+  return parseConfig(environment, options.cwd ?? process.cwd());
+};
+
+export const assertSupportedNodeVersion = (
+  version: string = process.versions.node
+): void => {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) throw new Error('Node.js version is unsupported');
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  if (
+    !(
+      (major === 20 && minor >= 19) ||
+      (major === 22 && minor >= 13) ||
+      major >= 24
+    )
+  ) {
+    throw new Error('Node.js 20.19+, 22.13+ or 24+ is required');
+  }
+};
+
 export const parseMode = (args: string[]): MonitorMode => {
   const mode = args[0] ?? 'check';
   if (mode !== 'check' && mode !== 'summary') {
     throw new Error('Usage: monitor <check|summary>');
   }
   return mode;
+};
+
+export const validateMonitorModeConfig = (
+  config: MonitorConfig,
+  mode: MonitorMode
+): void => {
+  const hasOutboundBot = config.telegramBots.some((bot) => Boolean(bot.token));
+  if (mode === 'summary' && hasOutboundBot && !config.telegramCanaryChatId) {
+    throw new Error('MONITOR_TELEGRAM_CANARY_CHAT_ID is required in summary mode');
+  }
 };

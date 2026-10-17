@@ -139,6 +139,7 @@ export const safeErrorDetail = (error: unknown): string => {
     message === 'MONITOR_TELEGRAM_PROXY_URL must differ from TELEGRAM_OUTBOUND_PROXY_URL' ||
     message === 'Another monitor process is already running' ||
     message === 'Monitor lock file contains invalid JSON' ||
+    /^Node\.js (?:version is unsupported|20\.19\+, 22\.13\+ or 24\+ is required)$/.test(message) ||
     /^Usage: monitor <check\|summary>$/.test(message) ||
     /^Monitor state file (?:contains|has) .+$/.test(message) ||
     /^Notifier (?:returned HTTP \d{3}|returned invalid JSON|returned an invalid delivery receipt)$/.test(message) ||

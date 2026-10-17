@@ -1,4 +1,5 @@
 import { createClient, type RedisClientType } from 'redis';
+import { createShutdownFence } from './shutdownFence';
 
 export type RateLimitResult = {
   allowed: boolean;
@@ -71,17 +72,18 @@ let redisClient: RedisClientType | null = null;
 let redisConnectPromise: Promise<RedisClientType | null> | null = null;
 let redisDisabledUntilMs = 0;
 let lastRedisErrorLogMs = 0;
+const redisShutdownFence = createShutdownFence();
+const redisBackgroundDisconnects = new Set<Promise<void>>();
 
-const logRedisError = (message: string, error?: unknown) => {
+const logRedisError = (message: string) => {
+  if (redisShutdownFence.isClosing()) {
+    return;
+  }
   const now = Date.now();
   if (now - lastRedisErrorLogMs < 30_000) {
     return;
   }
   lastRedisErrorLogMs = now;
-  if (error) {
-    console.warn(`[rate-limit] ${message}`, error);
-    return;
-  }
   console.warn(`[rate-limit] ${message}`);
 };
 
@@ -110,25 +112,37 @@ const parseConsumeResult = (value: unknown) => {
   return { count, ttl };
 };
 
-const markRedisUnavailable = async (reason: string, error?: unknown) => {
-  redisDisabledUntilMs = Date.now() + REDIS_RECONNECT_COOLDOWN_MS;
-  logRedisError(reason, error);
+const markRedisUnavailable = async (reason: string) => {
+  if (!redisShutdownFence.isClosing()) {
+    redisDisabledUntilMs = Date.now() + REDIS_RECONNECT_COOLDOWN_MS;
+    // Do not print the Redis error object: connection errors may include a URL
+    // containing credentials. The stable reason is enough operationally.
+    logRedisError(reason);
+  }
   if (!redisClient) {
     return;
   }
   const existing = redisClient;
   redisClient = null;
-  try {
-    if (existing.isOpen) {
-      await existing.disconnect();
+  const disconnectPromise = (async () => {
+    try {
+      if (existing.isOpen) {
+        await existing.disconnect();
+      }
+    } catch {
+      // no-op
     }
-  } catch {
-    // no-op
+  })();
+  redisBackgroundDisconnects.add(disconnectPromise);
+  try {
+    await disconnectPromise;
+  } finally {
+    redisBackgroundDisconnects.delete(disconnectPromise);
   }
 };
 
 const getRedisClient = async (): Promise<RedisClientType | null> => {
-  if (!REDIS_ENABLED) {
+  if (!REDIS_ENABLED || redisShutdownFence.isClosing()) {
     return null;
   }
 
@@ -164,16 +178,19 @@ const getRedisClient = async (): Promise<RedisClientType | null> => {
             connectTimeout: REDIS_CONNECT_TIMEOUT_MS
           }
         });
-        redisClient.on('error', (error) => {
-          logRedisError('Redis client error', error);
+        redisClient.on('error', () => {
+          logRedisError('Redis client error');
         });
       }
       if (!redisClient.isOpen) {
         await redisClient.connect();
       }
-      return redisClient;
+      // A close may have started while connect() was pending. Do not hand the
+      // newly connected client to another operation; the closer awaits this
+      // promise and takes ownership of it below.
+      return redisShutdownFence.isClosing() ? null : redisClient;
     } catch (error) {
-      await markRedisUnavailable('Redis is unavailable, falling back to in-memory limiter', error);
+      await markRedisUnavailable('Redis is unavailable, falling back to in-memory limiter');
       if (REDIS_REQUIRED) {
         throw error instanceof Error ? error : new Error('Failed to connect to Redis');
       }
@@ -184,6 +201,47 @@ const getRedisClient = async (): Promise<RedisClientType | null> => {
   })();
 
   return redisConnectPromise;
+};
+
+export const closeRateLimiterRedis = (): Promise<void> => {
+  return redisShutdownFence.closeOnce(async () => {
+    const pendingConnect = redisConnectPromise;
+    if (pendingConnect) {
+      await pendingConnect.catch(() => null);
+    }
+
+    const backgroundDisconnects = [...redisBackgroundDisconnects];
+    if (backgroundDisconnects.length > 0) {
+      await Promise.allSettled(backgroundDisconnects);
+    }
+
+    const client = redisClient;
+    redisClient = null;
+    redisConnectPromise = null;
+    if (!client) {
+      return;
+    }
+
+    try {
+      if (client.isReady) {
+        await client.quit();
+      } else if (client.isOpen) {
+        await client.disconnect();
+      }
+      return;
+    } catch {
+      // quit() can fail while the connection is being torn down. A forced
+      // disconnect is an acceptable shutdown fallback.
+    }
+
+    try {
+      if (client.isOpen) {
+        await client.disconnect();
+      }
+    } catch {
+      throw new Error('Failed to close rate limiter Redis client');
+    }
+  });
 };
 
 const createMemoryScopedRateLimiter = (windowSeconds: number, max: number): ScopedRateLimiter => {
@@ -287,7 +345,7 @@ export const createScopedRateLimiter = (windowSeconds: number, max: number): Sco
       if (REDIS_REQUIRED) {
         throw error;
       }
-      await markRedisUnavailable('Rate limiter Redis consume failed, using in-memory fallback', error);
+      await markRedisUnavailable('Rate limiter Redis consume failed, using in-memory fallback');
       return memoryLimiter.consume(scope, ip, subject);
     }
   };
@@ -304,7 +362,7 @@ export const createScopedRateLimiter = (windowSeconds: number, max: number): Sco
       if (REDIS_REQUIRED) {
         throw error;
       }
-      await markRedisUnavailable('Rate limiter Redis reset failed, using in-memory fallback', error);
+      await markRedisUnavailable('Rate limiter Redis reset failed, using in-memory fallback');
       await memoryLimiter.reset(scope, ip, subject);
     }
   };

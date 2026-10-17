@@ -1,0 +1,14 @@
+[Unit]
+Description=Send the HER daily monitoring summary and Telegram canaries
+Documentation=file:/var/www/st24/ops/README.md
+
+[Timer]
+# Interpreted in the monitor host's local timezone unless an explicit timezone
+# is appended. Keep the host timezone intentional and documented.
+OnCalendar=*-*-* 09:02:00
+Persistent=yes
+AccuracySec=1min
+Unit=her-monitor-summary.service
+
+[Install]
+WantedBy=timers.target

@@ -10,13 +10,19 @@ type TurnstileVerifyResult = {
   'error-codes'?: string[];
 };
 
-const getTurnstileSecretKey = () => process.env.TURNSTILE_SECRET_KEY?.trim() ?? '';
-const isProduction = () => (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+const getTurnstileSecretKey = (
+  environment: Record<string, string | undefined> = process.env
+) => environment.TURNSTILE_SECRET_KEY?.trim() ?? '';
+const isProduction = (
+  environment: Record<string, string | undefined> = process.env
+) => (environment.NODE_ENV ?? '').trim().toLowerCase() === 'production';
 
 export const isTurnstileEnabled = () => Boolean(getTurnstileSecretKey());
 
-export const assertTurnstileConfiguration = () => {
-  if (isProduction() && !isTurnstileEnabled()) {
+export const assertTurnstileConfiguration = (
+  environment: Record<string, string | undefined> = process.env
+) => {
+  if (isProduction(environment) && !getTurnstileSecretKey(environment)) {
     throw new Error('TURNSTILE_SECRET_KEY is required in production');
   }
 };

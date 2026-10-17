@@ -12,9 +12,16 @@
     "monitor"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test:client-config && npm run test:deploy-tools && npm run test --workspaces --if-present",
+    "test:client-config": "node --test scripts/client-config.test.mjs",
+    "test:deploy-tools": "node --test scripts/deploy-readiness.test.mjs scripts/postgres-command.test.mjs",
+    "test:ops": "node ops/validate-units.mjs",
+    "test:postgres-smoke": "node scripts/ci/postgres-smoke.mjs",
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "config:check": "npm run config:check --workspace server",
+    "client:config:check": "node scripts/client-config.mjs check",
+    "client:build": "node scripts/client-config.mjs build",
     "monitor:check": "npm run check --workspace monitor",
     "monitor:summary": "npm run summary --workspace monitor"
   },

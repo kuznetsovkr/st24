@@ -42,7 +42,11 @@
 
 - `client/` — фронтенд.
 - `server/` — backend API.
-- `deploy.sh` — серверный деплой (pull + install + build + restart service).
+- `monitor/` — независимый внешний мониторинг.
+- `ops/` — production-ready systemd units, timers, tmpfiles и logrotate.
+- `deploy.sh` — guarded-деплой с preflight, тестами, backup, migration smoke,
+  readiness и автоматическим откатом кода.
+- `.github/workflows/ci.yml` — CI на поддерживаемой Node.js и чистой PostgreSQL.
 
 ## Маршруты фронтенда
 
@@ -131,18 +135,54 @@ npm run build --workspace client
 npm run build --workspace server
 ```
 
+Production-сборка frontend выполняется только из проверенного файла с
+allowlist публичных `VITE_*`-значений (без чтения случайного `client/.env`):
+
+```bash
+CLIENT_ENV_FILE=/etc/her/client.env npm run client:config:check
+CLIENT_ENV_FILE=/etc/her/client.env npm run client:build
+```
+
+## Проверки
+
+```bash
+npm ci
+npm run lint
+npm test
+npm run build --workspace client
+npm audit --omit=dev --audit-level=high
+```
+
+GitHub Actions повторяет эти проверки на Node.js 22.13.1, поднимает чистую
+PostgreSQL и проверяет idempotent schema init, резервирование склада и durable
+outbox. Workflow также запускается еженедельно, а Dependabot готовит отдельные
+PR для обновлений npm и GitHub Actions.
+
 ## Обязательные переменные окружения
 
-### `server/.env` (минимум)
+### Backend (`server/.env` локально, `/etc/her/api.env` в production)
 
+- `NODE_ENV` (`development` | `test` | `production`, строго в нижнем регистре)
 - `PORT`
+- `API_BIND_HOST` (`127.0.0.1`, если API доступен только через nginx на том же сервере)
 - `DATABASE_URL`
 - `JWT_SECRET`
+- `CLIENT_URL` или другой явный HTTPS origin из CORS-настроек
+- `AUTH_COOKIE_SECURE=true` в production
 - `ADMIN_PHONE`
 - `ADMIN_AUTH_MODE` (`password` | `code`)
 - `ADMIN_PASSWORD` (если `ADMIN_AUTH_MODE=password`)
 - `SUPER_ADMIN_PHONE` (опционально, отдельный номер суперадмина)
-- `SUPER_ADMIN_PASSWORD` (если `ADMIN_AUTH_MODE=password` и используется `SUPER_ADMIN_PHONE`)
+- `SUPER_ADMIN_PASSWORD` (если используется `SUPER_ADMIN_PHONE`)
+
+При `RATE_LIMIT_REDIS_REQUIRED=true` также обязательны
+`RATE_LIMIT_REDIS_ENABLED=true` и корректный `RATE_LIMIT_REDIS_URL` (`redis://`
+или `rediss://`). Перед запуском backend и перед каждым деплоем одна и та же
+fail-closed проверка выполняется командой:
+
+```bash
+DOTENV_CONFIG_PATH=/etc/her/api.env NODE_ENV=production npm run config:check
+```
 
 ### Авторизация по телефону
 
@@ -196,9 +236,10 @@ npm run build --workspace server
 - `YOOKASSA_RECEIPT_VAT_CODE`
 - `ENABLE_MANUAL_PAYMENT` — только локальный dev-флаг; в production endpoint ручной оплаты всегда закрыт независимо от значения.
 
-### `client/.env` (основное)
+### Frontend (`client/.env` локально, `/etc/her/client.env` в production)
 
 - `VITE_API_URL`
+- `VITE_SITE_URL`
 - `VITE_YANDEX_MAPS_API_KEY`
 - `VITE_TURNSTILE_SITE_KEY`
 - `VITE_CDEK_FROM_CODE`
@@ -218,37 +259,61 @@ npm run build --workspace server
 
 ## Деплой
 
-Используется скрипт в корне:
+Полный bootstrap API и отдельного monitor-host описан в
+[production runbook](ops/README.md). Секреты хранятся вне Git в
+`/etc/her/api.env` и `/etc/her-monitor/monitor.env`; публичная конфигурация
+production-сборки frontend — в контролируемом `/etc/her/client.env`. API и
+монитор запускаются от разных непривилегированных пользователей.
+
+После первичной установки systemd unit используется скрипт в корне:
 
 ```bash
-bash /var/www/st24/deploy.sh
+sudo bash /var/www/st24/deploy.sh
 ```
 
 Что делает скрипт:
 
-1. `git pull`
-2. `npm install`
-3. сборка frontend и backend
-4. `systemctl restart her-api`
+1. не допускает параллельный деплой и локальные tracked-изменения;
+2. получает только fast-forward revision без интерактивного запроса credentials;
+3. выполняет `npm ci`, config preflight, тесты, lint и сборку всех workspace;
+4. создаёт и проверяет PostgreSQL backup;
+5. восстанавливает backup во временную БД и дважды прогоняет schema init;
+6. сохраняет прежние systemd/tmpfiles/logrotate, устанавливает и проверяет новые;
+7. перезапускает API и проверяет свежий readiness напрямую на loopback и через публичный URL;
+8. при ошибке возвращает предыдущий код, настройки systemd и сервис. Миграции БД автоматически
+   назад не откатываются.
 
-Параметры (опционально):
+Параметры (каталог и имя сервиса закреплены в production unit):
 
 ```bash
-bash ./deploy.sh <ROOT> <API_URL> <SERVICE_NAME>
+sudo bash ./deploy.sh /var/www/st24 <API_URL> her-api
 ```
 
 Пример:
 
 ```bash
-bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
+sudo bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
 ```
+
+Скрипт запускается от root и использует `/etc/her/api.env`, `/etc/her/client.env`
+и `DEPLOY_BACKUP_DIR`. После backup и migration smoke он сохраняет прежние
+API unit/tmpfiles/logrotate и устанавливает файлы из проверяемой revision. Для
+migration smoke обычно передают отдельный
+`MIGRATION_SMOKE_ADMIN_URL`, способный создать и удалить временную БД. Первый
+переход со старого `deploy.sh` выполняйте по runbook: сначала отдельно получите
+и проверьте новый скрипт и systemd unit, не запускайте старую версию деплоя.
+
+Это безопасный in-place deploy, но не zero-downtime release layout: для строгого
+zero-downtime следующим шагом понадобится blue/green или versioned releases.
 
 ## Бэкапы (рекомендуется)
 
 Рекомендуемая схема:
 
 - ежедневный backup БД (`pg_dump -Fc`);
-- хранение локально 14 дней;
+- отдельный проверенный backup создаётся также перед каждым `deploy.sh`;
+- настроенная очистка локальных backup и соседних `.ops.*` каталогов через 14 дней;
+- внешний контроль свободного места на дисках backup и PostgreSQL;
 - копия в облако (например, Яндекс.Диск через `rclone`);
 - периодическая проверка восстановления.
 
@@ -275,6 +340,7 @@ npm ci --workspace monitor --include-workspace-root=false
 test ! -e monitor/.env && install -m 600 monitor/.env.example monitor/.env
 npm test --workspace monitor
 # заполнить monitor/.env, затем:
+npm run config:check --workspace monitor
 npm run monitor:check
 ```
 

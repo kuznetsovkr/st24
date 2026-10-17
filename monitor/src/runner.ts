@@ -1,6 +1,7 @@
 import type { CheckResult, MonitorConfig, MonitorMode } from './types';
 import { createHttpClient } from './http';
 import { createSiteChecks } from './checks';
+import { validateMonitorModeConfig } from './config';
 import {
   checkTelegramBot,
   checkTelegramCanary,
@@ -20,10 +21,8 @@ export const runChecks = async (
   config: MonitorConfig,
   mode: MonitorMode
 ): Promise<CheckResult[]> => {
+  validateMonitorModeConfig(config, mode);
   const outboundBots = config.telegramBots.filter((bot) => Boolean(bot.token));
-  if (mode === 'summary' && outboundBots.length > 0 && !config.telegramCanaryChatId) {
-    throw new Error('MONITOR_TELEGRAM_CANARY_CHAT_ID is required in summary mode');
-  }
   const siteClient = createHttpClient({
     timeoutMs: config.timeoutMs,
     maxBodyBytes: config.maxBodyBytes

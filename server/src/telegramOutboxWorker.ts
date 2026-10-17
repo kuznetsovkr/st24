@@ -11,6 +11,7 @@ import {
   markTelegramOutboxDeliveryRetry,
   markTelegramOutboxDeliverySent,
   markTelegramOutboxDeliverySkipped,
+  releaseTelegramOutboxEventLease,
   type TelegramOutboxBundle,
   type TelegramOutboxDeliveryRow,
   type TelegramOutboxErrorCode,
@@ -166,6 +167,7 @@ export type WorkerDependencies = {
   finalizeRetry: typeof finalizeTelegramOutboxEventRetry;
   finalizeDead: typeof finalizeTelegramOutboxEventDead;
   finalizeExpired: typeof finalizeTelegramOutboxEventExpired;
+  releaseLease?: typeof releaseTelegramOutboxEventLease;
   now?: () => number;
 };
 
@@ -184,7 +186,8 @@ const defaultDependencies: WorkerDependencies = {
   finalizeSent: finalizeTelegramOutboxEventSent,
   finalizeRetry: finalizeTelegramOutboxEventRetry,
   finalizeDead: finalizeTelegramOutboxEventDead,
-  finalizeExpired: finalizeTelegramOutboxEventExpired
+  finalizeExpired: finalizeTelegramOutboxEventExpired,
+  releaseLease: releaseTelegramOutboxEventLease
 };
 
 class TelegramOutboxLeaseLostError extends Error {
@@ -249,15 +252,31 @@ const processClaimedEvent = async (
   claimed: TelegramOutboxEventRow,
   owner: string,
   leaseMs: number,
-  dependencies: WorkerDependencies
+  dependencies: WorkerDependencies,
+  shouldStop: () => boolean
 ): Promise<void> => {
   const now = () => dependencies.now?.() ?? Date.now();
+  const releaseForShutdown = async () => {
+    const released = dependencies.releaseLease
+      ? await dependencies.releaseLease(claimed.id, owner)
+      : await dependencies.finalizeRetry(
+          claimed.id,
+          owner,
+          claimed.last_error_code ?? 'unknown_error',
+          1_000
+        );
+    await requireMutation(Promise.resolve(released));
+  };
   if (isTelegramOutboxRetryExpired(claimed, now())) {
     await requireMutation(dependencies.finalizeExpired(claimed.id, owner));
     return;
   }
   const bundle = await dependencies.load(claimed.id);
   if (!bundle) throw new TelegramOutboxLeaseLostError();
+  if (shouldStop()) {
+    await releaseForShutdown();
+    return;
+  }
 
   const activeChatIds = new Set(
     await dependencies.listActiveChatIds(bundle.event.bot_kind)
@@ -269,6 +288,10 @@ const processClaimedEvent = async (
   const dueAt = now();
 
   for (const original of bundle.deliveries) {
+    if (shouldStop()) {
+      await releaseForShutdown();
+      return;
+    }
     const delivery = mutableDeliveries.get(deliveryKey(original)) ?? original;
     if (delivery.status !== 'pending') continue;
     if (Date.parse(delivery.next_attempt_at) > dueAt) continue;
@@ -297,6 +320,10 @@ const processClaimedEvent = async (
       await requireMutation(
         dependencies.finalizeExpired(bundle.event.id, owner)
       );
+      return;
+    }
+    if (shouldStop()) {
+      await releaseForShutdown();
       return;
     }
 
@@ -402,6 +429,11 @@ const processClaimedEvent = async (
     }
   }
 
+  if (shouldStop()) {
+    await releaseForShutdown();
+    return;
+  }
+
   const refreshed = await dependencies.load(bundle.event.id);
   if (!refreshed) throw new TelegramOutboxLeaseLostError();
   const deadDelivery = refreshed.deliveries.find((delivery) => delivery.status === 'dead');
@@ -450,6 +482,7 @@ export const runTelegramOutboxWorkerCycle = async (
   options: {
     leaseMs?: number;
     dependencies?: WorkerDependencies;
+    shouldStop?: () => boolean;
   } = {}
 ): Promise<boolean> => {
   const dependencies = options.dependencies ?? defaultDependencies;
@@ -459,16 +492,22 @@ export const runTelegramOutboxWorkerCycle = async (
     claimed,
     owner,
     options.leaseMs ?? DEFAULT_LEASE_MS,
-    dependencies
+    dependencies,
+    options.shouldStop ?? (() => false)
   );
   return true;
 };
 
 let workerStarted = false;
+let workerStopRequested = false;
+let workerTimer: NodeJS.Timeout | null = null;
+let workerRunPromise: Promise<void> | null = null;
+let workerStopPromise: Promise<void> | null = null;
 
-export const startTelegramOutboxWorker = () => {
-  if (workerStarted) return;
+export const startTelegramOutboxWorker = (): void => {
+  if (workerStarted || workerStopPromise) return;
   workerStarted = true;
+  workerStopRequested = false;
   workerSnapshot.running = true;
   const owner = `worker-${process.pid}-${randomUUID()}`;
   const intervalMs = parseBoundedInteger(
@@ -486,7 +525,10 @@ export const startTelegramOutboxWorker = () => {
   const run = async () => {
     workerSnapshot.lastAttemptAt = new Date().toISOString();
     try {
-      await runTelegramOutboxWorkerCycle(owner, { leaseMs });
+      await runTelegramOutboxWorkerCycle(owner, {
+        leaseMs,
+        shouldStop: () => workerStopRequested
+      });
       workerSnapshot.lastSuccessAt = new Date().toISOString();
       workerSnapshot.consecutiveFailures = 0;
       workerSnapshot.lastErrorCode = null;
@@ -503,9 +545,36 @@ export const startTelegramOutboxWorker = () => {
         error: workerSnapshot.lastErrorCode
       });
     } finally {
-      setTimeout(() => void run(), intervalMs);
+      if (!workerStopRequested) {
+        workerTimer = setTimeout(() => {
+          workerTimer = null;
+          if (!workerStopRequested) {
+            workerRunPromise = run();
+          }
+        }, intervalMs);
+        workerTimer.unref?.();
+      }
     }
   };
 
-  void run();
+  workerRunPromise = run();
+};
+
+export const stopTelegramOutboxWorker = async (): Promise<void> => {
+  if (workerStopPromise) return workerStopPromise;
+  workerStopRequested = true;
+  if (workerTimer) {
+    clearTimeout(workerTimer);
+    workerTimer = null;
+  }
+  const activeRun = workerRunPromise;
+  workerStopPromise = (async () => {
+    if (activeRun) await activeRun.catch(() => undefined);
+    if (workerRunPromise === activeRun) workerRunPromise = null;
+    workerStarted = false;
+    workerSnapshot.running = false;
+  })().finally(() => {
+    workerStopPromise = null;
+  });
+  return workerStopPromise;
 };

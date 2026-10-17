@@ -140,8 +140,20 @@ const markCircuitFailure = (
   }
 };
 
-const isAbortError = (error: unknown) =>
-  error instanceof Error && error.name === 'AbortError';
+const createAbortError = () => {
+  const error = new Error('HTTP request aborted');
+  error.name = 'AbortError';
+  return error;
+};
+
+const getAbortReason = (signal: AbortSignal) =>
+  signal.reason instanceof Error ? signal.reason : createAbortError();
+
+const throwIfAborted = (signal?: AbortSignal | null) => {
+  if (signal?.aborted) {
+    throw getAbortReason(signal);
+  }
+};
 
 const createAbortedSignal = (reason: unknown) => {
   const controller = new AbortController();
@@ -154,16 +166,28 @@ const mergeSignals = (
   signalB?: AbortSignal | null
 ) => {
   if (!signalA) {
-    return signalB ?? undefined;
+    return {
+      signal: signalB ?? undefined,
+      cleanup: () => undefined
+    };
   }
   if (!signalB) {
-    return signalA;
+    return {
+      signal: signalA,
+      cleanup: () => undefined
+    };
   }
   if (signalA.aborted) {
-    return createAbortedSignal(signalA.reason);
+    return {
+      signal: createAbortedSignal(signalA.reason),
+      cleanup: () => undefined
+    };
   }
   if (signalB.aborted) {
-    return createAbortedSignal(signalB.reason);
+    return {
+      signal: createAbortedSignal(signalB.reason),
+      cleanup: () => undefined
+    };
   }
 
   const controller = new AbortController();
@@ -174,9 +198,18 @@ const mergeSignals = (
     controller.abort(signal.reason);
   };
 
-  signalA.addEventListener('abort', () => abortFrom(signalA), { once: true });
-  signalB.addEventListener('abort', () => abortFrom(signalB), { once: true });
-  return controller.signal;
+  const abortFromA = () => abortFrom(signalA);
+  const abortFromB = () => abortFrom(signalB);
+
+  signalA.addEventListener('abort', abortFromA, { once: true });
+  signalB.addEventListener('abort', abortFromB, { once: true });
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      signalA.removeEventListener('abort', abortFromA);
+      signalB.removeEventListener('abort', abortFromB);
+    }
+  };
 };
 
 const fetchWithTimeout = async (
@@ -184,6 +217,8 @@ const fetchWithTimeout = async (
   init: NodeRequestInit,
   timeoutMs: number
 ) => {
+  throwIfAborted(init.signal);
+
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return doFetch(input, init);
   }
@@ -195,19 +230,24 @@ const fetchWithTimeout = async (
     timeoutController.abort(new HttpTimeoutError(timeoutMs));
   }, timeoutMs);
 
+  const mergedSignal = mergeSignals(init.signal ?? null, timeoutController.signal);
+
   try {
-    const signal = mergeSignals(init.signal ?? null, timeoutController.signal);
     return await doFetch(input, {
       ...init,
-      signal
+      signal: mergedSignal.signal
     });
   } catch (error) {
-    if (timedOut && isAbortError(error)) {
+    if (init.signal?.aborted) {
+      throw error;
+    }
+    if (timedOut) {
       throw new HttpTimeoutError(timeoutMs);
     }
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    mergedSignal.cleanup();
   }
 };
 
@@ -226,9 +266,22 @@ const parseRetryAfterMs = (headerValue: string | null) => {
   return Math.max(0, asDate - Date.now());
 };
 
-const wait = (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
+const wait = (ms: number, signal?: AbortSignal | null) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(getAbortReason(signal));
+      return;
+    }
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(getAbortReason(signal as AbortSignal));
+    };
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 
 const computeDelayMs = (
@@ -276,9 +329,12 @@ export const resilientFetch = async (
   const retryOnTimeout = options.retryOnTimeout ?? true;
   const retryOnNetworkError = options.retryOnNetworkError ?? true;
 
+  throwIfAborted(init.signal);
   ensureCircuitClosed(options.circuitKey);
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    throwIfAborted(init.signal);
+
     try {
       const response = await fetchWithTimeout(input, init, timeoutMs);
       const shouldRetryStatus = retryStatuses.has(response.status);
@@ -287,7 +343,7 @@ export const resilientFetch = async (
       if (shouldRetryStatus && hasMoreRetries) {
         const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
         const delayMs = computeDelayMs(attempt, baseDelayMs, maxDelayMs, retryAfterMs);
-        await wait(delayMs);
+        await wait(delayMs, init.signal);
         continue;
       }
 
@@ -302,7 +358,7 @@ export const resilientFetch = async (
         throw error;
       }
 
-      const callerAborted = isAbortError(error) && Boolean(init.signal?.aborted);
+      const callerAborted = Boolean(init.signal?.aborted);
       const timeoutError = error instanceof HttpTimeoutError;
       const networkError = error instanceof Error && !timeoutError && !callerAborted;
       const hasMoreRetries = attempt < maxRetries;
@@ -312,7 +368,7 @@ export const resilientFetch = async (
 
       if (shouldRetry) {
         const delayMs = computeDelayMs(attempt, baseDelayMs, maxDelayMs, null);
-        await wait(delayMs);
+        await wait(delayMs, init.signal);
         continue;
       }
 

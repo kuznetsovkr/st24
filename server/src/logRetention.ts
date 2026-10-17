@@ -165,8 +165,8 @@ export const runLogRetentionCleanup = async () => {
           `[log-retention] ${config.table}: deleted ${deleted} rows older than ${config.retentionDays} days`
         );
       }
-    } catch (error) {
-      console.error(`[log-retention] Failed to cleanup ${config.table}`, error);
+    } catch {
+      console.error(`[log-retention] Failed to cleanup ${config.table}`);
     }
   }
 
@@ -214,38 +214,57 @@ export const runLogRetentionCleanup = async () => {
   return totalDeleted;
 };
 
-export const startLogRetentionScheduler = () => {
+export type StopLogRetentionScheduler = () => Promise<void>;
+
+export const createLogRetentionScheduler = (
+  cleanup: () => Promise<unknown>,
+  intervalMs: number,
+  onError: () => void = () => {
+    console.error('[log-retention] Scheduled cleanup failed');
+  }
+): StopLogRetentionScheduler => {
+  let stopping = false;
+  let activeRun: Promise<void> | null = null;
+  let stopPromise: Promise<void> | null = null;
+
+  const runOnce = () => {
+    if (stopping || activeRun) return;
+    const currentRun = Promise.resolve()
+      .then(cleanup)
+      .then(() => undefined)
+      .catch(() => onError())
+      .finally(() => {
+        if (activeRun === currentRun) activeRun = null;
+      });
+    activeRun = currentRun;
+  };
+
+  runOnce();
+  const timer = setInterval(runOnce, intervalMs);
+  timer.unref?.();
+
+  return () => {
+    if (stopPromise) return stopPromise;
+    stopping = true;
+    clearInterval(timer);
+    const pendingRun = activeRun;
+    stopPromise = pendingRun?.then(() => undefined) ?? Promise.resolve();
+    return stopPromise;
+  };
+};
+
+export const startLogRetentionScheduler = (): StopLogRetentionScheduler => {
   if (!LOG_RETENTION_ENABLED) {
     console.log('[log-retention] disabled');
-    return () => undefined;
+    return async () => undefined;
   }
 
   const intervalMs = LOG_RETENTION_RUN_INTERVAL_SECONDS * 1000;
-  let isRunning = false;
-
-  const runOnce = async () => {
-    if (isRunning) {
-      return;
-    }
-    isRunning = true;
-    try {
-      await runLogRetentionCleanup();
-    } finally {
-      isRunning = false;
-    }
-  };
-
-  void runOnce();
-  const timer = setInterval(() => {
-    void runOnce();
-  }, intervalMs);
-  timer.unref?.();
+  const stop = createLogRetentionScheduler(runLogRetentionCleanup, intervalMs);
 
   console.log(
     `[log-retention] enabled, interval=${LOG_RETENTION_RUN_INTERVAL_SECONDS}s, defaultDays=${LOG_RETENTION_DEFAULT_DAYS}`
   );
 
-  return () => {
-    clearInterval(timer);
-  };
+  return stop;
 };

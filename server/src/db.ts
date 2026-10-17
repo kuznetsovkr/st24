@@ -1,8 +1,30 @@
 import { Pool, type PoolClient, type PoolConfig, type QueryConfig } from 'pg';
+import { createShutdownFence } from './shutdownFence';
 
 let pool: Pool | null = null;
 let healthPool: Pool | null = null;
 let healthPoolPhaseTimeoutMs: number | null = null;
+const databaseShutdownFence = createShutdownFence();
+const retiredHealthPoolCloses = new Set<Promise<void>>();
+let retiredHealthPoolCloseFailed = false;
+
+const assertDatabaseAvailable = () => {
+  databaseShutdownFence.assertOpen('Database is shutting down');
+};
+
+const trackRetiredHealthPoolClose = (retiredPool: Pool) => {
+  const closePromise = retiredPool.end();
+  retiredHealthPoolCloses.add(closePromise);
+  void closePromise.then(
+    () => {
+      retiredHealthPoolCloses.delete(closePromise);
+    },
+    () => {
+      retiredHealthPoolCloseFailed = true;
+      retiredHealthPoolCloses.delete(closePromise);
+    }
+  );
+};
 
 const parseBoundedPositiveInt = (
   value: string | undefined,
@@ -33,6 +55,8 @@ const createSafePool = (config: PoolConfig, label: string) => {
 };
 
 const getPool = () => {
+  assertDatabaseAvailable();
+
   if (pool) {
     return pool;
   }
@@ -61,6 +85,8 @@ export const queryWithTimeout = (
   timeoutMs: number,
   params?: Array<string | number | boolean | string[] | null>
 ) => {
+  assertDatabaseAvailable();
+
   const phaseTimeoutMs = Math.max(1, Math.floor(timeoutMs / 2));
   if (!healthPool || healthPoolPhaseTimeoutMs !== phaseTimeoutMs) {
     const previousPool = healthPool;
@@ -72,7 +98,9 @@ export const queryWithTimeout = (
       allowExitOnIdle: true
     }, 'health');
     healthPoolPhaseTimeoutMs = phaseTimeoutMs;
-    if (previousPool) void previousPool.end().catch(() => undefined);
+    if (previousPool) {
+      trackRetiredHealthPoolClose(previousPool);
+    }
   }
   const config = {
     text,
@@ -93,16 +121,30 @@ export const withClient = async <T>(handler: (client: PoolClient) => Promise<T>)
   }
 };
 
-export const closeDatabasePools = async (): Promise<void> => {
-  const applicationPool = pool;
-  const readinessPool = healthPool;
-  pool = null;
-  healthPool = null;
-  healthPoolPhaseTimeoutMs = null;
-  await Promise.all([
-    applicationPool?.end(),
-    readinessPool && readinessPool !== applicationPool
-      ? readinessPool.end()
-      : undefined
-  ]);
+export const closeDatabasePools = (): Promise<void> => {
+  return databaseShutdownFence.closeOnce(async () => {
+    const applicationPool = pool;
+    const readinessPool = healthPool;
+    pool = null;
+    healthPool = null;
+    healthPoolPhaseTimeoutMs = null;
+
+    const closes: Promise<void>[] = [...retiredHealthPoolCloses];
+    if (applicationPool) {
+      closes.push(Promise.resolve().then(() => applicationPool.end()));
+    }
+    if (readinessPool && readinessPool !== applicationPool) {
+      closes.push(Promise.resolve().then(() => readinessPool.end()));
+    }
+
+    const results = await Promise.allSettled(closes);
+    if (
+      retiredHealthPoolCloseFailed
+      || results.some((result) => result.status === 'rejected')
+    ) {
+      // Keep driver errors out of process logs: they may contain connection
+      // details. The shutdown coordinator only needs a stable task failure.
+      throw new Error('Failed to close database resources');
+    }
+  });
 };

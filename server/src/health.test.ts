@@ -150,6 +150,7 @@ test('readiness succeeds after PostgreSQL and uploads round trip', async () => {
   assert.equal(report.status, 'ok');
   assert.equal(report.checks.postgres.status, 'ok');
   assert.equal(report.checks.uploads.status, 'ok');
+  assert.match(report.instanceId ?? '', /^[0-9a-f-]{36}$/i);
   assert.deepEqual(queries, ['SELECT 1']);
   assert.equal(memory.files.size, 0);
   assert.ok(memory.calls.some((call) => call.startsWith('remove:')));

@@ -1,0 +1,264 @@
+#!/usr/bin/env node
+
+import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const opsDir = dirname(fileURLToPath(import.meta.url));
+const unitDir = join(opsDir, 'systemd');
+
+const allowedDirectives = {
+  Unit: new Set([
+    'Description',
+    'Documentation',
+    'Wants',
+    'After',
+    'StartLimitIntervalSec',
+    'StartLimitBurst'
+  ]),
+  Service: new Set([
+    'Type',
+    'User',
+    'Group',
+    'Environment',
+    'EnvironmentFile',
+    'WorkingDirectory',
+    'StateDirectory',
+    'StateDirectoryMode',
+    'LogsDirectory',
+    'LogsDirectoryMode',
+    'ReadWritePaths',
+    'ExecStartPre',
+    'ExecStart',
+    'Restart',
+    'RestartSec',
+    'TimeoutStartSec',
+    'TimeoutStopSec',
+    'KillSignal',
+    'StandardOutput',
+    'StandardError',
+    'UMask',
+    'NoNewPrivileges',
+    'PrivateDevices',
+    'PrivateTmp',
+    'ProtectSystem',
+    'ProtectHome',
+    'ProtectClock',
+    'ProtectControlGroups',
+    'ProtectHostname',
+    'ProtectKernelLogs',
+    'ProtectKernelModules',
+    'ProtectKernelTunables',
+    'ProtectProc',
+    'ProcSubset',
+    'RestrictAddressFamilies',
+    'RestrictNamespaces',
+    'RestrictRealtime',
+    'RestrictSUIDSGID',
+    'LockPersonality',
+    'CapabilityBoundingSet',
+    'AmbientCapabilities',
+    'SystemCallArchitectures'
+  ]),
+  Timer: new Set([
+    'OnCalendar',
+    'Persistent',
+    'AccuracySec',
+    'RandomizedDelaySec',
+    'Unit'
+  ]),
+  Install: new Set(['WantedBy'])
+};
+
+const hardening = new Map([
+  ['NoNewPrivileges', 'yes'],
+  ['PrivateDevices', 'yes'],
+  ['PrivateTmp', 'yes'],
+  ['ProtectSystem', 'strict'],
+  ['ProtectHome', 'yes'],
+  ['ProtectKernelTunables', 'yes'],
+  ['RestrictNamespaces', 'yes'],
+  ['RestrictRealtime', 'yes'],
+  ['RestrictSUIDSGID', 'yes'],
+  ['LockPersonality', 'yes'],
+  ['CapabilityBoundingSet', ''],
+  ['AmbientCapabilities', ''],
+  ['RestrictAddressFamilies', 'AF_UNIX AF_INET AF_INET6']
+]);
+
+const parseUnit = (name, contents) => {
+  const values = new Map();
+  let section;
+  for (const [index, rawLine] of contents.split('\n').entries()) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const sectionMatch = line.match(/^\[([A-Za-z]+)]$/);
+    if (sectionMatch) {
+      section = sectionMatch[1];
+      assert.ok(allowedDirectives[section], `${name}:${index + 1}: unsupported section`);
+      continue;
+    }
+    assert.ok(section, `${name}:${index + 1}: directive outside a section`);
+    const separator = line.indexOf('=');
+    assert.ok(separator > 0, `${name}:${index + 1}: invalid assignment`);
+    const key = line.slice(0, separator);
+    const value = line.slice(separator + 1);
+    assert.ok(
+      allowedDirectives[section].has(key),
+      `${name}:${index + 1}: ${key} is not allowed in [${section}]`
+    );
+    const qualifiedKey = `${section}.${key}`;
+    const existing = values.get(qualifiedKey) ?? [];
+    existing.push(value);
+    values.set(qualifiedKey, existing);
+  }
+  return values;
+};
+
+const one = (unit, key) => {
+  const values = unit.get(key);
+  assert.equal(values?.length, 1, `${key} must occur exactly once`);
+  return values[0];
+};
+
+const unitNames = (await readdir(unitDir)).sort();
+assert.deepEqual(unitNames, [
+  'her-api.service',
+  'her-monitor-check.service',
+  'her-monitor-check.timer',
+  'her-monitor-summary.service',
+  'her-monitor-summary.timer'
+]);
+
+const units = new Map();
+for (const name of unitNames) {
+  const contents = await readFile(join(unitDir, name), 'utf8');
+  assert.ok(!contents.includes('\r'), `${name}: use LF line endings`);
+  assert.ok(
+    !/(?:token|secret|password)\s*=\s*\S+/i.test(contents),
+    `${name}: possible embedded secret`
+  );
+  units.set(name, parseUnit(name, contents));
+}
+
+for (const name of unitNames.filter((value) => value.endsWith('.service'))) {
+  const unit = units.get(name);
+  assert.match(one(unit, 'Service.User'), /^her-(?:api|monitor)$/);
+  assert.match(one(unit, 'Service.Group'), /^her-(?:api|monitor)$/);
+  assert.match(one(unit, 'Service.WorkingDirectory'), /^\/var\/www\/st24\/(?:server|monitor)$/);
+  assert.match(one(unit, 'Service.EnvironmentFile'), /^\/etc\/(?:her\/api|her-monitor\/monitor)\.env$/);
+  for (const execKey of ['Service.ExecStartPre', 'Service.ExecStart']) {
+    const commands = unit.get(execKey);
+    assert.ok(commands?.length, `${name}: ${execKey} is missing`);
+    for (const command of commands) {
+      assert.match(command, /^\/usr\/bin\/(?:env|flock|test)(?:\s|$)/);
+    }
+  }
+  for (const [key, expected] of hardening) {
+    assert.equal(one(unit, `Service.${key}`), expected, `${name}: unsafe ${key}`);
+  }
+}
+
+const api = units.get('her-api.service');
+assert.ok(
+  api.get('Service.ExecStartPre').includes(
+    '/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/her/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/configCheck.js'
+  )
+);
+assert.equal(
+  one(api, 'Service.ExecStart'),
+  '/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/her/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/index.js'
+);
+assert.equal(
+  one(api, 'Service.ReadWritePaths'),
+  '/var/www/st24/server/uploads /var/www/st24/server/tmp'
+);
+
+for (const name of ['her-monitor-check.service', 'her-monitor-summary.service']) {
+  const unit = units.get(name);
+  const mode = name.includes('summary') ? 'summary' : 'check';
+  assert.ok(
+    unit.get('Service.ExecStartPre').includes(
+      `/usr/bin/env MONITOR_ENV_FILE=/etc/her-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/her-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/configCheck.js ${mode}`
+    )
+  );
+  assert.match(
+    one(unit, 'Service.ExecStart'),
+    /^\/usr\/bin\/flock --exclusive --wait 210 --conflict-exit-code 75 \/var\/lib\/her-monitor\/schedule\.lock \/usr\/bin\/env MONITOR_ENV_FILE=\/etc\/her-monitor\/monitor\.env MONITOR_STATE_FILE=\/var\/lib\/her-monitor\/state\.json \/usr\/bin\/node \/var\/www\/st24\/monitor\/dist\/cli\.js (?:check|summary)$/
+  );
+  assert.equal(one(unit, 'Service.StateDirectory'), 'her-monitor');
+}
+
+const expectedTimers = new Map([
+  [
+    'her-monitor-check.timer',
+    ['*-*-* *:0/5:00', 'her-monitor-check.service']
+  ],
+  [
+    'her-monitor-summary.timer',
+    ['*-*-* 09:02:00', 'her-monitor-summary.service']
+  ]
+]);
+for (const [name, [calendar, target]] of expectedTimers) {
+  const unit = units.get(name);
+  assert.equal(one(unit, 'Timer.OnCalendar'), calendar);
+  assert.equal(one(unit, 'Timer.Persistent'), 'yes');
+  assert.equal(one(unit, 'Timer.Unit'), target);
+  assert.ok(units.has(target), `${name}: target service is missing`);
+}
+
+const apiTmpfiles = await readFile(join(opsDir, 'tmpfiles', 'her-api.conf'), 'utf8');
+const apiTmpfileRules = apiTmpfiles
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith('#'));
+assert.deepEqual(apiTmpfileRules, [
+  'd /var/www/st24/server/uploads 0750 her-api her-api -',
+  'd /var/www/st24/server/tmp 0750 her-api her-api -',
+  'd /var/www/st24/server/tmp/b2b-requests 0750 her-api her-api -',
+  'd /var/www/st24/server/tmp/need-part-requests 0750 her-api her-api -',
+  'd /var/log/her-api 0750 her-api her-api -',
+  'f /var/log/her-api/api.log 0640 her-api her-api -'
+]);
+
+const monitorTmpfiles = await readFile(
+  join(opsDir, 'tmpfiles', 'her-monitor.conf'),
+  'utf8'
+);
+const monitorTmpfileRules = monitorTmpfiles
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith('#'));
+assert.deepEqual(monitorTmpfileRules, [
+  'd /var/log/her-monitor 0750 her-monitor her-monitor -',
+  'f /var/log/her-monitor/monitor.log 0600 her-monitor her-monitor -'
+]);
+
+for (const [name, expectedPath, expectedIdentity, expectedMode] of [
+  ['her-api', '/var/log/her-api/api.log', 'her-api her-api', '0640'],
+  ['her-monitor', '/var/log/her-monitor/monitor.log', 'her-monitor her-monitor', '0600']
+]) {
+  const contents = await readFile(join(opsDir, 'logrotate', name), 'utf8');
+  assert.match(contents, new RegExp(`^${expectedPath.replaceAll('/', '\\/')} \\{`));
+  for (const directive of [
+    'daily',
+    'rotate',
+    'maxsize',
+    'missingok',
+    'notifempty',
+    'compress',
+    'delaycompress',
+    'dateext',
+    'copytruncate'
+  ]) {
+    assert.match(contents, new RegExp(`^\\s*${directive}(?:\\s|$)`, 'm'));
+  }
+  assert.match(contents, new RegExp(`^\\s*su ${expectedIdentity}$`, 'm'));
+  assert.match(
+    contents,
+    new RegExp(`^\\s*create ${expectedMode} ${expectedIdentity}$`, 'm')
+  );
+}
+
+process.stdout.write('ops unit validation passed\n');

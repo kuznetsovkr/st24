@@ -713,11 +713,12 @@ const parseProbeInteger = (
 const requestTelegramProbeMethod = async (
   botKind: TelegramBotKind,
   token: string,
-  method: 'getMe' | 'getWebhookInfo'
+  method: 'getMe' | 'getWebhookInfo',
+  signal?: AbortSignal
 ) => {
   const response = await resilientFetch(
     `https://api.telegram.org/bot${token}/${method}`,
-    { dispatcher: getTelegramOutboundDispatcher() },
+    { dispatcher: getTelegramOutboundDispatcher(), signal },
     {
       circuitKey: `telegram:runtime_probe:${botKind}:${method}`,
       timeoutMs: 10_000,
@@ -738,11 +739,19 @@ const requestTelegramProbeMethod = async (
   return result;
 };
 
-const probeTelegramBot = async (config: TelegramBotRuntimeConfig) => {
+const probeTelegramBot = async (
+  config: TelegramBotRuntimeConfig,
+  signal?: AbortSignal
+) => {
   const token = process.env[TELEGRAM_POLLING_DEFINITIONS[config.kind].tokenEnvironmentKey]?.trim();
   if (!token) throw new TelegramBotProbeError('config_missing');
 
-  const identity = await requestTelegramProbeMethod(config.kind, token, 'getMe');
+  const identity = await requestTelegramProbeMethod(
+    config.kind,
+    token,
+    'getMe',
+    signal
+  );
   const botId = identity.id;
   const username = identity.username;
   if (
@@ -757,7 +766,12 @@ const probeTelegramBot = async (config: TelegramBotRuntimeConfig) => {
     throw new TelegramBotProbeError('invalid_identity');
   }
 
-  const webhook = await requestTelegramProbeMethod(config.kind, token, 'getWebhookInfo');
+  const webhook = await requestTelegramProbeMethod(
+    config.kind,
+    token,
+    'getWebhookInfo',
+    signal
+  );
   const webhookUrl = typeof webhook.url === 'string' ? webhook.url : null;
   const pending = webhook.pending_update_count;
   const maxPending = parseProbeInteger(
@@ -807,10 +821,19 @@ const probeTelegramBot = async (config: TelegramBotRuntimeConfig) => {
 };
 
 let telegramBotSupervisionStarted = false;
+let telegramBotSupervisionStopRequested = false;
+const telegramBotSupervisionTimers = new Map<TelegramBotKind, NodeJS.Timeout>();
+const telegramBotSupervisionRuns = new Map<TelegramBotKind, Promise<void>>();
+const telegramBotSupervisionControllers = new Map<
+  TelegramBotKind,
+  AbortController
+>();
+let telegramBotSupervisionStopPromise: Promise<void> | null = null;
 
-export const startTelegramBotSupervision = () => {
-  if (telegramBotSupervisionStarted) return;
+export const startTelegramBotSupervision = (): void => {
+  if (telegramBotSupervisionStarted || telegramBotSupervisionStopPromise) return;
   telegramBotSupervisionStarted = true;
+  telegramBotSupervisionStopRequested = false;
   const intervalMs = parseProbeInteger(
     process.env.TELEGRAM_RUNTIME_PROBE_INTERVAL_MS,
     60_000,
@@ -824,15 +847,18 @@ export const startTelegramBotSupervision = () => {
     const state = telegramBotProbeStates[config.kind];
     state.running = true;
     const run = async () => {
+      const controller = new AbortController();
+      telegramBotSupervisionControllers.set(config.kind, controller);
       state.lastAttemptAt = new Date().toISOString();
       try {
-        const identity = await probeTelegramBot(config);
+        const identity = await probeTelegramBot(config, controller.signal);
         state.lastSuccessAt = new Date().toISOString();
         state.consecutiveFailures = 0;
         state.lastErrorCode = null;
         state.botId = identity.botId;
         state.username = identity.username;
       } catch (error) {
+        if (telegramBotSupervisionStopRequested) return;
         state.consecutiveFailures += 1;
         state.lastErrorCode =
           error instanceof TelegramBotProbeError
@@ -847,12 +873,52 @@ export const startTelegramBotSupervision = () => {
           error: state.lastErrorCode
         });
       } finally {
-        const timer = setTimeout(() => void run(), intervalMs);
-        timer.unref?.();
+        if (telegramBotSupervisionControllers.get(config.kind) === controller) {
+          telegramBotSupervisionControllers.delete(config.kind);
+        }
+        if (!telegramBotSupervisionStopRequested) {
+          const timer = setTimeout(() => {
+            telegramBotSupervisionTimers.delete(config.kind);
+            if (!telegramBotSupervisionStopRequested) {
+              const nextRun = run();
+              telegramBotSupervisionRuns.set(config.kind, nextRun);
+            }
+          }, intervalMs);
+          telegramBotSupervisionTimers.set(config.kind, timer);
+          timer.unref?.();
+        }
       }
     };
-    void run();
+    const firstRun = run();
+    telegramBotSupervisionRuns.set(config.kind, firstRun);
   }
+};
+
+export const stopTelegramBotSupervision = (): Promise<void> => {
+  if (telegramBotSupervisionStopPromise) {
+    return telegramBotSupervisionStopPromise;
+  }
+  telegramBotSupervisionStopRequested = true;
+  for (const timer of telegramBotSupervisionTimers.values()) {
+    clearTimeout(timer);
+  }
+  telegramBotSupervisionTimers.clear();
+  for (const controller of telegramBotSupervisionControllers.values()) {
+    controller.abort(new Error('server_shutdown'));
+  }
+  const activeRuns = [...telegramBotSupervisionRuns.values()];
+  telegramBotSupervisionStopPromise = (async () => {
+    await Promise.allSettled(activeRuns);
+    telegramBotSupervisionRuns.clear();
+    telegramBotSupervisionControllers.clear();
+    for (const state of Object.values(telegramBotProbeStates)) {
+      state.running = false;
+    }
+    telegramBotSupervisionStarted = false;
+  })().finally(() => {
+    telegramBotSupervisionStopPromise = null;
+  });
+  return telegramBotSupervisionStopPromise;
 };
 
 const parsePollingResponse = (
@@ -906,6 +972,11 @@ const safePollingErrorCode = (error: unknown) => {
 };
 
 const TELEGRAM_UPDATE_ID_RANDOMIZATION_IDLE_MS = 7 * 24 * 60 * 60_000;
+let telegramPollingStopRequested = false;
+const telegramPollingTimers = new Map<TelegramBotKind, NodeJS.Timeout>();
+const telegramPollingRuns = new Map<TelegramBotKind, Promise<void>>();
+const telegramPollingControllers = new Map<TelegramBotKind, AbortController>();
+let telegramPollingStopPromise: Promise<void> | null = null;
 
 export const shouldResetTelegramUpdateOffset = (
   offset: number,
@@ -918,10 +989,12 @@ export const shouldResetTelegramUpdateOffset = (
 };
 
 const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
+  if (telegramPollingStopPromise) return;
   const configs = validateTelegramStartupConfig();
   const config = configs.find((candidate) => candidate.kind === botKind);
   if (!config || config.mode !== 'polling') return;
   if (telegramRuntimeStates[botKind].running) return;
+  telegramPollingStopRequested = false;
 
   const definition = TELEGRAM_POLLING_DEFINITIONS[botKind];
   const token = process.env[definition.tokenEnvironmentKey]?.trim();
@@ -939,6 +1012,8 @@ const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
   let attempt = 0;
 
   const poll = async () => {
+    const controller = new AbortController();
+    telegramPollingControllers.set(botKind, controller);
     const currentAttempt = (attempt += 1);
     const startedAt = Date.now();
     const attemptedAt = new Date(startedAt).toISOString();
@@ -965,7 +1040,10 @@ const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
       const url = `https://api.telegram.org/bot${token}/getUpdates?timeout=30&offset=${offset}`;
       const response = await resilientFetch(
         url,
-        { dispatcher: getTelegramOutboundDispatcher() },
+        {
+          dispatcher: getTelegramOutboundDispatcher(),
+          signal: controller.signal
+        },
         {
           circuitKey: `telegram:poll_updates:${botKind}`,
           timeoutMs: 45_000,
@@ -977,6 +1055,7 @@ const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
       const updates = parsePollingResponse(response.status, payload);
 
       for (const update of updates) {
+        if (telegramPollingStopRequested) return;
         const nextOffset = Math.max(offset, update.update_id + 1);
         await processTelegramUpdateDurably(botKind, update, nextOffset);
         offset = nextOffset;
@@ -988,6 +1067,7 @@ const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
         { type: 'success', at: new Date().toISOString() }
       );
     } catch (error) {
+      if (telegramPollingStopRequested) return;
       const errorCode = safePollingErrorCode(error);
       telegramRuntimeStates[botKind] = reduceTelegramRuntimeState(
         telegramRuntimeStates[botKind],
@@ -1003,11 +1083,25 @@ const startTelegramPollingForBot = (botKind: TelegramBotKind) => {
         error: errorCode
       });
     } finally {
-      setTimeout(poll, 1000);
+      if (telegramPollingControllers.get(botKind) === controller) {
+        telegramPollingControllers.delete(botKind);
+      }
+      if (!telegramPollingStopRequested) {
+        const timer = setTimeout(() => {
+          telegramPollingTimers.delete(botKind);
+          if (!telegramPollingStopRequested) {
+            const nextRun = poll();
+            telegramPollingRuns.set(botKind, nextRun);
+          }
+        }, 1000);
+        telegramPollingTimers.set(botKind, timer);
+        timer.unref?.();
+      }
     }
   };
 
-  void poll();
+  const firstRun = poll();
+  telegramPollingRuns.set(botKind, firstRun);
 };
 
 export const startTelegramPolling = () => startTelegramPollingForBot('main');
@@ -1015,6 +1109,34 @@ export const startTelegramPolling = () => startTelegramPollingForBot('main');
 export const startTelegramOrderPolling = () => startTelegramPollingForBot('orders');
 
 export const startTelegramB2BPolling = () => startTelegramPollingForBot('b2b');
+
+export const stopTelegramPolling = (): Promise<void> => {
+  if (telegramPollingStopPromise) return telegramPollingStopPromise;
+  telegramPollingStopRequested = true;
+  for (const timer of telegramPollingTimers.values()) {
+    clearTimeout(timer);
+  }
+  telegramPollingTimers.clear();
+  for (const controller of telegramPollingControllers.values()) {
+    controller.abort(new Error('server_shutdown'));
+  }
+  const activeRuns = [...telegramPollingRuns.values()];
+  telegramPollingStopPromise = (async () => {
+    await Promise.allSettled(activeRuns);
+    telegramPollingRuns.clear();
+    telegramPollingControllers.clear();
+    for (const kind of TELEGRAM_BOT_KINDS) {
+      if (telegramRuntimeStates[kind].mode !== 'polling') continue;
+      telegramRuntimeStates[kind] = {
+        ...telegramRuntimeStates[kind],
+        running: false
+      };
+    }
+  })().finally(() => {
+    telegramPollingStopPromise = null;
+  });
+  return telegramPollingStopPromise;
+};
 
 export { TelegramDeliveryError, sendTelegramPartToChat };
 export type { TelegramBotKind };

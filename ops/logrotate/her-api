@@ -1,0 +1,13 @@
+/var/log/her-api/api.log {
+    daily
+    rotate 14
+    maxsize 50M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    dateext
+    copytruncate
+    su her-api her-api
+    create 0640 her-api her-api
+}

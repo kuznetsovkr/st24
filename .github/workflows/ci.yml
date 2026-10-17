@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_DB: her_smoke
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d her_smoke"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/her_smoke
+      POSTGRES_SMOKE_ALLOW: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use supported Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.1
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests and TypeScript builds
+        run: npm test
+
+      - name: Build client through production preflight
+        env:
+          CLIENT_ENV_FILE: ${{ runner.temp }}/her-client.env
+          EXPECTED_VITE_API_URL: https://api.ci.example.com
+        run: |
+          (
+            umask 077
+            printf '%s\n' \
+              'VITE_API_URL=https://api.ci.example.com' \
+              'VITE_SITE_URL=https://ci.example.com' \
+              'VITE_TURNSTILE_SITE_KEY=ci-turnstile-public-key' \
+              'VITE_YANDEX_MAPS_API_KEY=ci-yandex-browser-key' \
+              'VITE_CDEK_FROM_CODE=123456' \
+              'VITE_CDEK_FROM_LOCATION=Krasnoyarsk' \
+              'VITE_CDEK_DEFAULT_LOCATION=Krasnoyarsk' \
+              >"$CLIENT_ENV_FILE"
+          )
+          npm run client:config:check
+          npm run client:build
+
+      - name: Fresh PostgreSQL schema and transaction smoke
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-16
+          node scripts/ci/postgres-smoke.mjs
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Validate deploy shell
+        run: |
+          bash -n deploy.sh
+          shellcheck deploy.sh scripts/tests/deploy.test.sh
+          bash scripts/tests/deploy.test.sh
+
+      - name: Validate operations package
+        run: |
+          npm run test:ops
+          sudo useradd --system --user-group --no-create-home her-api
+          sudo useradd --system --user-group --no-create-home her-monitor
+          sudo install -d /etc/her /etc/her-monitor
+          sudo touch /etc/her/api.env /etc/her-monitor/monitor.env
+          sudo install -d /var/www/st24/server/uploads /var/www/st24/server/tmp
+          sudo install -d /var/www/st24/monitor
+          sudo ln -sf "$(command -v node)" /usr/bin/node
+          systemd-analyze verify ops/systemd/*.service ops/systemd/*.timer

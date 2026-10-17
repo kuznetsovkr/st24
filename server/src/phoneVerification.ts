@@ -127,20 +127,26 @@ const getTelegramGatewayCallbackUrl = () =>
 const getTelegramGatewaySenderUsername = () =>
   trimToUndefined(process.env.TELEGRAM_GATEWAY_SENDER_USERNAME);
 
-const getSmsRuApiId = () => trimToUndefined(process.env.SMS_RU_API_ID);
+const getSmsRuApiId = (
+  environment: Record<string, string | undefined> = process.env
+) => trimToUndefined(environment.SMS_RU_API_ID);
 
 const getSmsRuSender = () => trimToUndefined(process.env.SMS_RU_SENDER);
 
 const isSmsRuTestMode = () => process.env.SMS_RU_TEST === 'true';
-const isProduction = () => (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+const isProduction = (
+  environment: Record<string, string | undefined> = process.env
+) => (environment.NODE_ENV ?? '').trim().toLowerCase() === 'production';
 
 const getPhoneVerificationBrand = () =>
   trimToUndefined(process.env.PHONE_VERIFICATION_BRAND) ?? 'ST24';
 
 type PhoneVerificationMode = 'telegram_then_sms' | 'sms_only';
 
-const getPhoneVerificationMode = (): PhoneVerificationMode => {
-  const raw = (process.env.PHONE_VERIFICATION_MODE ?? '').trim().toLowerCase();
+const getPhoneVerificationMode = (
+  environment: Record<string, string | undefined> = process.env
+): PhoneVerificationMode => {
+  const raw = (environment.PHONE_VERIFICATION_MODE ?? '').trim().toLowerCase();
   if (raw === 'sms_only' || raw === 'sms' || raw === 'sms_ru_only') {
     return 'sms_only';
   }
@@ -157,19 +163,21 @@ const isDebugCodeEnabled = () => {
   return process.env.NODE_ENV !== 'production';
 };
 
-export const assertPhoneVerificationConfiguration = () => {
-  if (isProduction() && process.env.PHONE_VERIFICATION_DEBUG_CODE === 'true') {
+export const assertPhoneVerificationConfiguration = (
+  environment: Record<string, string | undefined> = process.env
+) => {
+  if (isProduction(environment) && environment.PHONE_VERIFICATION_DEBUG_CODE === 'true') {
     throw new Error('PHONE_VERIFICATION_DEBUG_CODE must be false in production');
   }
 
-  if (isProduction() && !getSmsRuApiId()) {
+  if (isProduction(environment) && !getSmsRuApiId(environment)) {
     throw new Error('SMS_RU_API_ID is required in production');
   }
 
   if (
-    isProduction() &&
-    getPhoneVerificationMode() === 'sms_only' &&
-    !getSmsRuApiId()
+    isProduction(environment) &&
+    getPhoneVerificationMode(environment) === 'sms_only' &&
+    !getSmsRuApiId(environment)
   ) {
     throw new Error('PHONE_VERIFICATION_MODE=sms_only requires SMS_RU_API_ID in production');
   }

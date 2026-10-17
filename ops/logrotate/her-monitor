@@ -1,0 +1,13 @@
+/var/log/her-monitor/monitor.log {
+    daily
+    rotate 30
+    maxsize 20M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    dateext
+    copytruncate
+    su her-monitor her-monitor
+    create 0600 her-monitor her-monitor
+}

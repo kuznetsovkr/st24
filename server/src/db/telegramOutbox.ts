@@ -640,6 +640,34 @@ export const extendTelegramOutboxLease = async (
   });
 };
 
+export const releaseTelegramOutboxEventLease = async (
+  eventId: string,
+  owner: string
+): Promise<boolean> => {
+  assertUuid(eventId, 'eventId');
+  assertWorkerOwner(owner);
+
+  return withClient(async (client) => {
+    const result = await client.query(
+      `
+        UPDATE telegram_outbox_events
+        SET status = 'retry',
+            next_attempt_at = NOW(),
+            lease_owner = NULL,
+            lease_until = NULL,
+            updated_at = NOW()
+        WHERE id = $1
+          AND status = 'processing'
+          AND lease_owner = $2
+          AND lease_until > NOW()
+        RETURNING id;
+      `,
+      [eventId, owner]
+    );
+    return (result.rowCount ?? 0) > 0;
+  });
+};
+
 export const findTelegramOutboxEventById = async (
   eventId: string
 ): Promise<TelegramOutboxEventRow | null> => {

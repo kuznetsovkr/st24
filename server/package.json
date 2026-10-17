@@ -6,14 +6,15 @@
     "node": "^20.19.0 || ^22.13.0 || >=24"
   },
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "node --watch -r ts-node/register/transpile-only src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "config:check": "node dist/configCheck.js",
     "outbox:redrive": "node dist/telegramOutboxAdmin.js redrive",
     "outbox:ack": "node dist/telegramOutboxAdmin.js acknowledge-loss",
     "payment-anomaly:resolve-order": "node dist/paymentAnomalyAdmin.js resolve-order",
     "payment-anomaly:resolve-provider": "node dist/paymentAnomalyAdmin.js resolve-provider",
-    "test": "npm run build && node --test dist/cdek.test.js dist/health.test.js dist/notificationHealth.test.js dist/notificationMessages.test.js dist/paymentAnomalies.test.js dist/paymentInvariants.test.js dist/runtimeConfig.test.js dist/stockReservation.test.js dist/telegramOutboxWorker.test.js dist/telegramTransport.test.js dist/yookassaConfig.test.js",
+    "test": "npm run build && node --test dist/cdek.test.js dist/configCheck.test.js dist/health.test.js dist/httpClient.test.js dist/logRetention.test.js dist/notificationHealth.test.js dist/notificationMessages.test.js dist/paymentAnomalies.test.js dist/paymentInvariants.test.js dist/runtimeConfig.test.js dist/shutdown.test.js dist/shutdownFence.test.js dist/stockReservation.test.js dist/telegramOutboxWorker.test.js dist/telegramTransport.test.js dist/yookassaConfig.test.js",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "npm run lint -- --fix"
   },
@@ -38,7 +39,7 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^20.17.30",
     "@types/pg": "^8.16.0",
-    "ts-node-dev": "^2.0.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
 }

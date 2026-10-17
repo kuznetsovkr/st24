@@ -35,25 +35,33 @@ const parseIntEnvInRange = (
   return parsed;
 };
 
-const getShopId = () => trimToUndefined(process.env.YOOKASSA_SHOP_ID);
-const getSecretKey = () => trimToUndefined(process.env.YOOKASSA_SECRET_KEY);
-const getApiBaseUrl = () => {
+const getShopId = (
+  environment: Record<string, string | undefined> = process.env
+) => trimToUndefined(environment.YOOKASSA_SHOP_ID);
+const getSecretKey = (
+  environment: Record<string, string | undefined> = process.env
+) => trimToUndefined(environment.YOOKASSA_SECRET_KEY);
+const getApiBaseUrl = (
+  environment: Record<string, string | undefined> = process.env
+) => {
   const value =
-    trimToUndefined(process.env.YOOKASSA_API_BASE_URL) ?? YOOKASSA_BASE_URL;
+    trimToUndefined(environment.YOOKASSA_API_BASE_URL) ?? YOOKASSA_BASE_URL;
   return value.endsWith('/') ? value.slice(0, -1) : value;
 };
 
 export const getYooKassaWebhookSecret = () =>
   trimToUndefined(process.env.YOOKASSA_WEBHOOK_SECRET);
 
-export const getYooKassaReturnBaseUrl = () =>
-  trimToUndefined(process.env.YOOKASSA_RETURN_BASE_URL);
+export const getYooKassaReturnBaseUrl = (
+  environment: Record<string, string | undefined> = process.env
+) => trimToUndefined(environment.YOOKASSA_RETURN_BASE_URL);
 
 export const getYooKassaFixedAmountCents = () =>
   parsePositiveIntEnv(process.env.YOOKASSA_FIXED_AMOUNT_CENTS, 100);
 
-export const isYooKassaUseOrderTotal = () =>
-  (process.env.YOOKASSA_USE_ORDER_TOTAL ?? '').trim().toLowerCase() === 'true';
+export const isYooKassaUseOrderTotal = (
+  environment: Record<string, string | undefined> = process.env
+) => (environment.YOOKASSA_USE_ORDER_TOTAL ?? '').trim().toLowerCase() === 'true';
 
 export const getYooKassaReceiptTaxSystemCode = () =>
   parseIntEnvInRange(process.env.YOOKASSA_RECEIPT_TAX_SYSTEM_CODE, 2, 1, 6);
@@ -63,21 +71,23 @@ export const getYooKassaReceiptVatCode = () =>
 
 export const isYooKassaConfigured = () => Boolean(getShopId() && getSecretKey());
 
-export const validateYooKassaStartupConfig = () => {
-  const shopId = getShopId();
-  const secretKey = getSecretKey();
+export const validateYooKassaStartupConfig = (
+  environment: Record<string, string | undefined> = process.env
+) => {
+  const shopId = getShopId(environment);
+  const secretKey = getSecretKey(environment);
   if (Boolean(shopId) !== Boolean(secretKey)) {
     throw new Error(
       'YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY must be configured together'
     );
   }
   const isProduction =
-    (process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+    (environment.NODE_ENV ?? '').trim().toLowerCase() === 'production';
   if (!isProduction || !shopId || !secretKey) return;
 
   let parsedApiBaseUrl: URL;
   try {
-    parsedApiBaseUrl = new URL(getApiBaseUrl());
+    parsedApiBaseUrl = new URL(getApiBaseUrl(environment));
   } catch {
     throw new Error(
       'YOOKASSA_API_BASE_URL must use the official YooKassa production endpoint'
@@ -96,7 +106,7 @@ export const validateYooKassaStartupConfig = () => {
     );
   }
 
-  const returnBaseUrl = getYooKassaReturnBaseUrl();
+  const returnBaseUrl = getYooKassaReturnBaseUrl(environment);
   if (!returnBaseUrl) {
     throw new Error(
       'YOOKASSA_RETURN_BASE_URL is required when YooKassa is enabled in production'
@@ -118,7 +128,7 @@ export const validateYooKassaStartupConfig = () => {
   ) {
     throw new Error('YOOKASSA_RETURN_BASE_URL must be a valid HTTPS origin');
   }
-  if (!isYooKassaUseOrderTotal()) {
+  if (!isYooKassaUseOrderTotal(environment)) {
     throw new Error(
       'YOOKASSA_USE_ORDER_TOTAL must be true when YooKassa is enabled in production'
     );

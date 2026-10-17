@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
 import { createHttpClient, safeErrorDetail } from './http';
-import { loadEnvFile, parseConfig, parseMode } from './config';
+import {
+  assertSupportedNodeVersion,
+  loadMonitorConfiguration,
+  parseConfig,
+  parseMode
+} from './config';
 import { acquireMonitorLock } from './lock';
 import { renderConsoleReport, renderSummaryReport, renderTransitionReport } from './report';
 import { runChecks, shouldSendSuccessHeartbeat } from './runner';
@@ -96,10 +100,9 @@ const runMonitor = async (
 };
 
 const main = async (): Promise<number> => {
-  const defaultEnvFile = resolve(__dirname, '..', '.env');
-  loadEnvFile(process.env.MONITOR_ENV_FILE ?? defaultEnvFile);
+  assertSupportedNodeVersion();
   const mode = parseMode(process.argv.slice(2));
-  const config = parseConfig(process.env);
+  const config = loadMonitorConfiguration();
   const lock = await acquireMonitorLock(config.stateFile);
   try {
     return await runMonitor(config, mode);
