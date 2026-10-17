@@ -9,6 +9,10 @@ VPS магазина. Они **не применяются автоматиче�
 FTP, DNS, Apache/PHP и MySQL; пакеты и данные сохранены. Список, проверки и откат:
 [UNUSED-SERVICES.md](UNUSED-SERVICES.md).
 
+После этого из активного nginx отключены старые panel/admin-конфиги и listener
+1501, добавлен отдельный default denial для чужих Host/SNI:
+[nginx/README.md](../nginx/README.md). Конфиг магазина и платёжный gate сохранены.
+
 ## Файлы на сервере
 
 | Источник | Установленное назначение |

@@ -9,3 +9,4 @@ ops/logrotate/* text eol=lf
 ops/tmpfiles/* text eol=lf
 ops/security/*.conf text eol=lf
 ops/security/*.nft text eol=lf
+ops/nginx/*.conf text eol=lf

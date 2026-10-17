@@ -119,3 +119,9 @@ jobs:
           sudo install -d -m 0755 /usr/local/lib/karcher-security
           sudo install -m 0700 ops/security/load-firewall.sh /usr/local/lib/karcher-security/load-firewall.sh
           systemd-analyze verify ops/security/karcher-firewall.service
+
+      - name: Validate isolated nginx host configuration
+        run: |
+          sudo systemctl mask nginx.service
+          sudo env NEEDRESTART_MODE=l apt-get install -y --no-install-recommends nginx openssl iproute2
+          sudo python3 ops/nginx/test-config.py
