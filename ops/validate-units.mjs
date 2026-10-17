@@ -208,6 +208,35 @@ for (const [name, [calendar, target]] of expectedTimers) {
   assert.ok(units.has(target), `${name}: target service is missing`);
 }
 
+// This root-only watchdog reads backup metadata, not the application environment.
+// Its systemd sandbox does not grant write access to either backup filesystem.
+const backupService = parseUnit(
+  'karcher-backup-health.service',
+  await readFile(join(opsDir, 'backup', 'karcher-backup-health.service'), 'utf8')
+);
+assert.equal(one(backupService, 'Service.User'), 'root');
+assert.equal(one(backupService, 'Service.Group'), 'root');
+assert.equal(one(backupService, 'Service.Type'), 'oneshot');
+assert.equal(one(backupService, 'Service.WorkingDirectory'), '/usr/local/lib/karcher-backup');
+assert.equal(
+  one(backupService, 'Service.ExecStart'),
+  '/usr/bin/python3 /usr/local/lib/karcher-backup/backup_health.py send'
+);
+assert.equal(one(backupService, 'Service.TimeoutStartSec'), '60s');
+assert.equal(one(backupService, 'Service.UMask'), '0077');
+assert.ok(!backupService.has('Service.ReadWritePaths'));
+assert.ok(!backupService.has('Service.EnvironmentFile'));
+for (const [key, expected] of hardening) {
+  assert.equal(one(backupService, `Service.${key}`), expected, `backup watchdog: unsafe ${key}`);
+}
+const backupTimer = parseUnit(
+  'karcher-backup-health.timer',
+  await readFile(join(opsDir, 'backup', 'karcher-backup-health.timer'), 'utf8')
+);
+assert.equal(one(backupTimer, 'Timer.OnCalendar'), '*-*-* *:0/5:00');
+assert.equal(one(backupTimer, 'Timer.Persistent'), 'yes');
+assert.equal(one(backupTimer, 'Timer.Unit'), 'karcher-backup-health.service');
+
 const apiTmpfiles = await readFile(join(opsDir, 'tmpfiles', 'her-api.conf'), 'utf8');
 const apiTmpfileRules = apiTmpfiles
   .split('\n')

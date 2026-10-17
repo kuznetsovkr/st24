@@ -17,14 +17,22 @@ readonly COMMAND_TIMEOUT_SECONDS=600
 STAGE=initialization
 DST=""
 OFFSITE_SOURCE=""
+STARTED_AT=""
 
 write_status() {
   local status="$1"
   local temporary
   temporary="$(mktemp "$BACKUP_ROOT/.status.XXXXXXXX")"
-  printf '{"checkedAt":"%s","status":"%s","stage":"%s","backupSet":"%s","encryption":"age-x25519-v1"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" "$STAGE" "${DST##*/}" >"$temporary"
+  printf '{"checkedAt":"%s","startedAt":"%s","status":"%s","stage":"%s","backupSet":"%s","encryption":"age-x25519-v1"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STARTED_AT" "$status" "$STAGE" "${DST##*/}" >"$temporary"
   chmod 0600 "$temporary"
+  if [[ "$status" == verified ]]; then
+    local success_temporary
+    success_temporary="$(mktemp "$BACKUP_ROOT/.success.XXXXXXXX")"
+    cp -- "$temporary" "$success_temporary"
+    chmod 0600 "$success_temporary"
+    mv -f -- "$success_temporary" "$BACKUP_ROOT/.last-success.json"
+  fi
   mv -f -- "$temporary" "$BACKUP_ROOT/.last-run.json"
 }
 
@@ -64,6 +72,15 @@ chmod 0600 /var/lock/st24-backup.lock
 flock -n 9 || { printf 'backup: another run is active\n' >&2; exit 75; }
 trap 'on_error $?' ERR
 
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+SET_NAME="$(date -u +%Y-%m-%d_%H-%M-%S)_UTC"
+readonly SET_NAME
+readonly STAGING="$BACKUP_ROOT/.${SET_NAME}.partial.$$"
+readonly ENCRYPTED_STAGING="$ENCRYPTED_ROOT/.${SET_NAME}.partial.$$"
+DST="$BACKUP_ROOT/$SET_NAME"
+OFFSITE_SOURCE="$ENCRYPTED_ROOT/$SET_NAME"
+write_status running
+
 STAGE=encryption_configuration
 [[ ! -L "$RECIPIENTS_FILE" && -f "$RECIPIENTS_FILE" ]]
 [[ "$(stat -c %u "$RECIPIENTS_FILE")" == 0 && "$(stat -c %a "$RECIPIENTS_FILE")" == 600 ]]
@@ -78,12 +95,6 @@ run_pg() {
     /usr/bin/node "$TOOLS_DIR/postgres-command.mjs" "$@"
 }
 
-SET_NAME="$(date -u +%Y-%m-%d_%H-%M-%S)_UTC"
-readonly SET_NAME
-readonly STAGING="$BACKUP_ROOT/.${SET_NAME}.partial.$$"
-readonly ENCRYPTED_STAGING="$ENCRYPTED_ROOT/.${SET_NAME}.partial.$$"
-DST="$BACKUP_ROOT/$SET_NAME"
-OFFSITE_SOURCE="$ENCRYPTED_ROOT/$SET_NAME"
 [[ ! -e "$DST" && ! -e "$STAGING" && ! -e "$OFFSITE_SOURCE" && ! -e "$ENCRYPTED_STAGING" ]]
 mkdir -m 0700 "$STAGING"
 
@@ -101,7 +112,7 @@ timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
   -czf "$STAGING/st24_files.tar.gz" -C / \
   var/www/st24 etc/nginx etc/letsencrypt \
   etc/systemd/system/her-api.service \
-  etc/karcher-backup/recipients.txt \
+  etc/karcher-backup \
   usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
   2>"$LOG_ROOT/$SET_NAME.tar.log"
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \

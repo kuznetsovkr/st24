@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Karcher backups and disk space every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+Persistent=yes
+AccuracySec=15s
+RandomizedDelaySec=15s
+Unit=karcher-backup-health.service
+
+[Install]
+WantedBy=timers.target

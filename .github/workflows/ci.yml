@@ -107,3 +107,5 @@ jobs:
           sudo install -d /var/www/st24/monitor
           sudo ln -sf "$(command -v node)" /usr/bin/node
           systemd-analyze verify ops/systemd/*.service ops/systemd/*.timer
+          sudo install -d -m 0700 /usr/local/lib/karcher-backup
+          systemd-analyze verify ops/backup/karcher-backup-health.service ops/backup/karcher-backup-health.timer

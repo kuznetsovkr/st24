@@ -6,6 +6,36 @@ import unittest
 
 
 class BackupScriptTests(unittest.TestCase):
+    def test_failure_and_running_states_preserve_last_verified_checkpoint(self):
+        source = Path(__file__).with_name('karcher-backup.sh').read_text()
+        function = re.search(r'^write_status\(\) \{\n.*?^\}', source, re.M | re.S)
+        self.assertIsNotNone(function)
+        with tempfile.TemporaryDirectory() as directory:
+            script = '''set -Eeuo pipefail
+umask 077
+BACKUP_ROOT="$1"
+STARTED_AT=2026-10-17T00:00:00Z
+DST=/synthetic/2026-10-17_00-00-00_UTC
+STAGE=complete
+'''
+            script += function.group(0)
+            script += '''
+write_status verified
+cp "$BACKUP_ROOT/.last-success.json" "$BACKUP_ROOT/expected.json"
+STAGE=offsite_copy
+write_status failed
+cmp "$BACKUP_ROOT/expected.json" "$BACKUP_ROOT/.last-success.json"
+write_status running
+cmp "$BACKUP_ROOT/expected.json" "$BACKUP_ROOT/.last-success.json"
+'''
+            subprocess.run(['bash', '-c', script, 'backup-test', directory],
+                           capture_output=True, text=True, timeout=10, check=True)
+            checkpoint = Path(directory)/'.last-success.json'
+            import json
+            self.assertEqual(json.loads(checkpoint.read_text())['status'], 'verified')
+            self.assertEqual(json.loads((Path(directory)/'.last-run.json').read_text())['status'], 'running')
+            self.assertEqual(checkpoint.stat().st_mode & 0o777, 0o600)
+
     def run_verification(self, failures):
         # Exercise the exact shell function from production, without sourcing
         # initialization or touching production paths. Only external calls are mocked.
