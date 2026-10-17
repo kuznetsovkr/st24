@@ -1,11 +1,179 @@
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
 
 class BackupScriptTests(unittest.TestCase):
+    def security_fixture(self, root):
+        files = {
+            'etc/ssh/sshd_config': 'Include /etc/ssh/sshd_config.d/*.conf\n',
+            'etc/ssh/sshd_config.d/00-karcher-access.conf': 'AuthenticationMethods publickey\n',
+            'etc/ssh/sshd_config.d/40-hosting.conf': 'PubkeyAuthentication yes\n',
+            'root/.ssh/authorized_keys': 'ssh-ed25519 synthetic-public-key test-only\n',
+            'etc/karcher-security/inbound.nft': 'table inet karcher_ingress {}\n',
+            'usr/local/lib/karcher-security/load-firewall.sh': '#!/bin/sh\nexit 0\n',
+            'etc/systemd/system/karcher-firewall.service': '[Service]\nType=oneshot\n',
+            'etc/karcher-backup/security-required': '',
+            # These are NOT selected, even when they are beside selected files.
+            'etc/ssh/ssh_host_ed25519_key': 'SYNTHETIC_HOST_PRIVATE_KEY_NOT_TO_ARCHIVE',
+            'etc/ssh/sshd_config.d/old-private.key': 'SYNTHETIC_UNRELATED_PRIVATE_FILE',
+            'root/.ssh/id_ed25519': 'SYNTHETIC_OPERATOR_PRIVATE_KEY_NOT_TO_ARCHIVE',
+            'root/.config/karcher-backup/identity.txt': 'SYNTHETIC_AGE_PRIVATE_KEY_NOT_TO_ARCHIVE',
+        }
+        for name, data in files.items():
+            path = root/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(data)
+        (root/'root/.ssh/authorized_keys').chmod(0o600)
+        links = {
+            'etc/systemd/system/multi-user.target.wants/karcher-firewall.service':
+                '/etc/systemd/system/karcher-firewall.service',
+            'etc/systemd/system/nftables.service': '/dev/null',
+        }
+        for name, target in links.items():
+            path = root/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.symlink_to(target)
+        return set(files) - {
+            'etc/karcher-backup/security-required',
+            'etc/ssh/ssh_host_ed25519_key',
+            'etc/ssh/sshd_config.d/old-private.key',
+            'root/.ssh/id_ed25519',
+            'root/.config/karcher-backup/identity.txt',
+        } | set(links)
+
+    def collect_security(self, root, archive=None):
+        source = Path(__file__).with_name('karcher-backup.sh').read_text()
+        function = re.search(r'^collect_security_paths\(\) \{\n.*?^\}', source, re.M | re.S)
+        self.assertIsNotNone(function)
+        script = 'set -Eeuo pipefail\numask 077\n' + function.group(0)
+        script += '\ncollect_security_paths "$1" >&2\n'
+        if archive is not None:
+            script += 'tar -czf "$2" -C "$1" "${SECURITY_BACKUP_PATHS[@]}"\n'
+        script += 'printf "%s\\0" "${SECURITY_BACKUP_PATHS[@]}"\n'
+        result = subprocess.run(
+            ['bash', '-c', script, 'security-backup-test', str(root), str(archive or '')],
+            capture_output=True, timeout=10,
+        )
+        paths = set(filter(None, result.stdout.decode().split('\0')))
+        return result, paths
+
+    def test_security_is_optional_on_a_host_where_it_was_never_installed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, paths = self.collect_security(Path(directory))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(paths, set())
+
+    def test_complete_security_inputs_include_boot_state_but_not_private_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected = self.security_fixture(root)
+            result, paths = self.collect_security(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(paths, expected)
+
+    def test_required_marker_rejects_loss_of_all_security_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root/'etc/karcher-backup/security-required'
+            marker.parent.mkdir(parents=True)
+            marker.touch()
+            result, _ = self.collect_security(root)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_partial_security_install_cannot_silently_skip_missing_components(self):
+        for missing in [
+            'etc/ssh/sshd_config',
+            'etc/ssh/sshd_config.d/00-karcher-access.conf',
+            'root/.ssh/authorized_keys',
+            'etc/karcher-security/inbound.nft',
+            'usr/local/lib/karcher-security/load-firewall.sh',
+            'etc/systemd/system/karcher-firewall.service',
+            'etc/systemd/system/multi-user.target.wants/karcher-firewall.service',
+        ]:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.security_fixture(root)
+                (root/missing).unlink()
+                result, _ = self.collect_security(root)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_security_file_symlinks_are_not_followed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.security_fixture(root)
+            path = root/'etc/karcher-security/inbound.nft'
+            path.unlink()
+            path.symlink_to(root/'etc/ssh/ssh_host_ed25519_key')
+            result, _ = self.collect_security(root)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_security_directory_symlinks_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.security_fixture(root)
+            path = root/'etc/karcher-security'
+            path.rename(root/'moved-security')
+            path.symlink_to(root/'moved-security', target_is_directory=True)
+            result, _ = self.collect_security(root)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_symlinked_ssh_dropins_and_required_markers_are_rejected(self):
+        for relative in [
+            'etc/ssh/sshd_config.d/40-hosting.conf',
+            'etc/karcher-backup/security-required',
+        ]:
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.security_fixture(root)
+                path = root/relative
+                path.unlink()
+                path.symlink_to(root/'etc/ssh/ssh_host_ed25519_key')
+                result, _ = self.collect_security(root)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_firewall_mask_requires_the_exact_dev_null_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.security_fixture(root)
+            path = root/'etc/systemd/system/nftables.service'
+            path.unlink()
+            path.symlink_to('/etc/systemd/system/karcher-firewall.service')
+            result, _ = self.collect_security(root)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_firewall_conf_dropins_are_included_but_unrelated_files_are_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected = self.security_fixture(root)
+            folder = root/'etc/systemd/system/karcher-firewall.service.d'
+            folder.mkdir()
+            (folder/'10-local.conf').write_text('[Service]\nTimeoutStartSec=40s\n')
+            (folder/'unrelated.private').write_text('SYNTHETIC_UNRELATED_FILE')
+            result, paths = self.collect_security(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(paths, expected | {'etc/systemd/system/karcher-firewall.service.d/10-local.conf'})
+
+    def test_real_security_archive_preserves_public_key_mode_and_symlink_metadata(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as output:
+            root = Path(directory)
+            expected = self.security_fixture(root)
+            archive = Path(output)/'security.tar.gz'
+            result, _ = self.collect_security(root, archive)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with tarfile.open(archive) as tar:
+                self.assertEqual(set(tar.getnames()), expected)
+                self.assertEqual(tar.getmember('root/.ssh/authorized_keys').mode, 0o600)
+                mask = tar.getmember('etc/systemd/system/nftables.service')
+                self.assertTrue(mask.issym())
+                self.assertEqual(mask.linkname, '/dev/null')
+                enabled = tar.getmember('etc/systemd/system/multi-user.target.wants/karcher-firewall.service')
+                self.assertTrue(enabled.issym())
+                self.assertEqual(enabled.linkname, '/etc/systemd/system/karcher-firewall.service')
+
     def test_failure_and_running_states_preserve_last_verified_checkpoint(self):
         source = Path(__file__).with_name('karcher-backup.sh').read_text()
         function = re.search(r'^write_status\(\) \{\n.*?^\}', source, re.M | re.S)

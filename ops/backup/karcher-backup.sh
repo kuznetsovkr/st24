@@ -18,6 +18,80 @@ STAGE=initialization
 DST=""
 OFFSITE_SOURCE=""
 STARTED_AT=""
+SECURITY_BACKUP_PATHS=()
+
+collect_security_paths() {
+  # The explicit root is for isolated tests; production always passes literal /.
+  local root="${1%/}"
+  local marker="$root/etc/karcher-backup/security-required"
+  local configured=0
+  local path directory dropin expected
+  SECURITY_BACKUP_PATHS=()
+  for path in etc/karcher-backup/security-required \
+    etc/ssh/sshd_config.d/00-karcher-access.conf etc/karcher-security \
+    usr/local/lib/karcher-security etc/systemd/system/karcher-firewall.service \
+    etc/systemd/system/multi-user.target.wants/karcher-firewall.service; do
+    if [[ -e "$root/$path" || -L "$root/$path" ]]; then configured=1; fi
+  done
+  if (( ! configured )); then
+    printf 'backup: optional host security configuration not installed\n'
+    return 0
+  fi
+  if [[ -e "$marker" || -L "$marker" ]]; then
+    [[ -f "$marker" && ! -L "$marker" ]] || {
+      printf 'backup: SECURITY_REQUIRED_MARKER_INVALID\n' >&2; return 1;
+    }
+  fi
+  for directory in etc/ssh etc/ssh/sshd_config.d root root/.ssh \
+    etc/karcher-security usr/local/lib/karcher-security \
+    etc/systemd/system etc/systemd/system/multi-user.target.wants; do
+    [[ -d "$root/$directory" && ! -L "$root/$directory" ]] || {
+      printf 'backup: SECURITY_DIRECTORY_INVALID: %s\n' "$directory" >&2; return 1;
+    }
+  done
+  [[ -f "$root/etc/ssh/sshd_config.d/00-karcher-access.conf" && \
+    ! -L "$root/etc/ssh/sshd_config.d/00-karcher-access.conf" ]] || {
+    printf 'backup: SSH_ACCESS_POLICY_MISSING_OR_SYMLINKED\n' >&2; return 1;
+  }
+  for path in etc/ssh/sshd_config root/.ssh/authorized_keys \
+    etc/karcher-security/inbound.nft usr/local/lib/karcher-security/load-firewall.sh \
+    etc/systemd/system/karcher-firewall.service; do
+    [[ -f "$root/$path" && ! -L "$root/$path" ]] || {
+      printf 'backup: SECURITY_FILE_MISSING_OR_SYMLINKED: %s\n' "$path" >&2; return 1;
+    }
+    SECURITY_BACKUP_PATHS+=("$path")
+  done
+  for dropin in "$root/etc/ssh/sshd_config.d/"*.conf; do
+    [[ -e "$dropin" || -L "$dropin" ]] || continue
+    [[ -f "$dropin" && ! -L "$dropin" ]] || {
+      printf 'backup: SSH_DROPIN_INVALID\n' >&2; return 1;
+    }
+    SECURITY_BACKUP_PATHS+=("${dropin#"$root/"}")
+  done
+  directory="$root/etc/systemd/system/karcher-firewall.service.d"
+  if [[ -e "$directory" || -L "$directory" ]]; then
+    [[ -d "$directory" && ! -L "$directory" ]] || {
+      printf 'backup: FIREWALL_DROPIN_DIRECTORY_INVALID\n' >&2; return 1;
+    }
+    for dropin in "$directory/"*.conf; do
+      [[ -e "$dropin" || -L "$dropin" ]] || continue
+      [[ -f "$dropin" && ! -L "$dropin" ]] || {
+        printf 'backup: FIREWALL_DROPIN_INVALID\n' >&2; return 1;
+      }
+      SECURITY_BACKUP_PATHS+=("${dropin#"$root/"}")
+    done
+  fi
+  for path in etc/systemd/system/multi-user.target.wants/karcher-firewall.service \
+    etc/systemd/system/nftables.service; do
+    expected=/etc/systemd/system/karcher-firewall.service
+    if [[ "$path" == etc/systemd/system/nftables.service ]]; then expected=/dev/null; fi
+    [[ -L "$root/$path" && "$(readlink -- "$root/$path")" == "$expected" ]] || {
+      printf 'backup: FIREWALL_BOOT_STATE_INVALID: %s\n' "$path" >&2; return 1;
+    }
+    SECURITY_BACKUP_PATHS+=("$path")
+  done
+  printf 'backup: host security recovery inputs verified: %s entries\n' "${#SECURITY_BACKUP_PATHS[@]}"
+}
 
 write_status() {
   local status="$1"
@@ -87,6 +161,10 @@ STAGE=encryption_configuration
 timeout --kill-after=10s 60s python3 "$TOOLS_DIR/encrypted_backup.py" check-recipient \
   --recipients "$RECIPIENTS_FILE" --age /usr/bin/age >/dev/null
 
+STAGE=security_configuration
+collect_security_paths /
+readonly -a SECURITY_BACKUP_PATHS
+
 STAGE=configuration
 DATABASE_URL_VALUE="$(/usr/bin/node "$TOOLS_DIR/read-database-url.mjs" "$ENV_FILE")"
 run_pg() {
@@ -114,6 +192,7 @@ timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
   etc/systemd/system/her-api.service \
   etc/karcher-backup \
   usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
+  "${SECURITY_BACKUP_PATHS[@]}" \
   2>"$LOG_ROOT/$SET_NAME.tar.log"
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
   tar -tzf "$STAGING/st24_files.tar.gz" >/dev/null

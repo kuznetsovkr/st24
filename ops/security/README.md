@@ -83,10 +83,13 @@ sudo nft delete table inet karcher_ingress
 Остальные таблицы останутся нетронутыми. Никогда не использовать для такого
 отката глобальные `nft flush ruleset`, `iptables -F` или `ufw reset`.
 
-Пока новые файлы безопасности **не добавлены** в allowlist ежедневного архива
-`ops/backup/karcher-backup.sh`: он сохраняет приложение, nginx и прежние backup
-tools. Для повторной установки есть эти исходники и root-only snapshot на VPS;
-расширение внешней резервной копии новых настроек — отдельный ближайший шаг.
+Новые файлы безопасности **добавлены** в allowlist ежедневного архива
+`ops/backup/karcher-backup.sh`. Marker `/etc/karcher-backup/security-required`
+требует полного набора и корректных системных ссылок; отсутствие обязательного
+файла больше не может дать ложный успешный backup. Облачный набор
+`2026-10-17_14-06-57_UTC` скачан, локально расшифрован и сверен с VPS без записи
+открытого dump на диск. Состав и ограничения восстановления описаны в
+[backup/README.md](../backup/README.md#настройки-ssh-и-firewall).
 Приватные SSH-ключи/ключ age в этот каталог или Git не помещать.
 
 Основание схемы: [семантика nftables](https://netfilter.org/projects/nftables/manpage.html),
