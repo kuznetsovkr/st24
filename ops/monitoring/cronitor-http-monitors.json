@@ -1,0 +1,56 @@
+{
+  "monitors": [
+    {
+      "key": "karcher-storefront",
+      "name": "Karcher — сайт",
+      "type": "check",
+      "platform": "http",
+      "schedule": "every 5 minutes",
+      "request": {
+        "url": "https://xn---24-3edf.xn--p1ai/",
+        "method": "GET",
+        "timeout_seconds": 10,
+        "follow_redirects": false,
+        "verify_ssl": true,
+        "headers": {
+          "Cache-Control": "no-cache"
+        }
+      },
+      "assertions": [
+        "response.code = 200",
+        "response.header Content-Type contains text/html",
+        "response.body contains Купить запчасти для Karcher",
+        "response.body contains id=\"root\""
+      ],
+      "failure_tolerance": 0,
+      "notify": ["default"]
+    },
+    {
+      "key": "karcher-api-ready",
+      "name": "Karcher — API и база",
+      "type": "check",
+      "platform": "http",
+      "schedule": "every 5 minutes",
+      "request": {
+        "url": "https://xn---24-3edf.xn--p1ai/api/health/ready",
+        "method": "GET",
+        "timeout_seconds": 10,
+        "follow_redirects": false,
+        "verify_ssl": true,
+        "headers": {
+          "Cache-Control": "no-cache"
+        }
+      },
+      "assertions": [
+        "response.code = 200",
+        "response.header Content-Type contains application/json",
+        "response.header Cache-Control contains no-store",
+        "response.json status = ok",
+        "response.json checks.postgres.status = ok",
+        "response.json checks.uploads.status = ok"
+      ],
+      "failure_tolerance": 0,
+      "notify": ["default"]
+    }
+  ]
+}

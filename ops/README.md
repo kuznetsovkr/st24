@@ -4,6 +4,11 @@ These files package the HER API and the independent monitor as `systemd`
 services. The API and monitor are normally installed on different hosts. Install
 only the units and logrotate file that belong to that host.
 
+For the separately managed host SSH policy and inbound firewall, see
+[security/README.md](security/README.md) and the
+[production hardening record](../docs/production-hardening.md). The host firewall
+owns only its own nftables table and must not flush ISPmanager/Fail2ban rules.
+
 The examples assume:
 
 - a supported Node.js binary at `/usr/bin/node` (Node.js 22 LTS is recommended);

@@ -109,3 +109,13 @@ jobs:
           systemd-analyze verify ops/systemd/*.service ops/systemd/*.timer
           sudo install -d -m 0700 /usr/local/lib/karcher-backup
           systemd-analyze verify ops/backup/karcher-backup-health.service ops/backup/karcher-backup-health.timer
+
+      - name: Validate isolated host firewall
+        run: |
+          sudo systemctl mask nftables.service
+          sudo env NEEDRESTART_MODE=l apt-get install -y --no-install-recommends nftables
+          shellcheck ops/security/load-firewall.sh
+          sudo python3 ops/security/test-firewall.py
+          sudo install -d -m 0755 /usr/local/lib/karcher-security
+          sudo install -m 0700 ops/security/load-firewall.sh /usr/local/lib/karcher-security/load-firewall.sh
+          systemd-analyze verify ops/security/karcher-firewall.service

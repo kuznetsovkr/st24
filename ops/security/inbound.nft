@@ -1,0 +1,17 @@
+# This file owns ONLY this inet table. Never add "flush ruleset" here.
+table inet karcher_ingress {
+    chain input {
+        type filter hook input priority -10; policy drop;
+
+        iifname "lo" counter accept
+        ct state invalid counter drop
+        ct state established,related counter accept
+
+        # Keep IPv4 diagnostics/PMTU and IPv6 neighbour discovery/PMTU working.
+        ip protocol icmp counter accept
+        meta l4proto ipv6-icmp counter accept
+
+        tcp dport { 22, 80, 443 } ct state new counter accept
+        counter drop
+    }
+}
