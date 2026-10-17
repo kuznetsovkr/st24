@@ -2,6 +2,7 @@
 *.service text eol=lf
 *.timer text eol=lf
 *.mjs text eol=lf
+*.py text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 ops/logrotate/* text eol=lf

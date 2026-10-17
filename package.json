@@ -12,9 +12,10 @@
     "monitor"
   ],
   "scripts": {
-    "test": "npm run test:client-config && npm run test:deploy-tools && npm run test --workspaces --if-present",
+    "test": "npm run test:client-config && npm run test:deploy-tools && npm run test:backup-config && npm run test --workspaces --if-present",
     "test:client-config": "node --test scripts/client-config.test.mjs",
     "test:deploy-tools": "node --test scripts/deploy-readiness.test.mjs scripts/postgres-command.test.mjs",
+    "test:backup-config": "node --test ops/backup/read-database-url.test.mjs",
     "test:ops": "node ops/validate-units.mjs",
     "test:postgres-smoke": "node scripts/ci/postgres-smoke.mjs",
     "lint": "npm run lint --workspaces --if-present",

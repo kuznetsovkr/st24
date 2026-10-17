@@ -212,6 +212,10 @@ and only then restart its timers.
 
 ## Guarded deploy
 
+For the separate root-owned daily database/files backup and Yandex authorization,
+see [backup/README.md](backup/README.md). Its `/var/backups/st24` storage is not
+the deployment account's `DEPLOY_BACKUP_DIR`; keep the daily copies root-only.
+
 Provision a backup directory writable by the deployment account before using
 the script, or set an absolute `DEPLOY_BACKUP_DIR`. The database role used by
 the API often cannot create temporary databases; in that case provide a

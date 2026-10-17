@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+set +x
+umask 077
+
+[[ "$EUID" == 0 ]] || { printf 'backup: root is required\n' >&2; exit 1; }
+TOOLS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly TOOLS_DIR
+readonly APP_ROOT=/var/www/st24
+readonly BACKUP_ROOT=/var/backups/st24
+readonly ENCRYPTED_ROOT=/var/backups/karcher-encrypted
+readonly RECIPIENTS_FILE=/etc/karcher-backup/recipients.txt
+readonly ENV_FILE="$APP_ROOT/server/.env"
+readonly REMOTE=yadisk:karcher-backups-encrypted/v1
+readonly LOG_ROOT=/var/log/karcher-backup
+readonly COMMAND_TIMEOUT_SECONDS=600
+STAGE=initialization
+DST=""
+OFFSITE_SOURCE=""
+
+write_status() {
+  local status="$1"
+  local temporary
+  temporary="$(mktemp "$BACKUP_ROOT/.status.XXXXXXXX")"
+  printf '{"checkedAt":"%s","status":"%s","stage":"%s","backupSet":"%s","encryption":"age-x25519-v1"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" "$STAGE" "${DST##*/}" >"$temporary"
+  chmod 0600 "$temporary"
+  mv -f -- "$temporary" "$BACKUP_ROOT/.last-run.json"
+}
+
+on_error() {
+  local code="$1"
+  trap - ERR
+  write_status failed || true
+  printf 'backup: FAILED stage=%s exit=%s; existing copies retained\n' "$STAGE" "$code" >&2
+  exit "$code"
+}
+
+verify_offsite() {
+  local attempt
+  # A read can fail transiently after a successful upload. Every successful run
+  # still requires a complete downloaded-content comparison, not ignored errors.
+  for attempt in 1 2 3; do
+    printf 'download verification attempt=%s\n' "$attempt" >>"$LOG_ROOT/$SET_NAME.check.log"
+    if timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+      rclone check "$OFFSITE_SOURCE" "$REMOTE/$SET_NAME" --download --one-way \
+      --retries 2 --low-level-retries 2 --contimeout 15s --timeout 60s \
+      >>"$LOG_ROOT/$SET_NAME.check.log" 2>&1; then
+      return 0
+    fi
+    if [[ "$attempt" != 3 ]]; then
+      sleep 5
+    fi
+  done
+  return 1
+}
+
+# Never follow a replacement symlink when protecting the backup storage.
+[[ ! -L "$BACKUP_ROOT" ]] || { printf 'backup: unexpected backup symlink\n' >&2; exit 1; }
+[[ ! -L "$ENCRYPTED_ROOT" ]] || { printf 'backup: unexpected encrypted storage symlink\n' >&2; exit 1; }
+install -d -o root -g root -m 0700 "$BACKUP_ROOT" "$ENCRYPTED_ROOT" "$LOG_ROOT"
+exec 9>/var/lock/st24-backup.lock
+chmod 0600 /var/lock/st24-backup.lock
+flock -n 9 || { printf 'backup: another run is active\n' >&2; exit 75; }
+trap 'on_error $?' ERR
+
+STAGE=encryption_configuration
+[[ ! -L "$RECIPIENTS_FILE" && -f "$RECIPIENTS_FILE" ]]
+[[ "$(stat -c %u "$RECIPIENTS_FILE")" == 0 && "$(stat -c %a "$RECIPIENTS_FILE")" == 600 ]]
+timeout --kill-after=10s 60s python3 "$TOOLS_DIR/encrypted_backup.py" check-recipient \
+  --recipients "$RECIPIENTS_FILE" --age /usr/bin/age >/dev/null
+
+STAGE=configuration
+DATABASE_URL_VALUE="$(/usr/bin/node "$TOOLS_DIR/read-database-url.mjs" "$ENV_FILE")"
+run_pg() {
+  DEPLOY_DATABASE_URL="$DATABASE_URL_VALUE" \
+    timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+    /usr/bin/node "$TOOLS_DIR/postgres-command.mjs" "$@"
+}
+
+SET_NAME="$(date -u +%Y-%m-%d_%H-%M-%S)_UTC"
+readonly SET_NAME
+readonly STAGING="$BACKUP_ROOT/.${SET_NAME}.partial.$$"
+readonly ENCRYPTED_STAGING="$ENCRYPTED_ROOT/.${SET_NAME}.partial.$$"
+DST="$BACKUP_ROOT/$SET_NAME"
+OFFSITE_SOURCE="$ENCRYPTED_ROOT/$SET_NAME"
+[[ ! -e "$DST" && ! -e "$STAGING" && ! -e "$OFFSITE_SOURCE" && ! -e "$ENCRYPTED_STAGING" ]]
+mkdir -m 0700 "$STAGING"
+
+STAGE=database_dump
+run_pg pg_dump --no-password --format=custom --file="$STAGING/st24_db.dump"
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+  pg_restore --list "$STAGING/st24_db.dump" >/dev/null
+
+STAGE=files_archive
+# Include source/build artifacts and recovery configuration. Application temp,
+# dependencies and Git internals are excluded. Archive errors are fatal.
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
+  --exclude='*/node_modules' --exclude='*/.git' --exclude='*/tmp' \
+  --exclude='*/.monitor-state.json*' --exclude='*/.health-*.tmp' \
+  -czf "$STAGING/st24_files.tar.gz" -C / \
+  var/www/st24 etc/nginx etc/letsencrypt \
+  etc/systemd/system/her-api.service \
+  etc/karcher-backup/recipients.txt \
+  usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
+  2>"$LOG_ROOT/$SET_NAME.tar.log"
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+  tar -tzf "$STAGING/st24_files.tar.gz" >/dev/null
+
+STAGE=checksums
+(cd "$STAGING" && sha256sum st24_db.dump st24_files.tar.gz >SHA256SUMS.txt && \
+  sha256sum --check --status SHA256SUMS.txt)
+chmod 0600 "$STAGING/"*
+mv -- "$STAGING" "$DST"
+write_status local_verified
+printf 'backup: local copy verified: %s\n' "$SET_NAME"
+
+STAGE=encryption
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" python3 "$TOOLS_DIR/encrypted_backup.py" seal \
+  --source "$DST" --output "$ENCRYPTED_STAGING" --recipients "$RECIPIENTS_FILE" --age /usr/bin/age \
+  >"$LOG_ROOT/$SET_NAME.encryption.log" 2>&1
+mv -- "$ENCRYPTED_STAGING" "$OFFSITE_SOURCE"
+
+STAGE=offsite_copy
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" rclone copy "$OFFSITE_SOURCE" "$REMOTE/$SET_NAME" \
+  --retries 2 --low-level-retries 2 --contimeout 15s --timeout 60s \
+  >"$LOG_ROOT/$SET_NAME.offsite.log" 2>&1
+
+STAGE=offsite_verification
+verify_offsite
+STAGE=complete
+write_status verified
+printf 'backup: local and encrypted offsite contents verified\n'
+
+# Existing copies are intentionally not pruned while cloud access is being
+# repaired. Add retention only with a verified recovery path and explicit scope.
