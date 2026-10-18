@@ -12,10 +12,14 @@
     "monitor"
   ],
   "scripts": {
-    "test": "npm run test:client-config && npm run test:deploy-tools && npm run test:backup-config && npm run test --workspaces --if-present",
+    "test": "npm run test:client-config && npm run test:deploy-tools && npm run test:backup-config && npm run test:browser:policy && npm run test --workspaces --if-present",
     "test:client-config": "node --test scripts/client-config.test.mjs",
     "test:deploy-tools": "node --test scripts/deploy-readiness.test.mjs scripts/postgres-command.test.mjs",
     "test:backup-config": "node --test ops/backup/read-database-url.test.mjs",
+    "test:browser": "playwright test",
+    "test:browser:policy": "node --test tests/browser/network-policy.test.mjs",
+    "test:browser:types": "tsc -p tests/browser/tsconfig.json",
+    "lint:browser": "eslint playwright.config.ts \"tests/browser/**/*.{ts,mjs}\"",
     "test:ops": "node ops/validate-units.mjs",
     "test:postgres-smoke": "node scripts/ci/postgres-smoke.mjs",
     "lint": "npm run lint --workspaces --if-present",
@@ -30,6 +34,7 @@
   "author": "",
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "1.64.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

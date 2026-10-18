@@ -7,6 +7,9 @@ server/.env
 server/uploads
 client/node_modules
 client/dist
+client/dist-browser/
+playwright-report/
+test-results/
 .npm-cache
 .monitor-state.json*
 monitor/dist

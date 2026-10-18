@@ -242,4 +242,11 @@ Fallback-пример cron для хоста без systemd:
 - Polling одного bot token должен запускаться в единственном экземпляре. Для нескольких backend-реплик перед production потребуется distributed leader lock; update cursor и inbox уже persistent, но сами `getUpdates` не являются multi-consumer очередью.
 - На этой итерации schema создаётся idempotent DDL в `initDb`; перед production всё равно нужен backup и migration smoke на копии БД.
 
-YooKassa provider availability, службы доставки, Telegram Gateway/SMS.ru, Redis и браузерный checkout остаются следующими слоями мониторинга.
+Для клиентской регрессии добавлены [браузерные smoke-тесты](browser-smoke.md):
+настоящая production-mode сборка на изолированном синтетическом API, desktop и
+мобильная эмуляция Chromium. Они проверяют каталог/товар/гостевую корзину,
+guest checkout gate и отказ/таймаут lazy chunks. Подготовлен отдельный job CI;
+это не browser-monitor живого production и не авторизованный checkout E2E.
+
+YooKassa provider availability, службы доставки, Telegram Gateway/SMS.ru, Redis и
+полный браузерный checkout остаются следующими слоями мониторинга.

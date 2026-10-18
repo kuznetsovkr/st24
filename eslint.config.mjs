@@ -6,7 +6,7 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', 'client/dist/**']
+    ignores: ['**/node_modules/**', '**/dist/**', 'client/dist/**', 'client/dist-browser/**', 'playwright-report/**', 'test-results/**']
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -22,6 +22,12 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_'
         }
       ]
+    }
+  },
+  {
+    files: ['tests/browser/**/*.{ts,mjs}', 'playwright.config.ts'],
+    languageOptions: {
+      globals: {...globals.node, ...globals.browser}
     }
   },
   {
