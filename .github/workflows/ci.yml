@@ -99,6 +99,7 @@ jobs:
           npm run test:ops
           shellcheck ops/backup/karcher-backup.sh ops/backup/st24-backup.sh
           python3 -m unittest discover -s ops/backup -p 'test_*.py'
+          python3 -m unittest discover -s ops/monitoring -p 'test_*.py'
           sudo useradd --system --user-group --no-create-home her-api
           sudo useradd --system --user-group --no-create-home her-monitor
           sudo install -d /etc/her /etc/her-monitor
