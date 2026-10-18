@@ -111,11 +111,15 @@ output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test/ her-api 2>&1 || true)
   printf 'target unit\n' >"$fixture/target/unit"
   printf 'target log policy\n' >"$fixture/target/logrotate"
   BACKUP_FILE="$fixture/backup.dump"
+  # These callbacks are invoked by the sourced deployment code. Older
+  # ShellCheck versions cannot see those calls; suppress only the mock bodies.
+  # shellcheck disable=SC2317
   ops_file_paths() {
     printf '%s|%s|%s\n' \
       "$fixture/target/unit" "$fixture/installed/unit" unit \
       "$fixture/target/logrotate" "$fixture/installed/logrotate" logrotate
   }
+  # shellcheck disable=SC2317
   run_systemctl() { return 0; }
   snapshot_api_ops
   OPS_INSTALL_ATTEMPTED=1
@@ -141,12 +145,18 @@ for initial_active in 0 1; do
     SERVICE_RESTART_ATTEMPTED=1
     SERVICE_WAS_ACTIVE="$initial_active"
     PREVIOUS_REVISION=0123456789012345678901234567890123456789
+    # shellcheck disable=SC2317
     git() { printf 'code\n' >>"$fixture/actions"; }
+    # shellcheck disable=SC2317
     npm() { return 0; }
+    # shellcheck disable=SC2317
     run_client_config() { return 0; }
+    # shellcheck disable=SC2317
     restore_api_ops() { printf 'ops\n' >>"$fixture/actions"; }
+    # shellcheck disable=SC2317
     wait_until_ready() { printf 'ready\n' >>"$fixture/actions"; }
     # The fixture uses the real Bash rollback coordinator, not systemd.
+    # shellcheck disable=SC2317
     run_systemctl() {
       case "$1" in
         stop|start) printf '%s\n' "$1" >>"$fixture/actions" ;;
@@ -175,6 +185,7 @@ done
 (
   export DEPLOY_ALLOW_INACTIVE_SERVICE=1
   source "$DEPLOY_SCRIPT"
+  # shellcheck disable=SC2317
   run_systemctl() { printf 'not-found\n'; return 1; }
   capture_service_initial_state
   [[ "$SERVICE_WAS_ACTIVE" == 0 ]] || fail 'missing-unit bootstrap is not inactive'
