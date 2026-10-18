@@ -47,7 +47,7 @@ const runMonitor = async (
         ? renderTransitionReport(stateUpdate.transitions)
         : undefined;
   const notification = stateWasReset
-    ? `🟡 HER monitor state was corrupted and reset.\n${regularNotification ?? renderSummaryReport(results)}`
+    ? `🟡 Karcher monitor state was corrupted and reset.\n${regularNotification ?? renderSummaryReport(results)}`
     : regularNotification;
 
   if (notification) {

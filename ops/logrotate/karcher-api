@@ -1,4 +1,4 @@
-/var/log/her-api/api.log {
+/var/log/karcher-api/api.log {
     daily
     rotate 14
     maxsize 50M
@@ -8,6 +8,6 @@
     delaycompress
     dateext
     copytruncate
-    su her-api her-api
-    create 0640 her-api her-api
+    su karcher-api karcher-api
+    create 0640 karcher-api karcher-api
 }

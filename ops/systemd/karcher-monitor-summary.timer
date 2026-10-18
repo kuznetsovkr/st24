@@ -1,5 +1,5 @@
 [Unit]
-Description=Send the HER daily monitoring summary and Telegram canaries
+Description=Send the Karcher daily monitoring summary and Telegram canaries
 Documentation=file:/var/www/st24/ops/README.md
 
 [Timer]
@@ -8,7 +8,7 @@ Documentation=file:/var/www/st24/ops/README.md
 OnCalendar=*-*-* 09:02:00
 Persistent=yes
 AccuracySec=1min
-Unit=her-monitor-summary.service
+Unit=karcher-monitor-summary.service
 
 [Install]
 WantedBy=timers.target

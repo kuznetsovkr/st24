@@ -1,29 +1,29 @@
 [Unit]
-Description=HER daily monitoring summary and Telegram canaries
+Description=Karcher daily monitoring summary and Telegram canaries
 Documentation=file:/var/www/st24/ops/README.md
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
-User=her-monitor
-Group=her-monitor
+User=karcher-monitor
+Group=karcher-monitor
 
-EnvironmentFile=/etc/her-monitor/monitor.env
+EnvironmentFile=/etc/karcher-monitor/monitor.env
 
 WorkingDirectory=/var/www/st24/monitor
-StateDirectory=her-monitor
+StateDirectory=karcher-monitor
 StateDirectoryMode=0700
-LogsDirectory=her-monitor
+LogsDirectory=karcher-monitor
 LogsDirectoryMode=0750
 
 ExecStartPre=/usr/bin/test -r /var/www/st24/monitor/dist/configCheck.js
-ExecStartPre=/usr/bin/env MONITOR_ENV_FILE=/etc/her-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/her-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/configCheck.js summary
+ExecStartPre=/usr/bin/env MONITOR_ENV_FILE=/etc/karcher-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/karcher-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/configCheck.js summary
 ExecStartPre=/usr/bin/test -r /var/www/st24/monitor/dist/cli.js
-ExecStart=/usr/bin/flock --exclusive --wait 210 --conflict-exit-code 75 /var/lib/her-monitor/schedule.lock /usr/bin/env MONITOR_ENV_FILE=/etc/her-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/her-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/cli.js summary
+ExecStart=/usr/bin/flock --exclusive --wait 210 --conflict-exit-code 75 /var/lib/karcher-monitor/schedule.lock /usr/bin/env MONITOR_ENV_FILE=/etc/karcher-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/karcher-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/cli.js summary
 TimeoutStartSec=4min
 
-StandardOutput=append:/var/log/her-monitor/monitor.log
+StandardOutput=append:/var/log/karcher-monitor/monitor.log
 StandardError=inherit
 UMask=0077
 

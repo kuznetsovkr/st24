@@ -30,7 +30,7 @@
 не запускает панель или PHP-FPM. Уже неактивные другие версии PHP и шаблонные
 Apache units не удалялись и отдельно не маскировались.
 
-Сохранены nginx, `her-api`, PostgreSQL 16, Redis, SSH, Fail2ban, `systemd-resolved`,
+Сохранены nginx, `karcher-api`, PostgreSQL 16, Redis, SSH, Fail2ban, `systemd-resolved`,
 firewall, Certbot и backup health timer. Fail2ban по-прежнему содержит jail
 `sshd` и `exim-isp`; почтовый jail не удалялся.
 
@@ -87,7 +87,7 @@ host, оставаясь закрытым firewall. Следующим согл�
 
 ```sh
 systemctl is-enabled ihttpd exim4 dovecot proftpd named bind9 apache2 mysql php-fpm74 php8.3-fpm
-systemctl is-active her-api nginx ssh postgresql@16-main redis-server cron fail2ban
+systemctl is-active karcher-api nginx ssh postgresql@16-main redis-server cron fail2ban
 systemctl is-active karcher-firewall karcher-backup-health.timer certbot.timer
 ss -lnt
 ```

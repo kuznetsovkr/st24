@@ -69,7 +69,7 @@ Outbox хранит immutable текст и временно хранит вло
 | orders | `/api/telegram/orders-webhook` | `TELEGRAM_ORDERS_WEBHOOK_SECRET` | `TELEGRAM_ORDERS_WEBHOOK_URL` |
 | b2b | `/api/telegram/b2b-webhook` | `TELEGRAM_B2B_WEBHOOK_SECRET` | `TELEGRAM_B2B_WEBHOOK_URL` |
 
-В webhook mode зарегистрированный через Bot API URL и `secret_token` должны точно совпадать с этой таблицей и backend-конфигурацией (`/etc/her/api.env` в production); в monitor задайте тот же полный HTTPS URL через соответствующий `MONITOR_TELEGRAM_*_WEBHOOK_URL`. В polling и disabled mode вызовите Bot API `deleteWebhook`, а secret/URL оставьте пустыми: backend и monitor считают оставшийся webhook или непустую monitor-переменную ошибкой. Для каждого настроенного token заполните соответствующий `TELEGRAM_*_ALLOWED_CHAT_IDS`; каждый разрешённый чат должен один раз отправить `/start` до приёма реальных заявок. Произвольный пользователь с `/start` в список получателей не попадёт. Disabled без token означает полностью отключённого бота; disabled с token отключает только inbound и по-прежнему допускает outbox/canary.
+В webhook mode зарегистрированный через Bot API URL и `secret_token` должны точно совпадать с этой таблицей и backend-конфигурацией (`/etc/karcher/api.env` в production); в monitor задайте тот же полный HTTPS URL через соответствующий `MONITOR_TELEGRAM_*_WEBHOOK_URL`. В polling и disabled mode вызовите Bot API `deleteWebhook`, а secret/URL оставьте пустыми: backend и monitor считают оставшийся webhook или непустую monitor-переменную ошибкой. Для каждого настроенного token заполните соответствующий `TELEGRAM_*_ALLOWED_CHAT_IDS`; каждый разрешённый чат должен один раз отправить `/start` до приёма реальных заявок. Произвольный пользователь с `/start` в список получателей не попадёт. Disabled без token означает полностью отключённого бота; disabled с token отключает только inbound и по-прежнему допускает outbox/canary.
 
 ### YooKassa: return URL и доверенный proxy
 
@@ -102,12 +102,12 @@ Outbox хранит immutable текст и временно хранит вло
 
 Для production рекомендуется готовый systemd-вариант из
 [ops/README.md](../ops/README.md): он хранит секреты в
-`/etc/her-monitor/monitor.env`, state в `/var/lib/her-monitor`, сначала запускает
+`/etc/karcher-monitor/monitor.env`, state в `/var/lib/karcher-monitor`, сначала запускает
 config preflight и не компилирует TypeScript по таймеру. Ниже приведён только
 ручной/cron-вариант для окружений без systemd.
 
 ```bash
-cd /opt/her
+cd /opt/karcher
 npm ci --workspace monitor --include-workspace-root=false
 npm test --workspace monitor
 test ! -e monitor/.env && install -m 600 monitor/.env.example monitor/.env
@@ -146,7 +146,7 @@ MONITOR_TELEGRAM_CHAT_ID=
 MONITOR_TELEGRAM_PROXY_URL=
 MONITOR_HEARTBEAT_URL=
 MONITOR_ALLOW_NO_HEARTBEAT=false
-MONITOR_STATE_FILE=/var/lib/her-monitor/state.json
+MONITOR_STATE_FILE=/var/lib/karcher-monitor/state.json
 ```
 
 После заполнения выполните no-network preflight; только code `0` допускает
@@ -205,13 +205,13 @@ npm run payment-anomaly:resolve-provider --workspace server -- <anomaly-id> <exp
 Fallback-пример cron для хоста без systemd:
 
 ```cron
-*/5 * * * * cd /opt/her && /usr/bin/npm run monitor:check >> /var/log/her-monitor.log 2>&1
-2 9 * * * cd /opt/her && /usr/bin/npm run monitor:summary >> /var/log/her-monitor.log 2>&1
+*/5 * * * * cd /opt/karcher && /usr/bin/npm run monitor:check >> /var/log/karcher-monitor.log 2>&1
+2 9 * * * cd /opt/karcher && /usr/bin/npm run monitor:summary >> /var/log/karcher-monitor.log 2>&1
 ```
 
-Запускайте эти записи из crontab пользователя runner. До установки cron создайте state-каталог и лог с нужным владельцем, например `install -d -o her-monitor -g her-monitor -m 700 /var/lib/her-monitor` и `install -o her-monitor -g her-monitor -m 640 /dev/null /var/log/her-monitor.log`; иначе shell может не открыть redirect и runner вообще не стартует. Время ежедневной сводки интерпретируется в timezone машины с cron.
+Запускайте эти записи из crontab пользователя runner. До установки cron создайте state-каталог и лог с нужным владельцем, например `install -d -o karcher-monitor -g karcher-monitor -m 700 /var/lib/karcher-monitor` и `install -o karcher-monitor -g karcher-monitor -m 640 /dev/null /var/log/karcher-monitor.log`; иначе shell может не открыть redirect и runner вообще не стартует. Время ежедневной сводки интерпретируется в timezone машины с cron.
 
-Не устанавливайте cron одновременно с `her-monitor-*.timer`: application lock
+Не устанавливайте cron одновременно с `karcher-monitor-*.timer`: application lock
 защитит state, но один из конкурирующих запусков будет пропущен.
 
 Включите синхронизацию времени (NTP) на production и monitor host: freshness `checkedAt`, TLS expiry и время outage зависят от корректных часов.

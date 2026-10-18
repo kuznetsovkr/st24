@@ -53,6 +53,28 @@ test('cart removal renders the empty-cart state', async ({page}) => {
   await expect(page.getByRole('heading', {name: 'Корзина пустая', exact: true})).toBeVisible();
 });
 
+test('pre-rename guest cart is copied to the canonical key without losing the old copy', async ({page}) => {
+  const entries = [{id: product.id, name: product.name, priceCents: product.priceCents, stock: product.stock, quantity: 2}];
+  await page.addInitScript(value => {
+    localStorage.setItem('her_cart_v1', JSON.stringify(value));
+  }, entries);
+  await page.goto('/cart');
+  await expect(page.getByRole('spinbutton')).toHaveValue('2');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('karcher_cart_v1') ?? 'null'))).toEqual(entries);
+  expect(await page.evaluate(() => localStorage.getItem('her_cart_v1'))).not.toBeNull();
+  await page.reload();
+  await expect(page.getByRole('spinbutton')).toHaveValue('2');
+});
+
+test('canonical empty cart wins over a stale legacy cart', async ({page}) => {
+  await page.addInitScript(value => {
+    localStorage.setItem('her_cart_v1', JSON.stringify(value));
+    localStorage.setItem('karcher_cart_v1', '[]');
+  }, [{id: product.id, name: product.name, priceCents: product.priceCents, quantity: 2}]);
+  await page.goto('/cart');
+  await expect(page.getByRole('heading', {name: 'Корзина пустая', exact: true})).toBeVisible();
+});
+
 test('out-of-stock product cannot be added to cart', async ({page}) => {
   await page.goto(`/product/${unavailableProduct.id}`);
   await expect(page.getByRole('heading', {name: unavailableProduct.name, exact: true})).toBeVisible();

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { fetchCart, mergeCart, syncCart } from '../api.ts';
+import { fetchCart, hasCsrfSessionCookie, mergeCart, syncCart } from '../api.ts';
 
 export type CartItem = {
   id: string;
@@ -35,18 +35,9 @@ type CartContextValue = {
 };
 
 const CartContext = createContext<CartContextValue | undefined>(undefined);
-const STORAGE_KEY = 'her_cart_v1';
-const CSRF_COOKIE_NAME = 'her_csrf_token';
-
-const hasCsrfCookie = () => {
-  if (typeof document === 'undefined') {
-    return false;
-  }
-
-  return document.cookie
-    .split(';')
-    .some((part) => part.trim().startsWith(`${CSRF_COOKIE_NAME}=`));
-};
+const STORAGE_KEY = 'karcher_cart_v1';
+// Read the old guest cart without deleting it, including for a release rollback.
+const LEGACY_STORAGE_KEY = 'her_cart_v1';
 
 const loadCart = (): CartEntry[] => {
   if (typeof window === 'undefined') {
@@ -54,7 +45,7 @@ const loadCart = (): CartEntry[] => {
   }
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -91,7 +82,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    if (!hasCsrfCookie()) {
+    if (!hasCsrfSessionCookie()) {
       setHasServerSession(false);
       setHydrated(true);
       return;
@@ -133,7 +124,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    if (!hasServerSession || !hasCsrfCookie()) {
+    if (!hasServerSession || !hasCsrfSessionCookie()) {
       return;
     }
 
@@ -241,7 +232,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const getQuantity = useCallback((id: string) => quantityById.get(id) ?? 0, [quantityById]);
 
   const mergeWithServer = useCallback(async () => {
-    if (!hasCsrfCookie()) {
+    if (!hasCsrfSessionCookie()) {
       setHasServerSession(false);
       setHydrated(true);
       return;
@@ -261,7 +252,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, [items, toSyncPayload]);
 
   const refreshFromServer = useCallback(async () => {
-    if (!hasServerSession || !hasCsrfCookie()) {
+    if (!hasServerSession || !hasCsrfSessionCookie()) {
       return items;
     }
 
@@ -278,7 +269,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, [hasServerSession, items]);
 
   const syncWithServer = useCallback(async () => {
-    if (!hasServerSession || !hasCsrfCookie()) {
+    if (!hasServerSession || !hasCsrfSessionCookie()) {
       return items;
     }
 

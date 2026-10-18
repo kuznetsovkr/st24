@@ -14,7 +14,7 @@
     "outbox:ack": "node dist/telegramOutboxAdmin.js acknowledge-loss",
     "payment-anomaly:resolve-order": "node dist/paymentAnomalyAdmin.js resolve-order",
     "payment-anomaly:resolve-provider": "node dist/paymentAnomalyAdmin.js resolve-provider",
-    "test": "npm run build && node --test dist/cdek.test.js dist/configCheck.test.js dist/health.test.js dist/httpClient.test.js dist/logRetention.test.js dist/notificationHealth.test.js dist/notificationMessages.test.js dist/paymentAnomalies.test.js dist/paymentInvariants.test.js dist/runtimeConfig.test.js dist/shutdown.test.js dist/shutdownFence.test.js dist/stockReservation.test.js dist/telegramOutboxWorker.test.js dist/telegramTransport.test.js dist/yookassaConfig.test.js",
+    "test": "npm run build && node --test dist/auth.test.js dist/cdek.test.js dist/configCheck.test.js dist/health.test.js dist/httpClient.test.js dist/logRetention.test.js dist/notificationHealth.test.js dist/notificationMessages.test.js dist/paymentAnomalies.test.js dist/paymentInvariants.test.js dist/runtimeConfig.test.js dist/shutdown.test.js dist/shutdownFence.test.js dist/stockReservation.test.js dist/telegramOutboxWorker.test.js dist/telegramTransport.test.js dist/yookassaConfig.test.js",
     "lint": "eslint \"src/**/*.ts\"",
     "lint:fix": "npm run lint -- --fix"
   },

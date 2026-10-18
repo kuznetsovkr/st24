@@ -45,8 +45,8 @@ const scalar = async (sql, params = []) => {
 };
 
 const verifyBackupRestore = async (orderId) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'her-postgres-restore-'));
-  const databaseName = `her_restore_${randomUUID().replaceAll('-', '')}_smoke`;
+  const directory = await mkdtemp(path.join(tmpdir(), 'karcher-postgres-restore-'));
+  const databaseName = `karcher_restore_${randomUUID().replaceAll('-', '')}_smoke`;
   const originalUrl = process.env.DATABASE_URL;
   const restored = new URL(originalUrl);
   restored.pathname = `/${databaseName}`;

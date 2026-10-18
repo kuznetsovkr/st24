@@ -199,7 +199,9 @@ const resolveApiBase = () => {
 };
 
 export const API_BASE = resolveApiBase();
-const CSRF_COOKIE_NAME = 'her_csrf_token';
+const CSRF_COOKIE_NAME = 'karcher_csrf_token';
+// Existing browser sessions expire normally; new sessions use the canonical name.
+const LEGACY_CSRF_COOKIE_NAME = 'her_csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const REQUEST_TIMEOUT_MS = 20000;
 const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
@@ -230,8 +232,13 @@ const clearCsrfCookie = () => {
   if (typeof document === 'undefined') {
     return;
   }
-  document.cookie = `${CSRF_COOKIE_NAME}=; Max-Age=0; Path=/`;
+  for (const name of [CSRF_COOKIE_NAME, LEGACY_CSRF_COOKIE_NAME]) {
+    document.cookie = `${name}=; Max-Age=0; Path=/`;
+  }
 };
+
+export const hasCsrfSessionCookie = () =>
+  Boolean(getCookieValue(CSRF_COOKIE_NAME) || getCookieValue(LEGACY_CSRF_COOKIE_NAME));
 
 const authHeaders = (): Record<string, string> => ({});
 
@@ -280,7 +287,7 @@ const fetchJson = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const maxAttempts = RETRYABLE_METHODS.has(method) ? REQUEST_RETRY_COUNT + 1 : 1;
 
   if (!SAFE_METHODS.has(method)) {
-    const csrfToken = getCookieValue(CSRF_COOKIE_NAME);
+    const csrfToken = getCookieValue(CSRF_COOKIE_NAME) || getCookieValue(LEGACY_CSRF_COOKIE_NAME);
     if (csrfToken && !headers.has('X-CSRF-Token')) {
       headers.set('X-CSRF-Token', csrfToken);
     }

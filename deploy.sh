@@ -11,17 +11,17 @@ readonly DEPLOY_MAIN_PID="$BASHPID"
 
 readonly ROOT_ARGUMENT="${1:-/var/www/st24}"
 readonly API_URL="${2:-https://xn---24-3edf.xn--p1ai}"
-readonly SERVICE_NAME="${3:-her-api}"
+readonly SERVICE_NAME="${3:-karcher-api}"
 readonly READINESS_TIMEOUT_SECONDS="${READINESS_TIMEOUT_SECONDS:-90}"
 readonly READINESS_INTERVAL_SECONDS="${READINESS_INTERVAL_SECONDS:-2}"
 readonly REQUESTED_SERVER_ENV_FILE="${SERVER_ENV_FILE-}"
-readonly SERVER_ENV_FILE="/etc/her/api.env"
-readonly CLIENT_ENV_FILE="${CLIENT_ENV_FILE:-/etc/her/client.env}"
+readonly SERVER_ENV_FILE="/etc/karcher/api.env"
+readonly CLIENT_ENV_FILE="${CLIENT_ENV_FILE:-/etc/karcher/client.env}"
 readonly DEPLOY_ALLOW_INACTIVE_SERVICE="${DEPLOY_ALLOW_INACTIVE_SERVICE:-0}"
 readonly REQUESTED_DEPLOY_API_UNIT_FILE="${DEPLOY_API_UNIT_FILE-}"
-readonly DEPLOY_API_UNIT_FILE="/etc/systemd/system/her-api.service"
-readonly DEPLOY_API_TMPFILES_FILE="/etc/tmpfiles.d/her-api.conf"
-readonly DEPLOY_API_LOGROTATE_FILE="/etc/logrotate.d/her-api"
+readonly DEPLOY_API_UNIT_FILE="/etc/systemd/system/karcher-api.service"
+readonly DEPLOY_API_TMPFILES_FILE="/etc/tmpfiles.d/karcher-api.conf"
+readonly DEPLOY_API_LOGROTATE_FILE="/etc/logrotate.d/karcher-api"
 readonly REQUESTED_DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-}"
 readonly DATABASE_COMMAND_TIMEOUT_SECONDS="${DATABASE_COMMAND_TIMEOUT_SECONDS:-900}"
 
@@ -94,8 +94,8 @@ check_arguments() {
     fail "API_URL must be a canonical HTTPS origin without a path, query or fragment"
   [[ "$API_URL" != *"@"* ]] ||
     fail "API_URL must not contain credentials"
-  [[ "$SERVICE_NAME" == "her-api" || "$SERVICE_NAME" == "her-api.service" ]] ||
-    fail "the packaged deployment manages only her-api.service"
+  [[ "$SERVICE_NAME" == "karcher-api" || "$SERVICE_NAME" == "karcher-api.service" ]] ||
+    fail "the packaged deployment manages only karcher-api.service"
   [[ -z "$REQUESTED_DEPLOY_API_UNIT_FILE" ||
      "$REQUESTED_DEPLOY_API_UNIT_FILE" == "$DEPLOY_API_UNIT_FILE" ]] ||
     fail "DEPLOY_API_UNIT_FILE cannot override the packaged service path"
@@ -142,9 +142,9 @@ check_supported_node() {
 
 ops_file_paths() {
   printf '%s|%s|%s\n' \
-    ops/systemd/her-api.service "$DEPLOY_API_UNIT_FILE" unit \
-    ops/tmpfiles/her-api.conf "$DEPLOY_API_TMPFILES_FILE" tmpfiles \
-    ops/logrotate/her-api "$DEPLOY_API_LOGROTATE_FILE" logrotate
+    ops/systemd/karcher-api.service "$DEPLOY_API_UNIT_FILE" unit \
+    ops/tmpfiles/karcher-api.conf "$DEPLOY_API_TMPFILES_FILE" tmpfiles \
+    ops/logrotate/karcher-api "$DEPLOY_API_LOGROTATE_FILE" logrotate
 }
 
 check_unit_identity() {
@@ -153,7 +153,7 @@ check_unit_identity() {
   fragment="$(run_systemctl show --property=FragmentPath --value "$SERVICE_NAME")"
   drop_ins="$(run_systemctl show --property=DropInPaths --value "$SERVICE_NAME")"
   [[ "$fragment" == "$DEPLOY_API_UNIT_FILE" && -z "$drop_ins" ]] ||
-    fail "her-api must use the packaged unit path without systemd drop-ins"
+    fail "karcher-api must use the packaged unit path without systemd drop-ins"
 }
 
 snapshot_api_ops() {
@@ -247,13 +247,13 @@ capture_service_initial_state() {
 prepare_client_config_runner() {
   [[ -r scripts/client-config.mjs ]] ||
     fail "client configuration tool is missing from the target release"
-  CLIENT_CONFIG_RUNNER="$(mktemp --suffix=.mjs "${TMPDIR:-/tmp}/her-client-config.XXXXXXXX")" ||
+  CLIENT_CONFIG_RUNNER="$(mktemp --suffix=.mjs "${TMPDIR:-/tmp}/karcher-client-config.XXXXXXXX")" ||
     fail "could not create a temporary client configuration runner"
   cp -- scripts/client-config.mjs "$CLIENT_CONFIG_RUNNER" ||
     fail "could not preserve the client configuration runner for rollback"
-  READINESS_RUNNER="$(mktemp --suffix=.mjs "${TMPDIR:-/tmp}/her-deploy-readiness.XXXXXXXX")"
+  READINESS_RUNNER="$(mktemp --suffix=.mjs "${TMPDIR:-/tmp}/karcher-deploy-readiness.XXXXXXXX")"
   cp -- scripts/deploy-readiness.mjs "$READINESS_RUNNER"
-  POSTGRES_RUNNER="$(mktemp --suffix=.mjs "${TMPDIR:-/tmp}/her-postgres-command.XXXXXXXX")"
+  POSTGRES_RUNNER="$(mktemp --suffix=.mjs "${TMPDIR:-/tmp}/karcher-postgres-command.XXXXXXXX")"
   cp -- scripts/postgres-command.mjs "$POSTGRES_RUNNER"
 }
 
@@ -485,7 +485,7 @@ create_backup_and_smoke_migrations() {
   PARTIAL_BACKUP_FILE=""
   log "backup verified"
 
-  SMOKE_DATABASE_NAME="her_deploy_smoke_${timestamp//[^0-9]/}_$$"
+  SMOKE_DATABASE_NAME="karcher_deploy_smoke_${timestamp//[^0-9]/}_$$"
   [[ "$SMOKE_DATABASE_NAME" != "$production_database_name" ]] ||
     fail "refusing to use the production database for migration smoke"
   # The admin connection only creates/drops the database. Restore and init use

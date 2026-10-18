@@ -14,7 +14,7 @@ const developmentEnvironment = (): Environment => ({
   NODE_ENV: 'development',
   PORT: '4000',
   API_BIND_HOST: '127.0.0.1',
-  DATABASE_URL: 'postgresql://her:local-password@127.0.0.1:5432/her',
+  DATABASE_URL: 'postgresql://karcher:local-password@127.0.0.1:5432/karcher',
   JWT_SECRET: 'development-only-secret',
   TELEGRAM_MAIN_MODE: 'disabled',
   TELEGRAM_ORDERS_MODE: 'disabled',
@@ -84,7 +84,7 @@ test('requires an explicit supported NODE_ENV, port and bind host', () => {
 test('requires a syntactically valid PostgreSQL database URL', () => {
   for (const value of [
     undefined,
-    'mysql://user:password@db.example.test/her',
+    'mysql://user:password@db.example.test/karcher',
     'postgresql://db.example.test',
     'not-a-url'
   ]) {

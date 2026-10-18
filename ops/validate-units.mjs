@@ -124,11 +124,11 @@ const one = (unit, key) => {
 
 const unitNames = (await readdir(unitDir)).sort();
 assert.deepEqual(unitNames, [
-  'her-api.service',
-  'her-monitor-check.service',
-  'her-monitor-check.timer',
-  'her-monitor-summary.service',
-  'her-monitor-summary.timer'
+  'karcher-api.service',
+  'karcher-monitor-check.service',
+  'karcher-monitor-check.timer',
+  'karcher-monitor-summary.service',
+  'karcher-monitor-summary.timer'
 ]);
 
 const units = new Map();
@@ -144,10 +144,10 @@ for (const name of unitNames) {
 
 for (const name of unitNames.filter((value) => value.endsWith('.service'))) {
   const unit = units.get(name);
-  assert.match(one(unit, 'Service.User'), /^her-(?:api|monitor)$/);
-  assert.match(one(unit, 'Service.Group'), /^her-(?:api|monitor)$/);
+  assert.match(one(unit, 'Service.User'), /^karcher-(?:api|monitor)$/);
+  assert.match(one(unit, 'Service.Group'), /^karcher-(?:api|monitor)$/);
   assert.match(one(unit, 'Service.WorkingDirectory'), /^\/var\/www\/st24\/(?:server|monitor)$/);
-  assert.match(one(unit, 'Service.EnvironmentFile'), /^\/etc\/(?:her\/api|her-monitor\/monitor)\.env$/);
+  assert.match(one(unit, 'Service.EnvironmentFile'), /^\/etc\/(?:karcher\/api|karcher-monitor\/monitor)\.env$/);
   for (const execKey of ['Service.ExecStartPre', 'Service.ExecStart']) {
     const commands = unit.get(execKey);
     assert.ok(commands?.length, `${name}: ${execKey} is missing`);
@@ -160,44 +160,44 @@ for (const name of unitNames.filter((value) => value.endsWith('.service'))) {
   }
 }
 
-const api = units.get('her-api.service');
+const api = units.get('karcher-api.service');
 assert.ok(
   api.get('Service.ExecStartPre').includes(
-    '/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/her/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/configCheck.js'
+    '/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/karcher/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/configCheck.js'
   )
 );
 assert.equal(
   one(api, 'Service.ExecStart'),
-  '/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/her/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/index.js'
+  '/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/karcher/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/index.js'
 );
 assert.equal(
   one(api, 'Service.ReadWritePaths'),
   '/var/www/st24/server/uploads /var/www/st24/server/tmp'
 );
 
-for (const name of ['her-monitor-check.service', 'her-monitor-summary.service']) {
+for (const name of ['karcher-monitor-check.service', 'karcher-monitor-summary.service']) {
   const unit = units.get(name);
   const mode = name.includes('summary') ? 'summary' : 'check';
   assert.ok(
     unit.get('Service.ExecStartPre').includes(
-      `/usr/bin/env MONITOR_ENV_FILE=/etc/her-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/her-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/configCheck.js ${mode}`
+      `/usr/bin/env MONITOR_ENV_FILE=/etc/karcher-monitor/monitor.env MONITOR_STATE_FILE=/var/lib/karcher-monitor/state.json /usr/bin/node /var/www/st24/monitor/dist/configCheck.js ${mode}`
     )
   );
   assert.match(
     one(unit, 'Service.ExecStart'),
-    /^\/usr\/bin\/flock --exclusive --wait 210 --conflict-exit-code 75 \/var\/lib\/her-monitor\/schedule\.lock \/usr\/bin\/env MONITOR_ENV_FILE=\/etc\/her-monitor\/monitor\.env MONITOR_STATE_FILE=\/var\/lib\/her-monitor\/state\.json \/usr\/bin\/node \/var\/www\/st24\/monitor\/dist\/cli\.js (?:check|summary)$/
+    /^\/usr\/bin\/flock --exclusive --wait 210 --conflict-exit-code 75 \/var\/lib\/karcher-monitor\/schedule\.lock \/usr\/bin\/env MONITOR_ENV_FILE=\/etc\/karcher-monitor\/monitor\.env MONITOR_STATE_FILE=\/var\/lib\/karcher-monitor\/state\.json \/usr\/bin\/node \/var\/www\/st24\/monitor\/dist\/cli\.js (?:check|summary)$/
   );
-  assert.equal(one(unit, 'Service.StateDirectory'), 'her-monitor');
+  assert.equal(one(unit, 'Service.StateDirectory'), 'karcher-monitor');
 }
 
 const expectedTimers = new Map([
   [
-    'her-monitor-check.timer',
-    ['*-*-* *:0/5:00', 'her-monitor-check.service']
+    'karcher-monitor-check.timer',
+    ['*-*-* *:0/5:00', 'karcher-monitor-check.service']
   ],
   [
-    'her-monitor-summary.timer',
-    ['*-*-* 09:02:00', 'her-monitor-summary.service']
+    'karcher-monitor-summary.timer',
+    ['*-*-* 09:02:00', 'karcher-monitor-summary.service']
   ]
 ]);
 for (const [name, [calendar, target]] of expectedTimers) {
@@ -237,22 +237,22 @@ assert.equal(one(backupTimer, 'Timer.OnCalendar'), '*-*-* *:0/5:00');
 assert.equal(one(backupTimer, 'Timer.Persistent'), 'yes');
 assert.equal(one(backupTimer, 'Timer.Unit'), 'karcher-backup-health.service');
 
-const apiTmpfiles = await readFile(join(opsDir, 'tmpfiles', 'her-api.conf'), 'utf8');
+const apiTmpfiles = await readFile(join(opsDir, 'tmpfiles', 'karcher-api.conf'), 'utf8');
 const apiTmpfileRules = apiTmpfiles
   .split('\n')
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith('#'));
 assert.deepEqual(apiTmpfileRules, [
-  'd /var/www/st24/server/uploads 0750 her-api her-api -',
-  'd /var/www/st24/server/tmp 0750 her-api her-api -',
-  'd /var/www/st24/server/tmp/b2b-requests 0750 her-api her-api -',
-  'd /var/www/st24/server/tmp/need-part-requests 0750 her-api her-api -',
-  'd /var/log/her-api 0750 her-api her-api -',
-  'f /var/log/her-api/api.log 0640 her-api her-api -'
+  'd /var/www/st24/server/uploads 0750 karcher-api karcher-api -',
+  'd /var/www/st24/server/tmp 0750 karcher-api karcher-api -',
+  'd /var/www/st24/server/tmp/b2b-requests 0750 karcher-api karcher-api -',
+  'd /var/www/st24/server/tmp/need-part-requests 0750 karcher-api karcher-api -',
+  'd /var/log/karcher-api 0750 karcher-api karcher-api -',
+  'f /var/log/karcher-api/api.log 0640 karcher-api karcher-api -'
 ]);
 
 const monitorTmpfiles = await readFile(
-  join(opsDir, 'tmpfiles', 'her-monitor.conf'),
+  join(opsDir, 'tmpfiles', 'karcher-monitor.conf'),
   'utf8'
 );
 const monitorTmpfileRules = monitorTmpfiles
@@ -260,13 +260,13 @@ const monitorTmpfileRules = monitorTmpfiles
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith('#'));
 assert.deepEqual(monitorTmpfileRules, [
-  'd /var/log/her-monitor 0750 her-monitor her-monitor -',
-  'f /var/log/her-monitor/monitor.log 0600 her-monitor her-monitor -'
+  'd /var/log/karcher-monitor 0750 karcher-monitor karcher-monitor -',
+  'f /var/log/karcher-monitor/monitor.log 0600 karcher-monitor karcher-monitor -'
 ]);
 
 for (const [name, expectedPath, expectedIdentity, expectedMode] of [
-  ['her-api', '/var/log/her-api/api.log', 'her-api her-api', '0640'],
-  ['her-monitor', '/var/log/her-monitor/monitor.log', 'her-monitor her-monitor', '0600']
+  ['karcher-api', '/var/log/karcher-api/api.log', 'karcher-api karcher-api', '0640'],
+  ['karcher-monitor', '/var/log/karcher-monitor/monitor.log', 'karcher-monitor karcher-monitor', '0600']
 ]) {
   const contents = await readFile(join(opsDir, 'logrotate', name), 'utf8');
   assert.match(contents, new RegExp(`^${expectedPath.replaceAll('/', '\\/')} \\{`));

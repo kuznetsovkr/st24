@@ -9,22 +9,22 @@ import unittest
 class BackupScriptTests(unittest.TestCase):
     def managed_api_fixture(self, root):
         paths = {
-            'etc/her/api.env': 'DATABASE_URL=postgresql://synthetic@localhost/shop\n',
-            'etc/her/client.env': 'VITE_API_URL=https://shop.example.com\n',
-            'etc/tmpfiles.d/her-api.conf': 'd /synthetic/uploads 0750 her-api her-api -\n',
-            'etc/logrotate.d/her-api': '/synthetic/api.log {\n missingok\n}\n',
-            'etc/systemd/system/her-api.service': '[Service]\nEnvironmentFile=/etc/her/api.env\n',
+            'etc/karcher/api.env': 'DATABASE_URL=postgresql://synthetic@localhost/shop\n',
+            'etc/karcher/client.env': 'VITE_API_URL=https://shop.example.com\n',
+            'etc/tmpfiles.d/karcher-api.conf': 'd /synthetic/uploads 0750 karcher-api karcher-api -\n',
+            'etc/logrotate.d/karcher-api': '/synthetic/api.log {\n missingok\n}\n',
+            'etc/systemd/system/karcher-api.service': '[Service]\nEnvironmentFile=/etc/karcher/api.env\n',
         }
         for name, content in paths.items():
             path = root/name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
-        for name in ['etc/her/api.env', 'etc/her/client.env']:
+        for name in ['etc/karcher/api.env', 'etc/karcher/client.env']:
             (root/name).chmod(0o640)
-        boot = root/'etc/systemd/system/multi-user.target.wants/her-api.service'
+        boot = root/'etc/systemd/system/multi-user.target.wants/karcher-api.service'
         boot.parent.mkdir()
-        boot.symlink_to('/etc/systemd/system/her-api.service')
-        return set(paths) - {'etc/systemd/system/her-api.service'} | {str(boot.relative_to(root))}
+        boot.symlink_to('/etc/systemd/system/karcher-api.service')
+        return set(paths) - {'etc/systemd/system/karcher-api.service'} | {str(boot.relative_to(root))}
 
     def collect_api(self, root, archive=None):
         source = Path(__file__).with_name('karcher-backup.sh').read_text()
@@ -49,6 +49,18 @@ class BackupScriptTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(values, [str(root/'var/www/st24/server/.env')])
 
+    def test_pre_rename_or_mixed_layout_is_rejected_not_silently_backed_up(self):
+        for mixed in [False, True]:
+            with self.subTest(mixed=mixed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                if mixed:
+                    self.managed_api_fixture(root)
+                old = root/'etc/her'
+                old.mkdir(parents=True)
+                result, _ = self.collect_api(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b'LEGACY_API_LAYOUT_REQUIRES_MIGRATION', result.stderr)
+
     def test_managed_api_archive_preserves_configs_modes_and_boot_state(self):
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as output:
             root = Path(directory)
@@ -56,17 +68,17 @@ class BackupScriptTests(unittest.TestCase):
             archive = Path(output)/'managed-api.tar.gz'
             result, values = self.collect_api(root, archive)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(values[0], str(root/'etc/her/api.env'))
+            self.assertEqual(values[0], str(root/'etc/karcher/api.env'))
             self.assertEqual(set(values[1:]), expected)
             with tarfile.open(archive) as tar:
                 self.assertEqual(set(tar.getnames()), expected)
-                self.assertEqual(tar.getmember('etc/her/api.env').mode, 0o640)
+                self.assertEqual(tar.getmember('etc/karcher/api.env').mode, 0o640)
                 self.assertTrue(tar.getmember(
-                    'etc/systemd/system/multi-user.target.wants/her-api.service').issym())
+                    'etc/systemd/system/multi-user.target.wants/karcher-api.service').issym())
 
     def test_partial_managed_api_install_cannot_fall_back_to_stale_environment(self):
-        for missing in ['etc/her/api.env', 'etc/her/client.env',
-                        'etc/tmpfiles.d/her-api.conf', 'etc/logrotate.d/her-api']:
+        for missing in ['etc/karcher/api.env', 'etc/karcher/client.env',
+                        'etc/tmpfiles.d/karcher-api.conf', 'etc/logrotate.d/karcher-api']:
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 self.managed_api_fixture(root)
@@ -77,15 +89,15 @@ class BackupScriptTests(unittest.TestCase):
     def test_managed_api_unit_detects_loss_of_configuration_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            unit = root/'etc/systemd/system/her-api.service'
+            unit = root/'etc/systemd/system/karcher-api.service'
             unit.parent.mkdir(parents=True)
-            unit.write_text('[Service]\nEnvironmentFile=/etc/her/api.env\n')
+            unit.write_text('[Service]\nEnvironmentFile=/etc/karcher/api.env\n')
             result, _ = self.collect_api(root)
             self.assertNotEqual(result.returncode, 0)
 
     def test_managed_api_configuration_symlinks_are_rejected(self):
-        for relative in ['etc/her', 'etc/her/api.env', 'etc/her/client.env',
-                         'etc/tmpfiles.d/her-api.conf', 'etc/logrotate.d/her-api']:
+        for relative in ['etc/karcher', 'etc/karcher/api.env', 'etc/karcher/client.env',
+                         'etc/tmpfiles.d/karcher-api.conf', 'etc/logrotate.d/karcher-api']:
             with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 self.managed_api_fixture(root)
@@ -100,7 +112,7 @@ class BackupScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.managed_api_fixture(root)
-            link = root/'etc/systemd/system/multi-user.target.wants/her-api.service'
+            link = root/'etc/systemd/system/multi-user.target.wants/karcher-api.service'
             link.unlink()
             link.symlink_to('/unexpected/unit.service')
             result, _ = self.collect_api(root)

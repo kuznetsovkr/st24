@@ -1,5 +1,5 @@
 [Unit]
-Description=Run HER external availability checks every five minutes
+Description=Run Karcher external availability checks every five minutes
 Documentation=file:/var/www/st24/ops/README.md
 
 [Timer]
@@ -7,7 +7,7 @@ OnCalendar=*-*-* *:0/5:00
 Persistent=yes
 AccuracySec=15s
 RandomizedDelaySec=15s
-Unit=her-monitor-check.service
+Unit=karcher-monitor-check.service
 
 [Install]
 WantedBy=timers.target

@@ -157,7 +157,7 @@ test('readiness succeeds after PostgreSQL and uploads round trip', async () => {
 });
 
 test('real uploads canary is private and leaves no file behind', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-health-uploads-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-health-uploads-'));
   let canaryPath = '';
   let canaryMode = 0;
   try {

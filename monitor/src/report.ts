@@ -23,7 +23,7 @@ export const renderConsoleReport = (results: CheckResult[]): string =>
 export const renderSummaryReport = (results: CheckResult[]): string => {
   const failed = results.filter((result) => result.status === 'failed').length;
   const warnings = results.filter((result) => result.status === 'warning').length;
-  const headline = failed > 0 ? '🔴 HER monitor summary' : warnings > 0 ? '🟡 HER monitor summary' : '🟢 HER monitor summary';
+  const headline = failed > 0 ? '🔴 Karcher monitor summary' : warnings > 0 ? '🟡 Karcher monitor summary' : '🟢 Karcher monitor summary';
   return `${headline}\n${results.map(formatCheck).join('\n')}\nChecked: ${new Date().toISOString()}`;
 };
 
@@ -36,5 +36,5 @@ export const renderTransitionReport = (transitions: StateTransition[]): string =
     }
     return `🟢 RECOVERY: ${result.label}${latency(result)} — ${result.detail}`;
   });
-  return `HER monitor state changed\n${lines.join('\n')}\nChecked: ${new Date().toISOString()}`;
+  return `Karcher monitor state changed\n${lines.join('\n')}\nChecked: ${new Date().toISOString()}`;
 };

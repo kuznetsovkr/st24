@@ -69,7 +69,7 @@ test('preflight rejects runtimes outside the workspace Node.js range', () => {
 });
 
 test('loads and validates the same env file without network or state writes', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-config-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-config-'));
   const envFile = join(directory, '.env');
   try {
     await writeFile(envFile, serializeEnvironment(validEnvironment()), {
@@ -91,7 +91,7 @@ test('loads and validates the same env file without network or state writes', as
 });
 
 test('MONITOR_ENV_FILE is used by both monitor runtime loading and preflight', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-env-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-env-'));
   const defaultEnvFile = join(directory, 'default.env');
   const selectedEnvFile = join(directory, 'selected.env');
   try {
@@ -194,7 +194,7 @@ test('preflight requires the Telegram canary chat for configured production bots
 });
 
 test('compiled config check CLI only validates and returns the correct status', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-cli-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-cli-'));
   const validEnvFile = join(directory, 'valid.env');
   const invalidEnvFile = join(directory, 'invalid.env');
   const cliPath = resolve(__dirname, 'configCheck.js');

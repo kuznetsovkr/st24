@@ -121,7 +121,7 @@ test('state update prunes checks that no longer exist', () => {
 });
 
 test('saveState atomically replaces the target without leaving a temporary file', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-state-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-state-'));
   const filePath = join(directory, 'state.json');
   try {
     const state = advanceState(
@@ -140,7 +140,7 @@ test('saveState atomically replaces the target without leaving a temporary file'
 });
 
 test('loadState classifies corrupted JSON without exposing its contents', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-state-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-state-'));
   const filePath = join(directory, 'state.json');
   try {
     await writeFile(filePath, 'not-json-secret', 'utf8');

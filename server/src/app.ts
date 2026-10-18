@@ -6,10 +6,9 @@ import { randomInt, randomUUID } from 'crypto';
 import { isIP } from 'net';
 import path from 'path';
 import {
-  CSRF_COOKIE_NAME,
   clearAuthCookies,
   createCsrfToken,
-  getCookieValue,
+  hasValidCsrfToken,
   getRequestAuthToken,
   setAuthCookies,
   signToken,
@@ -4605,14 +4604,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     if (token && source === 'cookie') {
       try {
         const payload = verifyToken(token);
-        const csrfHeader = req.header('x-csrf-token')?.trim() ?? '';
-        const csrfCookie = getCookieValue(req, CSRF_COOKIE_NAME) ?? '';
-        if (
-          !csrfHeader ||
-          !csrfCookie ||
-          csrfHeader !== csrfCookie ||
-          csrfHeader !== payload.csrfToken
-        ) {
+        if (!hasValidCsrfToken(req, payload.csrfToken)) {
           res.status(403).json({ error: 'Недействительный CSRF-токен' });
           return;
         }

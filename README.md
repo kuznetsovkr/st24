@@ -2,6 +2,8 @@
 
 Монорепозиторий проекта `ст-24.рф` с фронтендом на React/Vite и backend API на Node.js/Express + PostgreSQL.
 
+Технические имена унифицированы под `karcher`: [правила именования и совместимость](docs/project-naming.md).
+
 ## Что в проекте
 
 - Каталог и категории товаров.
@@ -139,8 +141,8 @@ Production-сборка frontend выполняется только из про
 allowlist публичных `VITE_*`-значений (без чтения случайного `client/.env`):
 
 ```bash
-CLIENT_ENV_FILE=/etc/her/client.env npm run client:config:check
-CLIENT_ENV_FILE=/etc/her/client.env npm run client:build
+CLIENT_ENV_FILE=/etc/karcher/client.env npm run client:config:check
+CLIENT_ENV_FILE=/etc/karcher/client.env npm run client:build
 ```
 
 ## Проверки
@@ -160,7 +162,7 @@ PR для обновлений npm и GitHub Actions.
 
 ## Обязательные переменные окружения
 
-### Backend (`server/.env` локально, `/etc/her/api.env` в production)
+### Backend (`server/.env` локально, `/etc/karcher/api.env` в production)
 
 - `NODE_ENV` (`development` | `test` | `production`, строго в нижнем регистре)
 - `PORT`
@@ -181,7 +183,7 @@ PR для обновлений npm и GitHub Actions.
 fail-closed проверка выполняется командой:
 
 ```bash
-DOTENV_CONFIG_PATH=/etc/her/api.env NODE_ENV=production npm run config:check
+DOTENV_CONFIG_PATH=/etc/karcher/api.env NODE_ENV=production npm run config:check
 ```
 
 ### Авторизация по телефону
@@ -236,7 +238,7 @@ DOTENV_CONFIG_PATH=/etc/her/api.env NODE_ENV=production npm run config:check
 - `YOOKASSA_RECEIPT_VAT_CODE`
 - `ENABLE_MANUAL_PAYMENT` — только локальный dev-флаг; в production endpoint ручной оплаты всегда закрыт независимо от значения.
 
-### Frontend (`client/.env` локально, `/etc/her/client.env` в production)
+### Frontend (`client/.env` локально, `/etc/karcher/client.env` в production)
 
 - `VITE_API_URL`
 - `VITE_SITE_URL`
@@ -261,8 +263,8 @@ DOTENV_CONFIG_PATH=/etc/her/api.env NODE_ENV=production npm run config:check
 
 Полный bootstrap API и отдельного monitor-host описан в
 [production runbook](ops/README.md). Секреты хранятся вне Git в
-`/etc/her/api.env` и `/etc/her-monitor/monitor.env`; публичная конфигурация
-production-сборки frontend — в контролируемом `/etc/her/client.env`. API и
+`/etc/karcher/api.env` и `/etc/karcher-monitor/monitor.env`; публичная конфигурация
+production-сборки frontend — в контролируемом `/etc/karcher/client.env`. API и
 монитор запускаются от разных непривилегированных пользователей.
 
 После первичной установки systemd unit используется скрипт в корне:
@@ -286,16 +288,16 @@ sudo bash /var/www/st24/deploy.sh
 Параметры (каталог и имя сервиса закреплены в production unit):
 
 ```bash
-sudo bash ./deploy.sh /var/www/st24 <API_URL> her-api
+sudo bash ./deploy.sh /var/www/st24 <API_URL> karcher-api
 ```
 
 Пример:
 
 ```bash
-sudo bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
+sudo bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai karcher-api
 ```
 
-Скрипт запускается от root и использует `/etc/her/api.env`, `/etc/her/client.env`
+Скрипт запускается от root и использует `/etc/karcher/api.env`, `/etc/karcher/client.env`
 и `DEPLOY_BACKUP_DIR`. После backup и migration smoke он сохраняет прежние
 API unit/tmpfiles/logrotate и устанавливает файлы из проверяемой revision. Для
 migration smoke обычно передают отдельный

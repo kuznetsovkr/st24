@@ -80,7 +80,7 @@ assert_absent 'deploy-\$\{SERVICE_NAME\}\.lock'
   CLIENT_CONFIG_RUNNER="$fixture/assert-env.mjs"
   printf '%s\n' \
     'import assert from "node:assert/strict";' \
-    'assert.equal(process.env.CLIENT_ENV_FILE, "/etc/her/client.env");' \
+    'assert.equal(process.env.CLIENT_ENV_FILE, "/etc/karcher/client.env");' \
     'assert.equal(process.env.EXPECTED_VITE_API_URL, "https://xn---24-3edf.xn--p1ai");' \
     'assert.ok(process.env.CLIENT_CONFIG_ROOT.endsWith("/release"));' \
     'assert.ok(["check", "build"].includes(process.argv[2]));' \
@@ -94,27 +94,27 @@ output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test 'invalid service name'
 [[ "$output" == *'SERVICE_NAME contains unsupported characters'* ]] ||
   fail 'invalid service name was not rejected before deployment'
 
-output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test '-her-api' 2>&1 || true)"
+output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test '-karcher-api' 2>&1 || true)"
 [[ "$output" == *'SERVICE_NAME contains unsupported characters'* ]] ||
   fail 'leading-dash service name was not rejected before deployment'
 
-output="$(DEPLOY_ALLOW_INACTIVE_SERVICE=maybe bash "$DEPLOY_SCRIPT" /tmp https://example.test her-api 2>&1 || true)"
+output="$(DEPLOY_ALLOW_INACTIVE_SERVICE=maybe bash "$DEPLOY_SCRIPT" /tmp https://example.test karcher-api 2>&1 || true)"
 [[ "$output" == *'DEPLOY_ALLOW_INACTIVE_SERVICE must be 0 or 1'* ]] ||
   fail 'invalid inactive-service override was not rejected before deployment'
 
-output="$(SERVER_ENV_FILE=/tmp/wrong.env bash "$DEPLOY_SCRIPT" /tmp https://example.test her-api 2>&1 || true)"
-[[ "$output" == *'SERVER_ENV_FILE cannot override the production path /etc/her/api.env'* ]] ||
+output="$(SERVER_ENV_FILE=/tmp/wrong.env bash "$DEPLOY_SCRIPT" /tmp https://example.test karcher-api 2>&1 || true)"
+[[ "$output" == *'SERVER_ENV_FILE cannot override the production path /etc/karcher/api.env'* ]] ||
   fail 'server environment path override was not rejected before deployment'
 
-output="$(DEPLOY_LOCK_FILE=relative.lock bash "$DEPLOY_SCRIPT" /tmp https://example.test her-api 2>&1 || true)"
+output="$(DEPLOY_LOCK_FILE=relative.lock bash "$DEPLOY_SCRIPT" /tmp https://example.test karcher-api 2>&1 || true)"
 [[ "$output" == *'DEPLOY_LOCK_FILE must be an absolute path'* ]] ||
   fail 'relative deployment lock path was not rejected before deployment'
 
-output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test/nested her-api 2>&1 || true)"
+output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test/nested karcher-api 2>&1 || true)"
 [[ "$output" == *'API_URL must be a canonical HTTPS origin'* ]] ||
   fail 'API URL with a path was not rejected before deployment'
 
-output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test/ her-api 2>&1 || true)"
+output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test/ karcher-api 2>&1 || true)"
 [[ "$output" == *'API_URL must be a canonical HTTPS origin'* ]] ||
   fail 'API URL with a trailing slash was not rejected before deployment'
 

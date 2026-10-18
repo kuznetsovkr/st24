@@ -1,4 +1,4 @@
-/var/log/her-monitor/monitor.log {
+/var/log/karcher-monitor/monitor.log {
     daily
     rotate 30
     maxsize 20M
@@ -8,6 +8,6 @@
     delaycompress
     dateext
     copytruncate
-    su her-monitor her-monitor
-    create 0600 her-monitor her-monitor
+    su karcher-monitor karcher-monitor
+    create 0600 karcher-monitor karcher-monitor
 }

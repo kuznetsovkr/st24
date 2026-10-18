@@ -63,20 +63,20 @@ jobs:
       postgres:
         image: postgres:14-alpine
         env:
-          POSTGRES_DB: her_smoke
+          POSTGRES_DB: karcher_smoke
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d her_smoke"
+          --health-cmd "pg_isready -U postgres -d karcher_smoke"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/her_smoke
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/karcher_smoke
       POSTGRES_SMOKE_ALLOW: "1"
 
     steps:
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build client through production preflight
         env:
-          CLIENT_ENV_FILE: ${{ runner.temp }}/her-client.env
+          CLIENT_ENV_FILE: ${{ runner.temp }}/karcher-client.env
           EXPECTED_VITE_API_URL: https://api.ci.example.com
         run: |
           (
@@ -139,10 +139,10 @@ jobs:
           shellcheck ops/backup/karcher-backup.sh ops/backup/st24-backup.sh
           python3 -m unittest discover -s ops/backup -p 'test_*.py'
           python3 -m unittest discover -s ops/monitoring -p 'test_*.py'
-          sudo useradd --system --user-group --no-create-home her-api
-          sudo useradd --system --user-group --no-create-home her-monitor
-          sudo install -d /etc/her /etc/her-monitor
-          sudo touch /etc/her/api.env /etc/her-monitor/monitor.env
+          sudo useradd --system --user-group --no-create-home karcher-api
+          sudo useradd --system --user-group --no-create-home karcher-monitor
+          sudo install -d /etc/karcher /etc/karcher-monitor
+          sudo touch /etc/karcher/api.env /etc/karcher-monitor/monitor.env
           sudo install -d /var/www/st24/server/uploads /var/www/st24/server/tmp
           sudo install -d /var/www/st24/monitor
           sudo ln -sf "$(command -v node)" /usr/bin/node

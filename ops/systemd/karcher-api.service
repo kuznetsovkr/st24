@@ -1,5 +1,5 @@
 [Unit]
-Description=HER production API
+Description=Karcher production API
 Documentation=file:/var/www/st24/ops/README.md
 Wants=network-online.target
 After=network-online.target
@@ -8,15 +8,15 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=her-api
-Group=her-api
+User=karcher-api
+Group=karcher-api
 
-EnvironmentFile=/etc/her/api.env
+EnvironmentFile=/etc/karcher/api.env
 
 # uploads/, tmp/ and the readiness write probe are resolved from cwd. These
-# paths are provisioned by ops/tmpfiles/her-api.conf.
+# paths are provisioned by ops/tmpfiles/karcher-api.conf.
 WorkingDirectory=/var/www/st24/server
-LogsDirectory=her-api
+LogsDirectory=karcher-api
 LogsDirectoryMode=0750
 ReadWritePaths=/var/www/st24/server/uploads /var/www/st24/server/tmp
 
@@ -24,16 +24,16 @@ ReadWritePaths=/var/www/st24/server/uploads /var/www/st24/server/tmp
 # EnvironmentFile. This keeps the service in production mode even if a copied
 # development template still contains NODE_ENV=development.
 ExecStartPre=/usr/bin/test -r /var/www/st24/server/dist/configCheck.js
-ExecStartPre=/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/her/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/configCheck.js
+ExecStartPre=/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/karcher/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/configCheck.js
 ExecStartPre=/usr/bin/test -r /var/www/st24/server/dist/index.js
-ExecStart=/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/her/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/index.js
+ExecStart=/usr/bin/env NODE_ENV=production DOTENV_CONFIG_PATH=/etc/karcher/api.env DOTENV_CONFIG_QUIET=true /usr/bin/node /var/www/st24/server/dist/index.js
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=2min
 TimeoutStopSec=30s
 KillSignal=SIGTERM
 
-StandardOutput=append:/var/log/her-api/api.log
+StandardOutput=append:/var/log/karcher-api/api.log
 StandardError=inherit
 UMask=0027
 

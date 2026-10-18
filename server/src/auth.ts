@@ -16,8 +16,11 @@ export type AuthTokenLookupResult = {
   source: AuthTokenSource | null;
 };
 
-export const AUTH_COOKIE_NAME = 'her_auth_token';
-export const CSRF_COOKIE_NAME = 'her_csrf_token';
+export const AUTH_COOKIE_NAME = 'karcher_auth_token';
+export const CSRF_COOKIE_NAME = 'karcher_csrf_token';
+// Read-only compatibility for sessions issued before the project rename.
+const LEGACY_AUTH_COOKIE_NAME = 'her_auth_token';
+const LEGACY_CSRF_COOKIE_NAME = 'her_csrf_token';
 const AUTH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const getJwtSecret = () => {
@@ -91,7 +94,7 @@ export const getCookieValue = (req: Request, name: string) => {
 };
 
 export const getRequestAuthToken = (req: Request): AuthTokenLookupResult => {
-  const cookieToken = getCookieValue(req, AUTH_COOKIE_NAME);
+  const cookieToken = getCookieValue(req, AUTH_COOKIE_NAME) || getCookieValue(req, LEGACY_AUTH_COOKIE_NAME);
   if (cookieToken) {
     return {
       token: cookieToken,
@@ -122,6 +125,12 @@ export const signToken = (payload: AuthPayload) =>
 
 export const verifyToken = (token: string) => jwt.verify(token, getJwtSecret()) as AuthPayload;
 
+export const hasValidCsrfToken = (req: Request, expected: string) => {
+  const header = req.header('x-csrf-token')?.trim() ?? '';
+  const cookie = getCookieValue(req, CSRF_COOKIE_NAME) || getCookieValue(req, LEGACY_CSRF_COOKIE_NAME) || '';
+  return Boolean(header && cookie && expected && header === cookie && header === expected);
+};
+
 export const setAuthCookies = (res: Response, token: string, csrfToken: string) => {
   const baseOptions = getCookieBaseOptions();
   const maxAge = AUTH_TOKEN_TTL_SECONDS * 1000;
@@ -140,12 +149,10 @@ export const setAuthCookies = (res: Response, token: string, csrfToken: string) 
 
 export const clearAuthCookies = (res: Response) => {
   const baseOptions = getCookieBaseOptions();
-  res.clearCookie(AUTH_COOKIE_NAME, {
-    ...baseOptions,
-    httpOnly: true
-  });
-  res.clearCookie(CSRF_COOKIE_NAME, {
-    ...baseOptions,
-    httpOnly: false
-  });
+  for (const name of [AUTH_COOKIE_NAME, LEGACY_AUTH_COOKIE_NAME]) {
+    res.clearCookie(name, { ...baseOptions, httpOnly: true });
+  }
+  for (const name of [CSRF_COOKIE_NAME, LEGACY_CSRF_COOKIE_NAME]) {
+    res.clearCookie(name, { ...baseOptions, httpOnly: false });
+  }
 };

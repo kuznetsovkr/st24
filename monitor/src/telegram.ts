@@ -454,7 +454,7 @@ export const checkTelegramCanary = async (
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `HER monitor canary | ${bot.id} | ${new Date().toISOString()}`,
+        text: `Karcher monitor canary | ${bot.id} | ${new Date().toISOString()}`,
         disable_notification: true
       }),
       followRedirects: false

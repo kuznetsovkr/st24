@@ -1,7 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import {
-  CSRF_COOKIE_NAME,
-  getCookieValue,
+  hasValidCsrfToken,
   getRequestAuthToken,
   verifyToken
 } from '../auth';
@@ -14,11 +13,6 @@ const normalizePhone = (value?: string | null) => (value ?? '').replace(/\D/g, '
 const getSuperAdminPhone = () =>
   normalizePhone(process.env.SUPER_ADMIN_PHONE ?? process.env.ADMIN_PHONE ?? '79964292550');
 
-const getCsrfHeaderValue = (req: Request) => {
-  const value = req.header('x-csrf-token');
-  return typeof value === 'string' ? value.trim() : '';
-};
-
 const ensureCsrfProtection = (req: Request, res: Response) => {
   if (SAFE_METHODS.has(req.method.toUpperCase())) {
     return true;
@@ -28,11 +22,9 @@ const ensureCsrfProtection = (req: Request, res: Response) => {
     return true;
   }
 
-  const csrfHeader = getCsrfHeaderValue(req);
-  const csrfCookie = getCookieValue(req, CSRF_COOKIE_NAME) ?? '';
   const csrfFromJwt = req.user?.csrfToken ?? '';
 
-  if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie || csrfHeader !== csrfFromJwt) {
+  if (!hasValidCsrfToken(req, csrfFromJwt)) {
     logSecurityEventFromRequest(req, {
       eventType: 'auth_csrf_failed',
       reason: 'csrf_token_mismatch',

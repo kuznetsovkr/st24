@@ -94,7 +94,7 @@ test('passes only allowlisted VITE values to a managed build', () => {
 });
 
 test('loads only the requested CLIENT_ENV_FILE through dotenv', () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), 'her-client-config-'));
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'karcher-client-config-'));
   const envPath = path.join(directory, 'client.env');
   try {
     writeFileSync(

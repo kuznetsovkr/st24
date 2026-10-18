@@ -27,32 +27,38 @@ collect_api_paths() {
   local path
   API_BACKUP_PATHS=()
   ENV_FILE="$root$APP_ROOT/server/.env"
-  if [[ ! -e "$root/etc/her" && ! -L "$root/etc/her" &&
-        ! -e "$root/etc/tmpfiles.d/her-api.conf" &&
-        ! -e "$root/etc/logrotate.d/her-api" ]] &&
-     ! grep -Fq 'EnvironmentFile=/etc/her/api.env' \
-       "$root/etc/systemd/system/her-api.service" 2>/dev/null; then
+  # An old installation must be migrated as a unit; never verify a partial mix.
+  if [[ -e "$root/etc/her" || -L "$root/etc/her" ||
+        -e "$root/etc/systemd/system/her-api.service" ||
+        -L "$root/etc/systemd/system/her-api.service" ]]; then
+    printf 'backup: LEGACY_API_LAYOUT_REQUIRES_MIGRATION\n' >&2; return 1;
+  fi
+  if [[ ! -e "$root/etc/karcher" && ! -L "$root/etc/karcher" &&
+        ! -e "$root/etc/tmpfiles.d/karcher-api.conf" &&
+        ! -e "$root/etc/logrotate.d/karcher-api" ]] &&
+     ! grep -Fq 'EnvironmentFile=/etc/karcher/api.env' \
+       "$root/etc/systemd/system/karcher-api.service" 2>/dev/null; then
     return 0
   fi
-  [[ -d "$root/etc/her" && ! -L "$root/etc/her" ]] || {
+  [[ -d "$root/etc/karcher" && ! -L "$root/etc/karcher" ]] || {
     printf 'backup: MANAGED_API_DIRECTORY_INVALID\n' >&2; return 1;
   }
-  for path in etc/her/api.env etc/her/client.env \
-    etc/tmpfiles.d/her-api.conf etc/logrotate.d/her-api; do
+  for path in etc/karcher/api.env etc/karcher/client.env \
+    etc/tmpfiles.d/karcher-api.conf etc/logrotate.d/karcher-api; do
     [[ -f "$root/$path" && ! -L "$root/$path" ]] || {
       printf 'backup: MANAGED_API_FILE_MISSING_OR_SYMLINKED: %s\n' "$path" >&2; return 1;
     }
     API_BACKUP_PATHS+=("$path")
   done
-  path=etc/systemd/system/multi-user.target.wants/her-api.service
+  path=etc/systemd/system/multi-user.target.wants/karcher-api.service
   if [[ -e "$root/$path" || -L "$root/$path" ]]; then
     [[ -L "$root/$path" &&
-       "$(readlink -- "$root/$path")" == /etc/systemd/system/her-api.service ]] || {
+       "$(readlink -- "$root/$path")" == /etc/systemd/system/karcher-api.service ]] || {
       printf 'backup: MANAGED_API_BOOT_LINK_INVALID\n' >&2; return 1;
     }
     API_BACKUP_PATHS+=("$path")
   fi
-  ENV_FILE="$root/etc/her/api.env"
+  ENV_FILE="$root/etc/karcher/api.env"
   printf 'backup: managed API recovery inputs verified: %s entries\n' "${#API_BACKUP_PATHS[@]}"
 }
 
@@ -229,7 +235,7 @@ timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
   --exclude='*/.monitor-state.json*' --exclude='*/.health-*.tmp' \
   -czf "$STAGING/st24_files.tar.gz" -C / \
   var/www/st24 etc/nginx etc/letsencrypt \
-  etc/systemd/system/her-api.service \
+  etc/systemd/system/karcher-api.service \
   etc/karcher-backup \
   usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
   "${API_BACKUP_PATHS[@]}" \

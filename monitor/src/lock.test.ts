@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { acquireMonitorLock, MonitorLockHeldError } from './lock';
 
 test('an active lock prevents a concurrent monitor process', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   const lock = await acquireMonitorLock(stateFile);
   try {
@@ -19,7 +19,7 @@ test('an active lock prevents a concurrent monitor process', async () => {
 });
 
 test('an active lock refreshes its lease beyond the stale threshold', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   const lock = await acquireMonitorLock(stateFile, { staleAfterMs: 60 });
   try {
@@ -35,7 +35,7 @@ test('an active lock refreshes its lease beyond the stale threshold', async () =
 });
 
 test('release is idempotent and removes the owned lock', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'nested', 'state.json');
   const lock = await acquireMonitorLock(stateFile);
   try {
@@ -51,7 +51,7 @@ test('release is idempotent and removes the owned lock', async () => {
 });
 
 test('a stale lock is reclaimed before acquiring a new one', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   const lockPath = stateFile + '.lock';
   const now = Date.now();
@@ -75,7 +75,7 @@ test('a stale lock is reclaimed before acquiring a new one', async () => {
 });
 
 test('release never removes a lock that no longer belongs to its owner', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   const lock = await acquireMonitorLock(stateFile);
   try {
@@ -88,7 +88,7 @@ test('release never removes a lock that no longer belongs to its owner', async (
 });
 
 test('release can be retried after a transient owner read failure', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   let failRead = true;
   const lock = await acquireMonitorLock(stateFile, {
@@ -118,7 +118,7 @@ test('release can be retried after a transient owner read failure', async () => 
 });
 
 test('release can be retried after a transient unlink failure', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   let failRemove = true;
   const lock = await acquireMonitorLock(stateFile, {
@@ -149,7 +149,7 @@ test('release can be retried after a transient unlink failure', async () => {
 });
 
 test('invalid lock JSON is not deleted and release remains retryable', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'her-monitor-lock-'));
+  const directory = await mkdtemp(join(tmpdir(), 'karcher-monitor-lock-'));
   const stateFile = join(directory, 'state.json');
   const lock = await acquireMonitorLock(stateFile);
   try {

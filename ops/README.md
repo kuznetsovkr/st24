@@ -1,6 +1,6 @@
 # Production services
 
-These files package the HER API and the independent monitor as `systemd`
+These files package the Karcher API and the independent monitor as `systemd`
 services. The API and monitor are normally installed on different hosts. Install
 only the units and logrotate file that belong to that host.
 
@@ -15,10 +15,10 @@ The examples assume:
 - `flock` from `util-linux` on the independent monitor host;
 - systemd 247 or newer (required by the process-visibility sandbox options);
 - the existing in-place deployment root at `/var/www/st24`;
-- API configuration at `/etc/her/api.env`;
-- controlled public frontend build configuration at `/etc/her/client.env`;
-- monitor configuration at `/etc/her-monitor/monitor.env`;
-- dedicated, non-login users `her-api` and `her-monitor`.
+- API configuration at `/etc/karcher/api.env`;
+- controlled public frontend build configuration at `/etc/karcher/client.env`;
+- monitor configuration at `/etc/karcher-monitor/monitor.env`;
+- dedicated, non-login users `karcher-api` and `karcher-monitor`.
 
 The unit files and guarded deploy pin `/var/www/st24`, the production mode and the
 state/config paths directly in `ExecStart`. Values with the same names in an
@@ -55,22 +55,22 @@ Build the in-place release before restarting the service. The resulting file
 configuration from the deployment root:
 
 ```sh
-sudo groupadd --system her-api
-sudo useradd --system --gid her-api --home-dir /nonexistent \
-  --shell /usr/sbin/nologin her-api
-sudo install -d -o root -g root -m 0755 /etc/her
-if [ ! -e /etc/her/api.env ]; then
-  sudo install -o root -g her-api -m 0640 server/.env.example /etc/her/api.env
+sudo groupadd --system karcher-api
+sudo useradd --system --gid karcher-api --home-dir /nonexistent \
+  --shell /usr/sbin/nologin karcher-api
+sudo install -d -o root -g root -m 0755 /etc/karcher
+if [ ! -e /etc/karcher/api.env ]; then
+  sudo install -o root -g karcher-api -m 0640 server/.env.example /etc/karcher/api.env
 fi
-sudo chown root:her-api /etc/her/api.env
-sudo chmod 0640 /etc/her/api.env
-sudoedit /etc/her/api.env
-if [ ! -e /etc/her/client.env ]; then
-  sudo install -o root -g her-api -m 0640 client/.env.example /etc/her/client.env
+sudo chown root:karcher-api /etc/karcher/api.env
+sudo chmod 0640 /etc/karcher/api.env
+sudoedit /etc/karcher/api.env
+if [ ! -e /etc/karcher/client.env ]; then
+  sudo install -o root -g karcher-api -m 0640 client/.env.example /etc/karcher/client.env
 fi
-sudo chown root:her-api /etc/her/client.env
-sudo chmod 0640 /etc/her/client.env
-sudoedit /etc/her/client.env
+sudo chown root:karcher-api /etc/karcher/client.env
+sudo chmod 0640 /etc/karcher/client.env
+sudoedit /etc/karcher/client.env
 ```
 
 Set `NODE_ENV=production`, the production database URL, secrets, explicit
@@ -81,10 +81,10 @@ public entry point. The service runs in `/var/www/st24/server`, matching
 in-place deploy does not remove untracked files, but uploads still need an
 independent backup together with PostgreSQL.
 
-`deploy.sh` and the service share `/etc/her/api.env`. Run the reviewed script as
+`deploy.sh` and the service share `/etc/karcher/api.env`. Run the reviewed script as
 root: it installs and rolls back the three managed API operations files as well
 as restarting the service. Keep the checkout, remote and build scripts under
-trusted administrative control; application processes still run as `her-api`.
+trusted administrative control; application processes still run as `karcher-api`.
 `DOTENV_CONFIG_PATH` also prevents the Node process from accidentally loading a
 stale `server/.env`.
 
@@ -99,30 +99,30 @@ Before the first service start, build and validate the exact release:
 ```sh
 npm ci
 npm test
-CLIENT_ENV_FILE=/etc/her/client.env \
+CLIENT_ENV_FILE=/etc/karcher/client.env \
   EXPECTED_VITE_API_URL=https://xn---24-3edf.xn--p1ai \
   npm run client:config:check
-CLIENT_ENV_FILE=/etc/her/client.env \
+CLIENT_ENV_FILE=/etc/karcher/client.env \
   EXPECTED_VITE_API_URL=https://xn---24-3edf.xn--p1ai \
   npm run client:build
 npm run build --workspace server
 npm run build --workspace monitor
-DOTENV_CONFIG_PATH=/etc/her/api.env NODE_ENV=production npm run config:check
+DOTENV_CONFIG_PATH=/etc/karcher/api.env NODE_ENV=production npm run config:check
 ```
 
 Before the first start, provision writable paths. Do not start the API yet:
 
 ```sh
 # Administrative ancestors must be trusted by tmpfiles before it traverses
-# into her-api-owned runtime directories. This is intentionally NOT recursive.
+# into karcher-api-owned runtime directories. This is intentionally NOT recursive.
 sudo chown root:root /var/www/st24 /var/www/st24/server /var/www/st24/.git
-sudo systemd-tmpfiles --create ops/tmpfiles/her-api.conf
-# One-time adoption if uploads existed before the her-api user:
-sudo chown -R her-api:her-api /var/www/st24/server/uploads \
+sudo systemd-tmpfiles --create ops/tmpfiles/karcher-api.conf
+# One-time adoption if uploads existed before the karcher-api user:
+sudo chown -R karcher-api:karcher-api /var/www/st24/server/uploads \
   /var/www/st24/server/tmp
 # If nginx serves /uploads directly, grant read/traverse only on that tree.
 # Install the distribution's `acl` package first. Never add www-data to the
-# her-api group: that group can read /etc/her/api.env.
+# karcher-api group: that group can read /etc/karcher/api.env.
 sudo setfacl -R -m u:www-data:rX /var/www/st24/server/uploads
 sudo find /var/www/st24/server/uploads -type d -exec \
   setfacl -m d:u:www-data:rx {} +
@@ -132,13 +132,13 @@ sudo find /var/www/st24/server/uploads -type d -exec \
 
 The tmpfiles policy provisions the two application-writable paths and creates
 the output file before systemd connects stdout to it. `LogsDirectory` also
-enforces ownership of `/var/log/her-api`. The sandbox keeps the rest of the
+enforces ownership of `/var/log/karcher-api`. The sandbox keeps the rest of the
 release and operating system read-only. API output is stored in
-`/var/log/her-api/api.log` and rotated without restarting the process.
+`/var/log/karcher-api/api.log` and rotated without restarting the process.
 Verify nginx can read both existing uploads and a newly created synthetic file
 under the service's `0027` umask, then remove that file. Save runtime ownership
 and ACLs before first adoption; the code rollback does not undo this bootstrap.
-The daily backup includes ACL/xattr metadata, managed `/etc/her` configuration,
+The daily backup includes ACL/xattr metadata, managed `/etc/karcher` configuration,
 tmpfiles and logrotate policy. Restore archives with `tar --acls --xattrs` after
 recreating the service account; do not restore only the stale checkout `.env`.
 
@@ -151,22 +151,22 @@ does not need PostgreSQL, nginx, uploads or a second API instance.
 Create its identity and restricted environment file on the independent host:
 
 ```sh
-sudo groupadd --system her-monitor
-sudo useradd --system --gid her-monitor --home-dir /var/lib/her-monitor \
-  --shell /usr/sbin/nologin her-monitor
-sudo install -d -o root -g root -m 0755 /etc/her-monitor
-if [ ! -e /etc/her-monitor/monitor.env ]; then
-  sudo install -o root -g her-monitor -m 0640 monitor/.env.example \
-    /etc/her-monitor/monitor.env
+sudo groupadd --system karcher-monitor
+sudo useradd --system --gid karcher-monitor --home-dir /var/lib/karcher-monitor \
+  --shell /usr/sbin/nologin karcher-monitor
+sudo install -d -o root -g root -m 0755 /etc/karcher-monitor
+if [ ! -e /etc/karcher-monitor/monitor.env ]; then
+  sudo install -o root -g karcher-monitor -m 0640 monitor/.env.example \
+    /etc/karcher-monitor/monitor.env
 fi
-sudo chown root:her-monitor /etc/her-monitor/monitor.env
-sudo chmod 0640 /etc/her-monitor/monitor.env
-sudoedit /etc/her-monitor/monitor.env
+sudo chown root:karcher-monitor /etc/karcher-monitor/monitor.env
+sudo chmod 0640 /etc/karcher-monitor/monitor.env
+sudoedit /etc/karcher-monitor/monitor.env
 ```
 
 Use a separate alert bot and, preferably, a separate alert network path. Set
-`MONITOR_STATE_FILE=/var/lib/her-monitor/state.json`; the systemd sandbox does
-not allow state outside `/var/lib/her-monitor`. Configure a real external
+`MONITOR_STATE_FILE=/var/lib/karcher-monitor/state.json`; the systemd sandbox does
+not allow state outside `/var/lib/karcher-monitor`. Configure a real external
 dead-man URL and leave `MONITOR_ALLOW_NO_HEARTBEAT=false`. Whenever a production
 bot token is configured, preflight also requires
 `MONITOR_TELEGRAM_CANARY_CHAT_ID`.
@@ -174,44 +174,44 @@ bot token is configured, preflight also requires
 Install the two oneshot services, their timers, and only the monitor log policy:
 
 ```sh
-for unit in her-monitor-check.service her-monitor-check.timer \
-  her-monitor-summary.service her-monitor-summary.timer; do
+for unit in karcher-monitor-check.service karcher-monitor-check.timer \
+  karcher-monitor-summary.service karcher-monitor-summary.timer; do
   sudo install -o root -g root -m 0644 "ops/systemd/$unit" \
     "/etc/systemd/system/$unit"
 done
-sudo install -o root -g root -m 0644 ops/logrotate/her-monitor \
-  /etc/logrotate.d/her-monitor
-sudo install -o root -g root -m 0644 ops/tmpfiles/her-monitor.conf \
-  /etc/tmpfiles.d/her-monitor.conf
-sudo systemd-tmpfiles --create /etc/tmpfiles.d/her-monitor.conf
-sudo systemd-analyze verify /etc/systemd/system/her-monitor-*.service \
-  /etc/systemd/system/her-monitor-*.timer
-sudo logrotate --debug /etc/logrotate.d/her-monitor
+sudo install -o root -g root -m 0644 ops/logrotate/karcher-monitor \
+  /etc/logrotate.d/karcher-monitor
+sudo install -o root -g root -m 0644 ops/tmpfiles/karcher-monitor.conf \
+  /etc/tmpfiles.d/karcher-monitor.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/karcher-monitor.conf
+sudo systemd-analyze verify /etc/systemd/system/karcher-monitor-*.service \
+  /etc/systemd/system/karcher-monitor-*.timer
+sudo logrotate --debug /etc/logrotate.d/karcher-monitor
 sudo systemctl daemon-reload
 ```
 
 The monitor tmpfiles policy creates its restricted output file before either
 oneshot service starts. Persistent monitor state remains managed separately by
-`StateDirectory=her-monitor`.
+`StateDirectory=karcher-monitor`.
 
 Run both modes manually before enabling the schedule. A check intentionally
 returns a non-zero status when a critical dependency is down; that failed unit
 state is useful evidence and does not stop future timer activations.
 
 ```sh
-sudo systemctl start her-monitor-check.service
-sudo systemctl status her-monitor-check.service
-sudo systemctl start her-monitor-summary.service
-sudo systemctl status her-monitor-summary.service
-sudo systemctl enable --now her-monitor-check.timer her-monitor-summary.timer
-systemctl list-timers 'her-monitor-*'
+sudo systemctl start karcher-monitor-check.service
+sudo systemctl status karcher-monitor-check.service
+sudo systemctl start karcher-monitor-summary.service
+sudo systemctl status karcher-monitor-summary.service
+sudo systemctl enable --now karcher-monitor-check.timer karcher-monitor-summary.timer
+systemctl list-timers 'karcher-monitor-*'
 ```
 
 The check runs every five minutes with up to 15 seconds of jitter. The summary
 runs daily at 09:02 in the monitor host's local timezone. `Persistent=yes`
 causes one missed activation to run after a reboot. Both modes run from
 `/var/www/st24/monitor` and use the same atomic state file and application-level
-lock in `/var/lib/her-monitor`. An outer `flock` also serializes timer catch-up
+lock in `/var/lib/karcher-monitor`. An outer `flock` also serializes timer catch-up
 after reboot: a summary waits for an active check instead of being silently
 discarded by the application lock.
 
@@ -221,8 +221,8 @@ run its no-network preflight under the service identity:
 ```sh
 npm ci --workspace monitor --include-workspace-root=false
 npm run build --workspace monitor
-sudo -u her-monitor env MONITOR_ENV_FILE=/etc/her-monitor/monitor.env \
-  MONITOR_STATE_FILE=/var/lib/her-monitor/state.json \
+sudo -u karcher-monitor env MONITOR_ENV_FILE=/etc/karcher-monitor/monitor.env \
+  MONITOR_STATE_FILE=/var/lib/karcher-monitor/state.json \
   /usr/bin/node /var/www/st24/monitor/dist/configCheck.js
 ```
 
@@ -252,7 +252,7 @@ alerts and a scheduled backup retention policy (for example 14 days plus an
 off-host copy). Include `.dump` files and adjacent `.ops.*` directories. Deploy
 retains successful backups and never deletes recovery history automatically.
 
-The frontend build reads only `/etc/her/client.env`, injects only the documented
+The frontend build reads only `/etc/karcher/client.env`, injects only the documented
 allowlist of public `VITE_*` values and requires `VITE_API_URL` to match the
 deploy API origin exactly. It does not merge an ignored `client/.env` into the
 production bundle.
@@ -262,8 +262,8 @@ revision; do not replace the live API unit with target files before deployment:
 
 ```sh
 git fetch origin
-git diff HEAD..origin/master -- ops/systemd/her-api.service \
-  ops/tmpfiles/her-api.conf ops/logrotate/her-api
+git diff HEAD..origin/master -- ops/systemd/karcher-api.service \
+  ops/tmpfiles/karcher-api.conf ops/logrotate/karcher-api
 ```
 
 After successful build and database smoke, deploy saves the currently installed
@@ -276,9 +276,9 @@ the previous database schema and writable paths.
 
 ```sh
 sudo install -d -o root -g root -m 0700 \
-  /var/www/backups/her-api
+  /var/www/backups/karcher-api
 cd /var/www/st24
-sudo bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
+sudo bash ./deploy.sh /var/www/st24 https://xn---24-3edf.xn--p1ai karcher-api
 ```
 
 The script accepts only a clean fast-forward update, runs config preflight,
@@ -301,14 +301,14 @@ the unit is missing, inactive or failed, opt in for bootstrap/recovery:
 
 ```sh
 sudo env DEPLOY_ALLOW_INACTIVE_SERVICE=1 bash ./deploy.sh \
-  /var/www/st24 https://xn---24-3edf.xn--p1ai her-api
+  /var/www/st24 https://xn---24-3edf.xn--p1ai karcher-api
 ```
 
 The flag accepts only `0` or `1` and is unnecessary once the service is active.
 After the first successful guarded start, enable boot startup separately:
 
 ```sh
-sudo systemctl enable her-api.service
+sudo systemctl enable karcher-api.service
 ```
 
 On rollback the deploy stops a target it attempted to start; an originally
@@ -321,10 +321,10 @@ This is still an in-place deployment, not a zero-downtime blue/green layout.
 Application logs are deliberately separate from the journal:
 
 ```sh
-sudo tail -n 200 /var/log/her-api/api.log
-sudo tail -n 200 /var/log/her-monitor/monitor.log
-sudo systemctl show -p Result,ExecMainStatus her-api.service
-sudo systemctl show -p Result,ExecMainStatus her-monitor-check.service
+sudo tail -n 200 /var/log/karcher-api/api.log
+sudo tail -n 200 /var/log/karcher-monitor/monitor.log
+sudo systemctl show -p Result,ExecMainStatus karcher-api.service
+sudo systemctl show -p Result,ExecMainStatus karcher-monitor-check.service
 ```
 
 Use `deploy.sh` for the guarded fast-forward update, readiness check and its

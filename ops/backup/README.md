@@ -45,9 +45,9 @@ Telemetry URL Cronitor, активного таймера и проверенн�
 
 Копия содержит custom-format dump PostgreSQL и архив приложения с uploads,
 исходниками, конфигурацией nginx, сертификатами и API unit. После перехода на
-управляемый сервис также обязательны `/etc/her/api.env`, `/etc/her/client.env`,
+управляемый сервис также обязательны `/etc/karcher/api.env`, `/etc/karcher/client.env`,
 tmpfiles/logrotate и существующая ссылка автозапуска API. Для дампа используется
-именно `/etc/her/api.env`; неполный набор не подменяется старым `server/.env`.
+именно `/etc/karcher/api.env`; неполный набор не подменяется старым `server/.env`.
 Архив сохраняет ACL/xattr загрузок: при восстановлении нужны `tar --acls --xattrs`
 и предварительно созданный сервисный пользователь (см. [ops](../README.md)). node_modules,
 Git internals и временные каталоги исключены. Ошибки tar не игнорируются.

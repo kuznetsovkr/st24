@@ -1,5 +1,5 @@
 {
-  "name": "her",
+  "name": "karcher",
   "version": "0.1.0",
   "private": true,
   "description": "E-commerce MVP (frontend + backend)",
@@ -14,7 +14,7 @@
   "scripts": {
     "test": "npm run test:client-config && npm run test:deploy-tools && npm run test:backup-config && npm run test:browser:policy && npm run test --workspaces --if-present",
     "test:client-config": "node --test scripts/client-config.test.mjs",
-    "test:deploy-tools": "node --test scripts/deploy-readiness.test.mjs scripts/postgres-command.test.mjs",
+    "test:deploy-tools": "node --test scripts/deploy-readiness.test.mjs scripts/postgres-command.test.mjs scripts/project-names.test.mjs",
     "test:backup-config": "node --test ops/backup/read-database-url.test.mjs",
     "test:browser": "playwright test",
     "test:browser:policy": "node --test tests/browser/network-policy.test.mjs",
