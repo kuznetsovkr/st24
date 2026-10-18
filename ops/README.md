@@ -113,6 +113,9 @@ DOTENV_CONFIG_PATH=/etc/her/api.env NODE_ENV=production npm run config:check
 Before the first start, provision writable paths. Do not start the API yet:
 
 ```sh
+# Administrative ancestors must be trusted by tmpfiles before it traverses
+# into her-api-owned runtime directories. This is intentionally NOT recursive.
+sudo chown root:root /var/www/st24 /var/www/st24/server /var/www/st24/.git
 sudo systemd-tmpfiles --create ops/tmpfiles/her-api.conf
 # One-time adoption if uploads existed before the her-api user:
 sudo chown -R her-api:her-api /var/www/st24/server/uploads \
