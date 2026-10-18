@@ -70,6 +70,25 @@ assert_absent 'sudo[[:space:]]+-n[[:space:]]+true'
 assert_absent '^umask 077$'
 assert_absent 'deploy-\$\{SERVICE_NAME\}\.lock'
 
+# Exercise the real helper, not a mocked build callback: command-local Bash
+# assignment to readonly CLIENT_ENV_FILE aborts even though Node only needs env.
+(
+  source "$DEPLOY_SCRIPT"
+  fixture="$(mktemp -d)"
+  trap 'rm -rf -- "$fixture"' EXIT
+  ROOT="$fixture/release"
+  CLIENT_CONFIG_RUNNER="$fixture/assert-env.mjs"
+  printf '%s\n' \
+    'import assert from "node:assert/strict";' \
+    'assert.equal(process.env.CLIENT_ENV_FILE, "/etc/her/client.env");' \
+    'assert.equal(process.env.EXPECTED_VITE_API_URL, "https://xn---24-3edf.xn--p1ai");' \
+    'assert.ok(process.env.CLIENT_CONFIG_ROOT.endsWith("/release"));' \
+    'assert.ok(["check", "build"].includes(process.argv[2]));' \
+    >"$CLIENT_CONFIG_RUNNER"
+  run_client_config check
+  run_client_config build
+)
+
 # Argument rejection is exercised without entering the repository/update path.
 output="$(bash "$DEPLOY_SCRIPT" /tmp https://example.test 'invalid service name' 2>&1 || true)"
 [[ "$output" == *'SERVICE_NAME contains unsupported characters'* ]] ||

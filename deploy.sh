@@ -267,7 +267,7 @@ run_postgres() {
 
 run_client_config() {
   local command="$1"
-  CLIENT_CONFIG_ROOT="$ROOT" \
+  env CLIENT_CONFIG_ROOT="$ROOT" \
     CLIENT_ENV_FILE="$CLIENT_ENV_FILE" \
     EXPECTED_VITE_API_URL="$API_URL" \
     node "$CLIENT_CONFIG_RUNNER" "$command"
