@@ -158,7 +158,8 @@ jobs:
           sudo python3 ops/security/test-firewall.py
           sudo install -d -m 0755 /usr/local/lib/karcher-security
           sudo install -m 0700 ops/security/load-firewall.sh /usr/local/lib/karcher-security/load-firewall.sh
-          systemd-analyze verify ops/security/karcher-firewall.service
+          # The loader is intentionally root-only (0700), like the service itself.
+          sudo systemd-analyze verify ops/security/karcher-firewall.service
 
       - name: Validate isolated nginx host configuration
         run: |
