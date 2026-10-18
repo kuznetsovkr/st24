@@ -7,6 +7,111 @@ import unittest
 
 
 class BackupScriptTests(unittest.TestCase):
+    def managed_api_fixture(self, root):
+        paths = {
+            'etc/her/api.env': 'DATABASE_URL=postgresql://synthetic@localhost/shop\n',
+            'etc/her/client.env': 'VITE_API_URL=https://shop.example.com\n',
+            'etc/tmpfiles.d/her-api.conf': 'd /synthetic/uploads 0750 her-api her-api -\n',
+            'etc/logrotate.d/her-api': '/synthetic/api.log {\n missingok\n}\n',
+            'etc/systemd/system/her-api.service': '[Service]\nEnvironmentFile=/etc/her/api.env\n',
+        }
+        for name, content in paths.items():
+            path = root/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        for name in ['etc/her/api.env', 'etc/her/client.env']:
+            (root/name).chmod(0o640)
+        boot = root/'etc/systemd/system/multi-user.target.wants/her-api.service'
+        boot.parent.mkdir()
+        boot.symlink_to('/etc/systemd/system/her-api.service')
+        return set(paths) - {'etc/systemd/system/her-api.service'} | {str(boot.relative_to(root))}
+
+    def collect_api(self, root, archive=None):
+        source = Path(__file__).with_name('karcher-backup.sh').read_text()
+        function = re.search(r'^collect_api_paths\(\) \{\n.*?^\}', source, re.M | re.S)
+        self.assertIsNotNone(function)
+        script = 'set -Eeuo pipefail\numask 077\nAPP_ROOT=/var/www/st24\n' + function.group(0)
+        script += '\ncollect_api_paths "$1" >&2\n'
+        if archive is not None:
+            script += 'tar --acls --xattrs -czf "$2" -C "$1" "${API_BACKUP_PATHS[@]}"\n'
+        script += 'printf "%s\\0" "$ENV_FILE" "${API_BACKUP_PATHS[@]}"\n'
+        result = subprocess.run(
+            ['bash', '-c', script, 'api-backup-test', str(root), str(archive or '')],
+            capture_output=True, timeout=10,
+        )
+        values = list(filter(None, result.stdout.decode().split('\0')))
+        return result, values
+
+    def test_legacy_api_backup_uses_checkout_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, values = self.collect_api(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(values, [str(root/'var/www/st24/server/.env')])
+
+    def test_managed_api_archive_preserves_configs_modes_and_boot_state(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as output:
+            root = Path(directory)
+            expected = self.managed_api_fixture(root)
+            archive = Path(output)/'managed-api.tar.gz'
+            result, values = self.collect_api(root, archive)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(values[0], str(root/'etc/her/api.env'))
+            self.assertEqual(set(values[1:]), expected)
+            with tarfile.open(archive) as tar:
+                self.assertEqual(set(tar.getnames()), expected)
+                self.assertEqual(tar.getmember('etc/her/api.env').mode, 0o640)
+                self.assertTrue(tar.getmember(
+                    'etc/systemd/system/multi-user.target.wants/her-api.service').issym())
+
+    def test_partial_managed_api_install_cannot_fall_back_to_stale_environment(self):
+        for missing in ['etc/her/api.env', 'etc/her/client.env',
+                        'etc/tmpfiles.d/her-api.conf', 'etc/logrotate.d/her-api']:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.managed_api_fixture(root)
+                (root/missing).unlink()
+                result, _ = self.collect_api(root)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_managed_api_unit_detects_loss_of_configuration_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            unit = root/'etc/systemd/system/her-api.service'
+            unit.parent.mkdir(parents=True)
+            unit.write_text('[Service]\nEnvironmentFile=/etc/her/api.env\n')
+            result, _ = self.collect_api(root)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_managed_api_configuration_symlinks_are_rejected(self):
+        for relative in ['etc/her', 'etc/her/api.env', 'etc/her/client.env',
+                         'etc/tmpfiles.d/her-api.conf', 'etc/logrotate.d/her-api']:
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.managed_api_fixture(root)
+                path = root/relative
+                moved = path.with_name(path.name+'.original')
+                path.rename(moved)
+                path.symlink_to(moved, target_is_directory=moved.is_dir())
+                result, _ = self.collect_api(root)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_managed_api_boot_link_requires_the_expected_unit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.managed_api_fixture(root)
+            link = root/'etc/systemd/system/multi-user.target.wants/her-api.service'
+            link.unlink()
+            link.symlink_to('/unexpected/unit.service')
+            result, _ = self.collect_api(root)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_production_archive_includes_managed_api_paths_and_acl_metadata(self):
+        source = Path(__file__).with_name('karcher-backup.sh').read_text()
+        self.assertIn('collect_api_paths /', source)
+        self.assertIn('"${API_BACKUP_PATHS[@]}"', source)
+        self.assertIn('--acls --xattrs', source)
+
     def security_fixture(self, root):
         files = {
             'etc/ssh/sshd_config': 'Include /etc/ssh/sshd_config.d/*.conf\n',

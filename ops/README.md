@@ -117,6 +117,12 @@ sudo systemd-tmpfiles --create ops/tmpfiles/her-api.conf
 # One-time adoption if uploads existed before the her-api user:
 sudo chown -R her-api:her-api /var/www/st24/server/uploads \
   /var/www/st24/server/tmp
+# If nginx serves /uploads directly, grant read/traverse only on that tree.
+# Install the distribution's `acl` package first. Never add www-data to the
+# her-api group: that group can read /etc/her/api.env.
+sudo setfacl -R -m u:www-data:rX /var/www/st24/server/uploads
+sudo find /var/www/st24/server/uploads -type d -exec \
+  setfacl -m d:u:www-data:rx {} +
 # Continue with guarded bootstrap below: backup and migration smoke run before
 # the target operations files are installed or the API starts.
 ```
@@ -126,6 +132,12 @@ the output file before systemd connects stdout to it. `LogsDirectory` also
 enforces ownership of `/var/log/her-api`. The sandbox keeps the rest of the
 release and operating system read-only. API output is stored in
 `/var/log/her-api/api.log` and rotated without restarting the process.
+Verify nginx can read both existing uploads and a newly created synthetic file
+under the service's `0027` umask, then remove that file. Save runtime ownership
+and ACLs before first adoption; the code rollback does not undo this bootstrap.
+The daily backup includes ACL/xattr metadata, managed `/etc/her` configuration,
+tmpfiles and logrotate policy. Restore archives with `tar --acls --xattrs` after
+recreating the service account; do not restore only the stale checkout `.env`.
 
 ## Independent monitor host
 

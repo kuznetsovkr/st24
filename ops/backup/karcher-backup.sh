@@ -10,7 +10,7 @@ readonly APP_ROOT=/var/www/st24
 readonly BACKUP_ROOT=/var/backups/st24
 readonly ENCRYPTED_ROOT=/var/backups/karcher-encrypted
 readonly RECIPIENTS_FILE=/etc/karcher-backup/recipients.txt
-readonly ENV_FILE="$APP_ROOT/server/.env"
+ENV_FILE=""
 readonly REMOTE=yadisk:karcher-backups-encrypted/v1
 readonly LOG_ROOT=/var/log/karcher-backup
 readonly COMMAND_TIMEOUT_SECONDS=600
@@ -19,6 +19,42 @@ DST=""
 OFFSITE_SOURCE=""
 STARTED_AT=""
 SECURITY_BACKUP_PATHS=()
+API_BACKUP_PATHS=()
+
+collect_api_paths() {
+  # Do not silently fall back to stale checkout secrets after managed adoption.
+  local root="${1%/}"
+  local path
+  API_BACKUP_PATHS=()
+  ENV_FILE="$root$APP_ROOT/server/.env"
+  if [[ ! -e "$root/etc/her" && ! -L "$root/etc/her" &&
+        ! -e "$root/etc/tmpfiles.d/her-api.conf" &&
+        ! -e "$root/etc/logrotate.d/her-api" ]] &&
+     ! grep -Fq 'EnvironmentFile=/etc/her/api.env' \
+       "$root/etc/systemd/system/her-api.service" 2>/dev/null; then
+    return 0
+  fi
+  [[ -d "$root/etc/her" && ! -L "$root/etc/her" ]] || {
+    printf 'backup: MANAGED_API_DIRECTORY_INVALID\n' >&2; return 1;
+  }
+  for path in etc/her/api.env etc/her/client.env \
+    etc/tmpfiles.d/her-api.conf etc/logrotate.d/her-api; do
+    [[ -f "$root/$path" && ! -L "$root/$path" ]] || {
+      printf 'backup: MANAGED_API_FILE_MISSING_OR_SYMLINKED: %s\n' "$path" >&2; return 1;
+    }
+    API_BACKUP_PATHS+=("$path")
+  done
+  path=etc/systemd/system/multi-user.target.wants/her-api.service
+  if [[ -e "$root/$path" || -L "$root/$path" ]]; then
+    [[ -L "$root/$path" &&
+       "$(readlink -- "$root/$path")" == /etc/systemd/system/her-api.service ]] || {
+      printf 'backup: MANAGED_API_BOOT_LINK_INVALID\n' >&2; return 1;
+    }
+    API_BACKUP_PATHS+=("$path")
+  fi
+  ENV_FILE="$root/etc/her/api.env"
+  printf 'backup: managed API recovery inputs verified: %s entries\n' "${#API_BACKUP_PATHS[@]}"
+}
 
 collect_security_paths() {
   # The explicit root is for isolated tests; production always passes literal /.
@@ -166,6 +202,9 @@ collect_security_paths /
 readonly -a SECURITY_BACKUP_PATHS
 
 STAGE=configuration
+collect_api_paths /
+readonly ENV_FILE
+readonly -a API_BACKUP_PATHS
 DATABASE_URL_VALUE="$(/usr/bin/node "$TOOLS_DIR/read-database-url.mjs" "$ENV_FILE")"
 run_pg() {
   DEPLOY_DATABASE_URL="$DATABASE_URL_VALUE" \
@@ -185,6 +224,7 @@ STAGE=files_archive
 # Include source/build artifacts and recovery configuration. Application temp,
 # dependencies and Git internals are excluded. Archive errors are fatal.
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
+  --acls --xattrs \
   --exclude='*/node_modules' --exclude='*/.git' --exclude='*/tmp' \
   --exclude='*/.monitor-state.json*' --exclude='*/.health-*.tmp' \
   -czf "$STAGING/st24_files.tar.gz" -C / \
@@ -192,6 +232,7 @@ timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
   etc/systemd/system/her-api.service \
   etc/karcher-backup \
   usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
+  "${API_BACKUP_PATHS[@]}" \
   "${SECURITY_BACKUP_PATHS[@]}" \
   2>"$LOG_ROOT/$SET_NAME.tar.log"
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
