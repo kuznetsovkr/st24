@@ -227,20 +227,18 @@ timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
   pg_restore --list "$STAGING/st24_db.dump" >/dev/null
 
 STAGE=files_archive
-# Include source/build artifacts and recovery configuration. Application temp,
-# dependencies and Git internals are excluded. Archive errors are fatal.
-timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" tar \
-  --acls --xattrs \
-  --exclude='*/node_modules' --exclude='*/.git' --exclude='*/tmp' \
-  --exclude='*/.monitor-state.json*' --exclude='*/.health-*.tmp' \
-  -czf "$STAGING/st24_files.tar.gz" -C / \
+# Archive a checked private copy, so excluded health canaries cannot invalidate
+# live directory mtimes during tar. Real source/copy/tar errors remain fatal.
+# files_archive.py preserves --acls --xattrs metadata and existing exclusions.
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+  python3 "$TOOLS_DIR/files_archive.py" --root / --output "$STAGING/st24_files.tar.gz" \
   var/www/st24 etc/nginx etc/letsencrypt \
   etc/systemd/system/karcher-api.service \
   etc/karcher-backup \
   usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
   "${API_BACKUP_PATHS[@]}" \
   "${SECURITY_BACKUP_PATHS[@]}" \
-  2>"$LOG_ROOT/$SET_NAME.tar.log"
+  >"$LOG_ROOT/$SET_NAME.tar.log" 2>&1
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
   tar -tzf "$STAGING/st24_files.tar.gz" >/dev/null
 

@@ -122,7 +122,9 @@ class BackupScriptTests(unittest.TestCase):
         source = Path(__file__).with_name('karcher-backup.sh').read_text()
         self.assertIn('collect_api_paths /', source)
         self.assertIn('"${API_BACKUP_PATHS[@]}"', source)
-        self.assertIn('--acls --xattrs', source)
+        self.assertIn('python3 "$TOOLS_DIR/files_archive.py" --root /', source)
+        helper = Path(__file__).with_name('files_archive.py').read_text()
+        self.assertIn("['tar', '--acls', '--xattrs'", helper)
 
     def security_fixture(self, root):
         files = {

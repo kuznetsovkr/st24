@@ -409,4 +409,109 @@ Backup `2026-10-19_04-57-04_UTC` зашифрован, выгружен и пр�
 partial сохранён, ошибки tar не подавлялись. Это отдельное улучшение надёжности
 бэкапов. Нового restore БД не было; APT/package snapshots не входят в offsite.
 Подробности, ограничения и точечный откат — [nginx runbook](../ops/runtime/NGINX-UPGRADE.md).
-Общие обновления ОС и согласованная перезагрузка остаются следующими задачами.
+На момент приёмки nginx обновления ОС и согласованная перезагрузка оставались
+следующими задачами. Частичное обновление Ubuntu выполнено следующим этапом.
+
+## Ubuntu без перезагрузки — 19 октября 2026
+
+В 12:14 по Красноярску установлены 30 точных обновлений из trusted Ubuntu origins,
+без новых пакетов, удалений или общего `apt upgrade`. Пакеты панели не тронуты.
+Версии/artifacts проверены по подписанным индексам; для восстановления сохранены
+старые `.deb`, 1873 payload-файла сверены с установленными, отдельно сделан
+root-only etc/dpkg snapshot. Pre-update offsite backup `2026-10-19_05-11-32_UTC`
+проверен. Пять firmware/boot/AppArmor updates осознанно отложены.
+
+Независимый systemd apply unit и cleanup `ExecStopPost` обеспечивали продолжение
+без SSH; scoped policy и временная остановка APT timers не дали package scripts
+перезапустить службы. nginx/API/SSH/PostgreSQL/Redis/resolved сохранили PID,
+перезапущен только qemu-guest-agent. Конфиги магазина, cron/statoverride,
+boot image/GRUB и активная AppArmor policy сохранены. Политика unattended-upgrades
+не менялась, transient policy удалён, таймеры восстановлены.
+
+Первый итоговый `apt-get check` встретил краткую frontend-lock конкуренцию от
+возобновлённого apt-daily и пометил apply unit failed уже после успешной установки.
+Без переустановки выполнен успешный независимый verify; добавлен lock timeout,
+failed state сброшен после проверки, исходная запись журнала сохранена.
+Пять раундов health за две минуты успешны; worker/три бота здоровы, очереди и
+business invariants нулевые, новых API errors/restarts/failed units нет.
+В 12:20 результат принят. 13 новых Linux/Windows safeguards прошли; полный
+runtime suite на VPS — 36 passed, isolated nginx tests повторно успешны.
+
+Post-update backup **`2026-10-19_05-17-20_UTC`** зашифрован и проверен скачиванием.
+Нового restore БД/расшифровки на ПК не было; private OS/package snapshot не в
+offsite allowlist. Read-only boot preflight проверил unit enable/dependencies,
+fstab, GRUB и реальный EFI/BOOT fallback, совпадающий с installed signed binaries.
+Это не реальный тест загрузки. Заказчик сможет быть на связи с консолью FirstVDS,
+но конкретное окно перезагрузки ещё не согласовано.
+
+VPS не перезагружался: работает ядро 142, ранее установленное 147 ожидает boot.
+Часть процессов ещё использует старые библиотеки; финальная активация обновлений
+не выполнена. Отдельно остаются пять deferred Ubuntu packages, reboot с консолью
+и backup/readiness race. Подробнее — [Ubuntu runbook](../ops/runtime/UBUNTU-UPDATES.md).
+
+## Завершение обновлений и reboot — 19 октября 2026
+
+Владелец подтвердил доступную консоль FirstVDS и заказчика на связи. В 17:30
+установлены пять оставшихся Ubuntu updates и 18 firmware split packages,
+23 новых артефакта сверены с подписанным индексом. Старые пять пакетов и 4314
+payload-файлов проверены, сохранён boot/etc/dpkg snapshot. Pre-update backup
+`2026-10-19_10-20-32_UTC` проверен в облаке. ISPmanager/данные не удалялись.
+
+Обнаружен dracut вместо initramfs-tools: отсутствие update-initramfs executable
+не исключает dpkg trigger. Штатный firmware trigger пересобрал все три initrds,
+строгий guard остановил приёмку из-за изменения fallback 142. Без reinstall,
+после проверки завершённой транзакции, исходные initrds восстановлены из snapshot;
+автоматические копии сохранены. Затем image 147 собран отдельно, проверен и
+установлен атомарно; fallback 142/88, kernel/GRUB/EFI bytes сохранены.
+Исторические baseline не переписывались, исходный guard failure оставлен в журнале.
+
+AppArmor package обновлён после shadow compile без kernel load; postinst штатно
+загрузил profiles, но постоянная service activation не добавлялась. Прежний
+disabled boot setting сохранён. После reboot профилей нет, как ожидается для
+этой настройки; это не утверждение о включённом AppArmor confinement.
+
+В 17:37:32 выполнен согласованный shutdown с минутной задержкой; свежий boot
+**17:38:43**, kernel **6.8.0-147-generic**. Внешние SSH/HTTP probes подтвердили
+смену boot ID и возврат readiness 200; API pause ориентировочно 20–30 секунд.
+Службы магазина/SSH/БД/firewall запустились сами, API UID 999, Node 24.22.0;
+перезапусков/failed units/error journal нет. Default denial/JS/CSS проверены,
+worker и три бота здоровы, queue/invariants — 0. Needrestart больше не показывает
+stale services или старое ядро, reboot marker отсутствует, Ubuntu updates — 0.
+
+Post-reboot backup **`2026-10-19_10-42-27_UTC`** зашифрован и проверен скачиванием.
+51 Linux runtime tests и isolated nginx test успешны, пять health-раундов прошли;
+в **17:47** результат принят. Новый restore БД/CI/push не выполнялись.
+Private boot/OS snapshots не входят в offsite allowlist.
+Наблюдение и приёмка — [boot maintenance runbook](../ops/runtime/BOOT-MAINTENANCE.md).
+Остаются backup/readiness race, recovery coverage и отдельное решение по AppArmor;
+массовое удаление пакетов/данных и старых ядер не выполнялось.
+
+## Backup/readiness race — 19 октября 2026
+
+Подтверждён конфликт: исключённые `.health-*.tmp` меняют metadata uploads directory,
+поэтому обычный GNU tar завершался с `file changed as we read it`. Даже явный
+список с `--no-recursion` на живом каталоге не устраняет race: в изолированном
+churn-эксперименте 4 из 12 попыток отказали. Ошибки tar не подавлялись.
+
+На VPS установлен backup-only fix: новый `files_archive.py` создаёт закрытую
+копию по явному NUL-списку через уже установленный rsync, проверяет содержимое,
+метаданные и hardlinks, архивирует стабильную копию, затем сверяет исходный набор.
+Исключены только прежние временные записи и неинформативные directory timestamps/
+size/nlink; реальные файловые изменения/ACL/ошибки чтения/rsync/tar остаются fatal.
+Это не атомарный snapshot PostgreSQL+uploads. API/nginx/SSH/БД не перезапускались,
+cron, доступы, secrets, retention и старые копии не менялись.
+
+Все 115 Linux backup-тестов успешны (15 новых), Node backup-config и ops validation
+прошли. Полный **`2026-10-19_10-59-32_UTC`** зашифрован, выгружен и проверен
+скачиванием. Во время 12,43-секундного запуска 82 readiness probes — без ошибок,
+uploads directory менялся дважды; `.last-run`/`.last-success` verified. Затем все
+752 записи локального tar извлечены в private temp и сверены по содержимому,
+правам/владельцам/ACL/xattr/ссылкам/file timestamps; temp удалён. Новый restore БД
+и повторная расшифровка cloud export не выполнялись.
+
+В 18:01 по Красноярску публичные site/ready/notifications — 200, failed units — 0,
+PID/NRestarts всех пяти служб прежние. Root-only отчёты и точечный rollback —
+`/root/karcher-backup-race-20261019/`; инструкция — [backup](../ops/backup/README.md).
+CI dependency step подготовлен, удалённый CI/commit/push не выполнялись.
+Далее остаются recovery coverage для OS/package snapshots, retention и отдельное
+решение по AppArmor. Случайный конфликт бэкапа с readiness закрыт этим шагом.
