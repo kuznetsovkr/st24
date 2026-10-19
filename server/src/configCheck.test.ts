@@ -52,10 +52,11 @@ test('validates a complete backend configuration without external I/O', () => {
 });
 
 test('accepts only the Node.js versions supported by every workspace', () => {
-  for (const version of ['20.19.0', '20.20.1', '22.13.0', '22.99.0', '24.0.0', '25.1.0']) {
+  for (const version of ['22.13.0', '22.99.0', '24.0.0', '24.22.0']) {
     assert.doesNotThrow(() => assertSupportedNodeVersion(version));
   }
-  for (const version of ['18.20.0', '20.18.1', '21.7.0', '22.12.0', '23.9.0', 'invalid']) {
+  for (const version of ['18.20.0', '20.18.1', '20.20.0', '21.7.0', '22.12.0',
+    '23.9.0', '25.1.0', '26.12.0', '24.23.0-rc.1', 'invalid']) {
     assert.throws(() => assertSupportedNodeVersion(version), /Node\.js/);
   }
 });

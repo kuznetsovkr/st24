@@ -9,9 +9,12 @@ For the separately managed host SSH policy and inbound firewall, see
 [production hardening record](../docs/production-hardening.md). The host firewall
 owns only its own nftables table and must not flush ISPmanager/Fail2ban rules.
 
+For the separately managed Node.js package update and nginx migration preparation,
+see [runtime/README.md](runtime/README.md). Runtime updates do not deploy application code.
+
 The examples assume:
 
-- a supported Node.js binary at `/usr/bin/node` (Node.js 22 LTS is recommended);
+- a supported Node.js binary at `/usr/bin/node` (current Node.js 24.x LTS patch is recommended);
 - `flock` from `util-linux` on the independent monitor host;
 - systemd 247 or newer (required by the process-visibility sandbox options);
 - the existing in-place deployment root at `/var/www/st24`;

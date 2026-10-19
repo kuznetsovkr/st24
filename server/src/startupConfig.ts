@@ -24,18 +24,17 @@ export type ServerStartupConfig = {
 export const assertSupportedNodeVersion = (
   version: string = process.versions.node
 ): void => {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:\+[\w.-]+)?$/);
   if (!match) {
     throw new Error('Node.js version is unsupported');
   }
   const major = Number(match[1]);
   const minor = Number(match[2]);
   const supported =
-    (major === 20 && minor >= 19) ||
     (major === 22 && minor >= 13) ||
-    major >= 24;
+    major === 24;
   if (!supported) {
-    throw new Error('Node.js 20.19+, 22.13+ or 24+ is required');
+    throw new Error('Node.js 22.13+ or 24.x LTS is required');
   }
 };
 

@@ -5,7 +5,7 @@
   "description": "Independent synthetic checks for the Karcher storefront and Telegram integrations",
   "type": "commonjs",
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24"
+    "node": "^22.13.0 || ^24.0.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

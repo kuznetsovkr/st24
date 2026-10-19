@@ -26,7 +26,7 @@ jobs:
       - name: Use supported Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.13.1
+          node-version: 24.22.0
           cache: npm
 
       - name: Install exact dependencies
@@ -86,7 +86,7 @@ jobs:
       - name: Use supported Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.13.1
+          node-version: 24.22.0
           cache: npm
 
       - name: Install exact dependencies
@@ -163,6 +163,9 @@ jobs:
 
       - name: Validate panel retirement safeguards
         run: sudo python3 -B -m unittest discover -s ops/security -p 'test_panel_*.py'
+
+      - name: Validate runtime upgrade safeguards
+        run: python3 -B -m unittest discover -s ops/runtime -p 'test_*.py'
 
       - name: Validate isolated nginx host configuration
         run: |

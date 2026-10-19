@@ -97,7 +97,7 @@
 
 ## Требования
 
-- Node.js 20.19+, 22.13+ или 24+; используйте LTS-ветку.
+- Node.js 22.13+ или 24.x LTS; для production используйте актуальный патч 24.x.
 - PostgreSQL 14+.
 - npm 10+.
 
@@ -155,7 +155,7 @@ npm run build --workspace client
 npm audit --omit=dev --audit-level=high
 ```
 
-GitHub Actions повторяет эти проверки на Node.js 22.13.1, поднимает чистую
+GitHub Actions повторяет эти проверки на Node.js 24.22.0, поднимает чистую
 PostgreSQL и проверяет idempotent schema init, резервирование склада и durable
 outbox. Workflow также запускается еженедельно, а Dependabot готовит отдельные
 PR для обновлений npm и GitHub Actions.

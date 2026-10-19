@@ -1,0 +1,7 @@
+# Preparation only: this root-private signing key is not a production install path.
+Types: deb
+URIs: https://nginx.org/packages/ubuntu
+Suites: noble
+Components: nginx
+Architectures: amd64
+Signed-By: /root/karcher-nginx-upgrade-plan-20261019/nginx.gpg

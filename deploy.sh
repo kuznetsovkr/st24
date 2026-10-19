@@ -131,11 +131,11 @@ check_supported_node() {
   local executable="$1"
 
   "$executable" -e '
+    if (process.versions.node.includes("-")) process.exit(1);
     const [major, minor] = process.versions.node.split(".").map(Number);
     const supported =
-      (major === 20 && minor >= 19) ||
       (major === 22 && minor >= 13) ||
-      major >= 24;
+      major === 24;
     if (!supported) process.exit(1);
   ' || fail "unsupported Node.js runtime: ${executable}"
 }

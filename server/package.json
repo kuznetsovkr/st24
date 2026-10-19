@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "API for the e-commerce project",
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24"
+    "node": "^22.13.0 || ^24.0.0"
   },
   "scripts": {
     "dev": "node --watch -r ts-node/register/transpile-only src/index.ts",

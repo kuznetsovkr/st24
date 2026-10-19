@@ -60,10 +60,11 @@ const operatingSystemEnvironment = (): NodeJS.ProcessEnv => {
 };
 
 test('preflight rejects runtimes outside the workspace Node.js range', () => {
-  for (const version of ['20.19.0', '22.13.0', '24.0.0']) {
+  for (const version of ['22.13.0', '24.0.0', '24.22.0']) {
     assert.doesNotThrow(() => assertSupportedNodeVersion(version));
   }
-  for (const version of ['18.20.0', '20.18.1', '22.12.0', '23.9.0']) {
+  for (const version of ['18.20.0', '20.18.1', '20.20.0', '22.12.0', '23.9.0',
+    '25.1.0', '26.12.0', '24.23.0-rc.1']) {
     assert.throws(() => assertSupportedNodeVersion(version), /Node\.js/);
   }
 });
