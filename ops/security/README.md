@@ -9,7 +9,13 @@ VPS магазина. Они **не применяются автоматиче�
 FTP, DNS, Apache/PHP и MySQL; пакеты и данные сохранены. Список, проверки и откат:
 [UNUSED-SERVICES.md](UNUSED-SERVICES.md).
 
-После этого из активного nginx отключены старые panel/admin-конфиги и listener
+18 октября повторный аудит обнаружил обход маски через ежедневный PHP-cleaner:
+core панели и cron-задания вернулись. Hook отключён через persistent
+`dpkg-statoverride`, новые panel jobs остановлены; пакеты и данные сохранены.
+Причина, host-specific helper, тесты обновления пакета и отдельный откат —
+[остаточный автозапуск](UNUSED-SERVICES.md#остаточный-автозапуск-ispmanager--18-октября-2026).
+
+Отдельным этапом из активного nginx отключены старые panel/admin-конфиги и listener
 1501, добавлен отдельный default denial для чужих Host/SNI:
 [nginx/README.md](../nginx/README.md). Конфиг магазина и платёжный gate сохранены.
 

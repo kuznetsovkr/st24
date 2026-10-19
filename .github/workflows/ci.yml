@@ -161,6 +161,9 @@ jobs:
           # The loader is intentionally root-only (0700), like the service itself.
           sudo systemd-analyze verify ops/security/karcher-firewall.service
 
+      - name: Validate panel retirement safeguards
+        run: sudo python3 -B -m unittest discover -s ops/security -p 'test_panel_*.py'
+
       - name: Validate isolated nginx host configuration
         run: |
           sudo systemctl mask nginx.service
