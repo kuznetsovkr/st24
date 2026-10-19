@@ -515,3 +515,36 @@ PID/NRestarts всех пяти служб прежние. Root-only отчёт�
 CI dependency step подготовлен, удалённый CI/commit/push не выполнялись.
 Далее остаются recovery coverage для OS/package snapshots, retention и отдельное
 решение по AppArmor. Случайный конфликт бэкапа с readiness закрыт этим шагом.
+
+## Recovery coverage — 19 октября 2026
+
+После локальных коммитов `c769d15` (Ubuntu/reboot) и `8daf024` (backup/readiness)
+в ежедневный файловый архив добавлен явный allowlist окружения: актуальные APT
+sources/pins/config/public keys, PostgreSQL/Redis/fail2ban settings, backup
+service/timer/boot links, nginx drop-in, root-cron, statoverride/diversions,
+PHP hook/panel safeguard, существующие systemd masks и справочные OS/network/
+boot/AppArmor configs. Каталог `/var/lib/karcher-backup` — root:root `700`,
+`recovery.json` — `600`: 797 установленных package versions, manual/hold lists,
+unit-file states без transient, app commit, timezone/kernel, пять account maps,
+526 config records с hash/mode/owner/ACL/xattr/links. До/после tar выполняется
+сверка пакетов/настроек; ошибки не превращаются в `verified`.
+
+Установлены только backup helper/runbook/main script; live OS/network/packages,
+env, nginx/SSH settings, cron/statoverride, PID/NRestarts служб не менялись.
+Все 127 Linux backup-тестов прошли (12 новых), Node backup-config и ops checks
+успешны. Набор **`2026-10-19_11-17-59_UTC`** создан за 14,26 секунды при 71
+успешном параллельном readiness probe, зашифрован/выгружен/проверен скачиванием.
+1281 записи локального tar извлечены в private temp и полностью сверены;
+526 config records совпали с manifest. Temp удалён. Экспорт заново скачан из
+облака и расшифрован на Windows потоком: age MAC, все SHA-256, inventory и
+installed source hashes успешны, открытых компонентов на ПК нет, identity
+на VPS не передавался. Root-only отчёты — `/root/karcher-recovery-20261019/`.
+
+Не добавлены private SSH/age keys, rclone OAuth config, старые `/root` rollback
+snapshots и package/boot binaries; Redis data и global PostgreSQL roles также
+вне набора. Полного clean-VPS recovery drill и нового restore БД не было.
+Age-формат не менялся. Ограничения, обязательный manual review и порядок
+восстановления — [RECOVERY.md](../ops/backup/RECOVERY.md).
+Retention, миграция старой незашифрованной истории и решение по AppArmor остаются
+отдельными задачами. GitHub CI/push не выполнялись; новые правки этого этапа
+ещё не закоммичены.

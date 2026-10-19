@@ -20,6 +20,7 @@ OFFSITE_SOURCE=""
 STARTED_AT=""
 SECURITY_BACKUP_PATHS=()
 API_BACKUP_PATHS=()
+SYSTEM_BACKUP_PATHS=()
 
 collect_api_paths() {
   # Do not silently fall back to stale checkout secrets after managed adoption.
@@ -221,6 +222,17 @@ run_pg() {
 [[ ! -e "$DST" && ! -e "$STAGING" && ! -e "$OFFSITE_SOURCE" && ! -e "$ENCRYPTED_STAGING" ]]
 mkdir -m 0700 "$STAGING"
 
+STAGE=system_recovery
+# Capture current environment, not old pre-upgrade rollback directories. A
+# producer failure must reach ERR; mapfile with process substitution hides it.
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+  python3 -B "$TOOLS_DIR/recovery_inventory.py" --backup-set "$SET_NAME" \
+  >"$STAGING/.recovery-paths" 2>"$LOG_ROOT/$SET_NAME.recovery.log"
+mapfile -d '' -t SYSTEM_BACKUP_PATHS <"$STAGING/.recovery-paths"
+(( ${#SYSTEM_BACKUP_PATHS[@]} > 0 ))
+readonly -a SYSTEM_BACKUP_PATHS
+rm -- "$STAGING/.recovery-paths"
+
 STAGE=database_dump
 run_pg pg_dump --no-password --format=custom --file="$STAGING/st24_db.dump"
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
@@ -238,9 +250,15 @@ timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
   usr/local/lib/karcher-backup usr/local/bin/st24-backup.sh \
   "${API_BACKUP_PATHS[@]}" \
   "${SECURITY_BACKUP_PATHS[@]}" \
+  "${SYSTEM_BACKUP_PATHS[@]}" \
   >"$LOG_ROOT/$SET_NAME.tar.log" 2>&1
 timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
   tar -tzf "$STAGING/st24_files.tar.gz" >/dev/null
+
+STAGE=system_recovery_verification
+timeout --kill-after=10s "${COMMAND_TIMEOUT_SECONDS}s" \
+  python3 -B "$TOOLS_DIR/recovery_inventory.py" --backup-set "$SET_NAME" --verify \
+  >>"$LOG_ROOT/$SET_NAME.recovery.log" 2>&1
 
 STAGE=checksums
 (cd "$STAGING" && sha256sum st24_db.dump st24_files.tar.gz >SHA256SUMS.txt && \

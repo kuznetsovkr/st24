@@ -3,6 +3,11 @@
 Host-specific операции для `/var/www/st24`, не универсальный installer и не
 часть `deploy.sh`. Секреты, .deb, receipts и служебные логи в Git не помещать.
 
+С 19 октября ежедневная зашифрованная копия включает актуальные APT/configuration
+и package/account/unit inventory — [recovery runbook](../backup/RECOVERY.md).
+Исторические private rollback snapshots, `.deb` и boot binaries по-прежнему
+только на VPS: ежедневный набор не стал образом ОС или offline package mirror.
+
 ## Node.js — применено 19 октября 2026
 
 Около 11:34 по Красноярску production переведён с Node.js **20.20.0** на
@@ -72,8 +77,10 @@ age encryption, upload и downloaded-content comparison успешны. Это �
 и самопроизвольные API restarts отсутствуют. VPS не перезагружался.
 
 Controller, пакеты, receipts и логи — `/root/karcher-node24-20261019` (`0700`),
-source — [node_upgrade.py](node_upgrade.py). **Снимок, APT configs и .deb не добавлены
-в ежедневный offsite allowlist**. При восстановлении нового VPS сначала повторно
+source — [node_upgrade.py](node_upgrade.py). На момент Node switch снимок,
+APT configs и .deb не входили в ежедневный offsite allowlist. Позднее актуальные
+APT configs включены по [recovery runbook](../backup/RECOVERY.md), но исторические
+снимок и `.deb` не экспортировались. При восстановлении нового VPS сначала повторно
 установить проверенный Node 24 и настроить репозиторий по шаблону; backup магазина
 не является образом ОС.
 

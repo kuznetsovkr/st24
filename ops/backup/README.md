@@ -20,6 +20,8 @@ Telemetry URL Cronitor, активного таймера и проверенн�
 - `authorize-yandex.py` из этого каталога (ручное восстановление доступа);
 - `encrypted_backup.py` из этого каталога (age, Python 3.11+);
 - `files_archive.py` из этого каталога (проверенная временная копия, rsync);
+- `recovery_inventory.py` и `RECOVERY.md` из этого каталога
+  (актуальные настройки окружения и ручное восстановление);
 - `backup_health.py` из этого каталога (проверка и независимые сигналы);
 - `postgres-command.mjs` из `scripts/`.
 
@@ -53,6 +55,36 @@ tmpfiles/logrotate и существующая ссылка автозапуск
 и предварительно созданный сервисный пользователь (см. [ops](../README.md)). node_modules,
 Git internals и временные каталоги исключены. Ошибки tar не игнорируются.
 Набор становится завершённым только после чтения архива и проверки SHA-256.
+
+Текущие package versions, APT sources/keys/pins, PostgreSQL/Redis/fail2ban config,
+backup timers/cron, nginx drop-in, systemd masks и справочные OS/boot/network
+настройки включаются по явному allowlist. Инвентаризация обновляется при каждом
+запуске и перепроверяется после tar; при ошибке stage `system_recovery` либо
+`system_recovery_verification` копия не становится `verified`. Состав, ограничения
+и порядок переноса на другой VPS — [RECOVERY.md](RECOVERY.md).
+
+**Принято 19 октября 2026:** набор `2026-10-19_11-17-59_UTC` (18:17 по Красноярску)
+содержит inventory 797 установленных пакетов и 526 записей recovery-config.
+Все 127 Linux backup-тестов прошли, включая 12 новых тестов инвентаризации.
+Бэкап завершён за 14,26 секунды, 71 параллельный readiness-запрос — без ошибок.
+После age encryption/upload/downloaded-content comparison экспорт ещё раз
+скачан именно из облака и расшифрован на Windows потоком: age authentication,
+внешние/внутренние SHA-256, recovery manifest и версии installed tools совпали.
+Новые расшифрованные компоненты на ПК не записывались, identity на VPS не передавался.
+
+Все 1281 записи локального tar отдельно извлечены на VPS в private temp и
+сверены с живыми файлами по содержимому, mode/UID/GID, ACL/xattr, symlink/hardlink
+и file timestamps; 526 конфигурационных записей также совпали с recovery.json.
+Temp удалён. Новый restore БД/полное развёртывание на другом VPS не выполнялись.
+Shop configs/cron/statoverride и PID/NRestarts пяти служб не менялись.
+
+Root-only staging/отчёты: `/root/karcher-recovery-20261019/`. Предыдущий скрипт —
+`rollback/karcher-backup.sh`; для отката вернуть **его** под backup lock по образцу
+ниже, заменив путь к rollback. Новый inventory/runbook/helper можно оставить:
+старый скрипт их не вызывает. Старые копии/конфиги не удалять.
+На ПК остался только новый ciphertext в закрытом
+`$HOME/.config/karcher-backup/encrypted-recovery-check-20261019T111759Z` и безопасный
+отчёт `recovery-check-20261019T111759Z.json` рядом. Эти данные не в проекте/Git.
 
 ### Параллельные readiness-проверки
 
