@@ -64,7 +64,9 @@ def main():
         config = main_config.replace("/etc/nginx/", str(root) + "/")
         config = config.replace("/run/nginx.pid", str(root / "nginx.pid"))
         config = config.replace("/var/log/nginx/", str(root) + "/")
-        config = re.sub(r"^user .*;\n", "", config, flags=re.MULTILINE)
+        # Do not depend on the binary's compiled default account: an extracted
+        # nginx.org package may name a user its preinst has not created yet.
+        config = re.sub(r"^user .*;\n", "user www-data;\n", config, flags=re.MULTILINE)
         config = config.replace("worker_processes auto;", "worker_processes 1;")
         config = config.replace("http {", "http {\n" + "\n".join(
             f"    {directive} {root / folder};" for directive, folder in [

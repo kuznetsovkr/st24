@@ -1,0 +1,6 @@
+Types: deb
+URIs: https://nginx.org/packages/ubuntu
+Suites: noble
+Components: nginx
+Architectures: amd64
+Signed-By: /usr/share/keyrings/karcher-nginx.gpg

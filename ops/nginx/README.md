@@ -5,6 +5,12 @@
 Пакеты, данные и старые конфиги панели не удалены. Магазин не перезапускался;
 nginx применил настройки через graceful reload.
 
+19 октября пакет nginx отдельно переведён на официальный 1.30.6 с удалением
+неиспользуемых модулей старого ABI. Main/shop/default-deny сохранены; описание
+миграции и **актуального package rollback** — [runtime runbook](../runtime/NGINX-UPGRADE.md).
+Ниже история очистки 17 октября; её старый helper не применять вслепую после
+новой пакетной миграции.
+
 ## Файлы и маршрутизация
 
 | Источник | Файл на VPS |
@@ -34,7 +40,7 @@ API/uploads по-прежнему проксируются на `127.0.0.1:4000`
 сертификата. Известный SNI с чужим HTTP Host также не отдаёт магазин.
 Это использует [выбор default server](https://nginx.org/en/docs/http/request_processing.html)
 и [ssl_reject_handshake](https://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_reject_handshake)
-(nginx >= 1.19.4; на VPS проверен 1.28.2).
+(nginx >= 1.19.4; на VPS проверены 1.28.2 и затем 1.30.6).
 
 IPv4 HTTP/HTTPS и существующий IPv6 HTTP listener сохранены. IPv6 HTTPS магазину
 здесь не добавлялся: у VPS нет глобального IPv6 и у shop vhost нет `listen [::]:443`.

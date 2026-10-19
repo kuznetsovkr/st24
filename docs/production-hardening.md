@@ -373,8 +373,40 @@ comparison; это также проверка backup helpers под Node 24. Н
 ОС не устанавливались. Правки engines/preflight/deploy policy и CI закрепляют
 поддерживаемые LTS-ветки 22/24, без EOL 20, prerelease и произвольных будущих major.
 
-nginx всё ещё 1.28.2 ISPmanager: в private staging подготовлен официальный
-1.30.6, но симуляция требует заменить nginx-common/core и удалить шесть
-неиспользуемых модулей старого ABI. До отдельного подтверждения миграция не
-выполняется. Снимок, ограничения и откат Node/план nginx —
-[runtime runbook](../ops/runtime/README.md).
+На момент приёмки Node nginx ещё оставался 1.28.2 ISPmanager. После отдельного
+согласования его миграция выполнена следующим шагом, описанным ниже.
+
+## Официальный nginx — 19 октября 2026
+
+В 11:52 по Красноярску nginx переведён с ISPmanager 1.28.2 на официальный
+**1.30.6** (`1.30.6-1~noble`). По разрешению владельца заменены nginx-common/core
+и удалены шесть неиспользуемых модулей старого ABI; пакет панели и другие пакеты
+не удалены. Сохранены все девять старых `.deb` (repack с проверкой payload),
+конфиги/unit, выполнены isolated network-namespace tests и shadow syntax check.
+Новый `.deb` проверен по подписанному официальному индексу.
+
+До изменения проверен backup `2026-10-19_04-50-24_UTC` и независимый rollback
+handler на исходном состоянии; обратная переустановка пакетов не репетировалась.
+Во время установки nginx остановлен и его автозапуск заблокирован scoped policy;
+vendor default site отключён до старта. Короткий перерыв составил 8,91 секунды.
+Main/shop/webhook gate/default-deny сохранены побайтово. Новый nginx PID `368384`,
+API/SSH/PostgreSQL/Redis PID не изменились; VPS не перезагружался.
+
+Официальный source/keyring и nginx-only pin 1001 установлены; старый nginx source
+отключён с сохранением. Hold `ispmanager-pkg-nginx` защищает от возврата старой
+упаковки. Остальные APT repositories/политика unattended-upgrades не менялись.
+Сохранены www-data workers, права новых temp directories, unit drop-in и boot enable.
+
+Сайт/API/notifications здоровы, JS/CSS/изображение совпали с диском, 2 MiB POST
+на несуществующий route вернул 404 без бизнес-записей. Проверены redirect,
+UTF-8/JSON/no-store, Host/SNI denial и Certbot staging dry-run. Пять health-раундов
+за две минуты успешны; nginx/API errors и failed units нет. В 11:57 switch принят,
+таймер отката остановлен. 13 новых Linux safeguards прошли; GitHub CI не запускался.
+
+Backup `2026-10-19_04-57-04_UTC` зашифрован, выгружен и проверен скачиванием;
+все 27 файлов nginx/права/ссылки совпали с архивом. Предыдущая попытка отказала
+из-за изменения uploads во время чтения, вероятно параллельными readiness probes;
+partial сохранён, ошибки tar не подавлялись. Это отдельное улучшение надёжности
+бэкапов. Нового restore БД не было; APT/package snapshots не входят в offsite.
+Подробности, ограничения и точечный откат — [nginx runbook](../ops/runtime/NGINX-UPGRADE.md).
+Общие обновления ОС и согласованная перезагрузка остаются следующими задачами.

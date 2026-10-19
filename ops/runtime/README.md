@@ -105,26 +105,16 @@ sudo python3 /root/karcher-node24-20261019/node_upgrade.py revert
 python3 -B -m unittest discover -s ops/runtime -p 'test_*.py'
 ```
 
-Все десять тестов прошли на VPS и ПК; шаг добавлен в CI, но новый GitHub run
+Все десять Node-тестов прошли на VPS и ПК; шаг добавлен в CI, но новый GitHub run
 этим этапом не запускался. Lint без ошибок, с восемью существующими warnings
 в клиентском коде, не относящимися к runtime.
 
-## nginx — только подготовка, production не менялся
+## nginx — применено 19 октября 2026
 
-На VPS остаётся `1:1.28.2-142-ubuntu24` из ISPmanager. В private APT namespace
-`/root/karcher-nginx-upgrade-plan-20261019` проверены ключ и подписанный индекс
-[nginx.org](https://nginx.org/en/linux_packages.html), доступен `1.30.6-1~noble`.
-`nginx-plan.sources` — **только шаблон этого staging**, не production APT config.
-
-Переход требует убрать `nginx-common`, `nginx-core` и шесть модулей старого ABI:
-HTTP GeoIP, image filter, XSLT, mail, stream, stream GeoIP. Их директивы в активной
-конфигурации не используются, но `.so` загружены; просто заменить бинарник нельзя.
-`ispmanager-pkg-nginx` симуляция не удаляет. APT называет это downgrade из-за
-epoch `1:` старого пакета, хотя версия nginx растёт с 1.28.2 до 1.30.6.
-
-Переход требует отдельного подтверждения пакетных замен, артефактов отката **всех**
-затронутых пакетов и проверки maintainer scripts. Нужно предотвратить автозапуск
-с дефолтным сайтом nginx.org/другим пользователем, сохранить shop vhost, платёжный
-secret gate, UTF-8, ACME и default denial и адаптировать include модулей. Пока
-nginx repository, пакеты, конфигурация и процесс production не менялись.
-Обновления остальных пакетов ОС и reboot также не выполнялись.
+В 11:52 по Красноярску после отдельного разрешения владельца nginx переведён
+с ISPmanager 1.28.2 на официальный **1.30.6**. В 11:57 миграция принята,
+таймер отката отменён; API и остальные службы не перезапускались.
+Пакеты, проверки, backup, ограничения и ручной откат —
+[NGINX-UPGRADE.md](NGINX-UPGRADE.md).
+`nginx-plan.sources` — только исторический private staging template;
+production source — `nginx.sources`. Общие OS updates и reboot не выполнялись.
