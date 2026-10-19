@@ -117,4 +117,22 @@ python3 -B -m unittest discover -s ops/runtime -p 'test_*.py'
 Пакеты, проверки, backup, ограничения и ручной откат —
 [NGINX-UPGRADE.md](NGINX-UPGRADE.md).
 `nginx-plan.sources` — только исторический private staging template;
-production source — `nginx.sources`. Общие OS updates и reboot не выполнялись.
+production source — `nginx.sources`. На этапе nginx OS updates/reboot не выполнялись.
+
+## Ubuntu — частичное обновление 19 октября 2026
+
+В 12:14 по Красноярску установлены 30 проверенных обновлений Ubuntu, без новых
+пакетов/удалений и без перезапуска магазина/SSH/БД. Результат принят в 12:20.
+Пять boot/policy-sensitive updates отложены, VPS **не перезагружался**; часть
+обновлённых библиотек ещё не активирована в старых процессах.
+Проверки, бэкапы, ограничения восстановления и следующий maintenance window —
+[UBUNTU-UPDATES.md](UBUNTU-UPDATES.md).
+
+## Ubuntu и reboot — завершено 19 октября 2026
+
+После подтверждения рабочей консоли FirstVDS установлены пять оставшихся
+обновлений и 18 firmware split packages, подготовлен и проверен dracut image.
+В 17:38 по Красноярску VPS успешно загрузился с **6.8.0-147-generic**;
+магазин/SSH/БД/firewall стартовали автоматически. Stale processes и pending
+Ubuntu updates не осталось, AppArmor boot setting сохранён прежним (disabled).
+Подробности, backup/recovery ограничения — [BOOT-MAINTENANCE.md](BOOT-MAINTENANCE.md).
