@@ -69,6 +69,39 @@ class BackupHealthTests(unittest.TestCase):
         self.assertEqual(self.check()['code'], 'BACKUP_VERIFIED')
         self.assertAlmostEqual(self.check()['ageHours'], 1.98)
 
+    def retention(self,settings=None,value=None,now=NOW):
+        configuration=self.root/'retention.json'
+        state=self.root/'retention-last-run.json'
+        self.write(configuration.name,{'enabled':True} if settings is None else settings)
+        self.write(state.name,{'status':'ok','checkedAt':'2026-10-17T11:00:00Z'} if value is None else value)
+        return health.retention_check(now,configuration,state)
+
+    def test_retention_disabled_or_uninstalled_does_not_change_existing_monitoring(self):
+        self.assertIsNone(health.retention_check(NOW,self.root/'missing',self.root/'missing-state'))
+        self.assertIsNone(self.retention(settings={'enabled':False}))
+
+    def test_retention_success_is_healthy_but_failure_and_missing_state_are_not(self):
+        self.assertEqual(self.retention()['code'],'RETENTION_OK')
+        self.assertEqual(self.retention(value={'status':'failed','checkedAt':'2026-10-17T11:00:00Z'})['code'],'RETENTION_FAILED')
+        missing=self.root/'missing-state'
+        self.assertEqual(health.retention_check(NOW,self.root/'retention.json',missing)['code'],'RETENTION_STATE_UNAVAILABLE')
+
+    def test_retention_stale_stuck_future_and_malformed_states_fail(self):
+        self.assertEqual(self.retention(now=NOW+timedelta(hours=31))['code'],'RETENTION_STALE')
+        running={'status':'running','checkedAt':'2026-10-17T11:50:00Z'}
+        self.assertEqual(self.retention(value=running)['code'],'RETENTION_OK')
+        self.assertEqual(self.retention(value=running,now=NOW+timedelta(minutes=20))['code'],'RETENTION_STUCK')
+        self.assertEqual(self.retention(value={'status':'ok','checkedAt':'2026-10-19T00:00:00Z'})['status'],'failed')
+        self.assertEqual(self.retention(settings={'enabled':'true'})['code'],'RETENTION_CONFIG_INVALID')
+        self.assertEqual(self.retention(value={'status':'invented','checkedAt':'2026-10-17T11:00:00Z'})['code'],'RETENTION_STATE_INVALID')
+
+    def test_all_script_failure_stages_are_understood_by_the_watchdog(self):
+        import re
+        source=Path(__file__).with_name('karcher-backup.sh').read_text()
+        self.assertLessEqual(set(re.findall(r'^STAGE=([a-z_]+)$',source,re.M)),health.STAGES)
+        self.write('.last-run.json',stamp(status='failed',stage='system_recovery_verification',checkedAt='2026-10-17T11:00:00Z'))
+        self.assertEqual(self.check()['code'],'BACKUP_RUN_FAILED')
+
     def test_missing_success_is_not_inferred_from_directory_names_or_last_run(self):
         (self.root/'.last-success.json').unlink()
         self.assertEqual(self.check()['code'], 'LAST_SUCCESS_MISSING')

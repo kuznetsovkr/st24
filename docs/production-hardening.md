@@ -548,3 +548,215 @@ Age-формат не менялся. Ограничения, обязатель
 Retention, миграция старой незашифрованной истории и решение по AppArmor остаются
 отдельными задачами. GitHub CI/push не выполнялись; новые правки этого этапа
 ещё не закоммичены.
+
+## Подготовка retention — 20 октября 2026
+
+В 07:30 по Красноярску суточный набор `2026-10-20_00-30-01_UTC` прошёл обычный
+backup: verified/complete, `.last-run` совпал с `.last-success`. Read-only аудит:
+50 локальных plaintext наборов (803 MiB), 27 ciphertext (474 MiB), 27 новых
+cloud exports (474 MiB), 23 legacy cloud (330 MiB); VPS free ~42 GiB, Disk free
+~5,4 GiB. Один старый partial сохранён. Рабочая папка на старте была чистой,
+HEAD `f6289b8`; новые изменения не коммитились и не отправлялись.
+
+Подготовлены opt-in retention worker/policy, sandboxed daily service/timer
+08:15 Красноярск, backup watchdog checks и recovery coverage. Предложены local
+7 суток, cloud все 48 часов + календарные 30 дней/12 недель/12 месяцев,
+постоянные pins для проверенных age DB/security/recovery sets и защита latest3.
+Точные allowlists, проверки SHA-256/recipient, совместный lock, безопасные
+конечные local unlink и cloud trash-only описаны в [RETENTION.md](../ops/backup/RETENTION.md).
+Ни legacy, partial, OS snapshots, ни общая корзина Disk не участвуют в удалении.
+
+Все 149 Linux backup-тестов, Node backup-config/ops validation, syntax/calendar
+двух новых units прошли. Полный read-only план дважды остановился: облачный
+`2026-10-18_03-56-56_UTC/SHA256SUMS.txt` устойчиво возвращает HTTP 500 даже после
+ограниченных повторов. Подавления ошибки/перезаписи/удаления не было. Владелец
+должен подтвердить policy и отдельно разрешить повторную загрузку служебного
+файла теми же байтами после сверки экспорта. **Применение не выполнено**:
+config/service/timer/new helpers не установлены на production, только private
+staging `/root/karcher-retention-20261020`. Сайт/ready/notifications — 200.
+
+## Retention включён, приёмка нового бэкапа ожидает решения — 20 октября 2026
+
+После явного разрешения владельца только старый
+`2026-10-18_03-56-56_UTC/SHA256SUMS.txt` повторно загружен теми же 161 байтом.
+До/после проверены локальные checksum, downloaded ciphertext/manifest и metadata;
+скачивание восстановлено, архив/manifest не менялись. Полный plan проверил все
+27 облачных наборов и 27 локальных пар, systemd sandbox smoke прошёл.
+
+Установлены approved root-only config `enabled=true`, worker, watchdog/recovery
+updates и daily service/timer. Первый worker завершился в 10:45:08 Красноярск:
+6 избыточных облачных наборов (108 676 450 байт) перемещены в корзину, local
+удалений 0. Сохранились 21 cloud set, pins3 и все локальные пары; после применения
+сверены survivor listings и local hashes/metadata. Legacy cloud23/69 файлов,
+старый partial, OS snapshots и общая корзина не затронуты. Timer active/enabled,
+следующий запуск 21 октября 08:15 Красноярск. Изолированные failure/stale тесты
+watchdog дают тревожный статус, без фальшивого состояния/внешних test alerts.
+
+149 Linux backup-тестов повторно успешны, Node backup-config4 и ops validation
+прошли. Новый `2026-10-20_03-49-01_UTC` локально проверен: 1287 tar entries
+извлечены в private temp и полностью сверены, 530 recovery config records,
+797 package versions и retention inputs совпали; temp удалён. Но полная приёмка
+**не завершена**: upload прошёл, новое облачное `MANIFEST.json` стабильно отдаёт
+HTTP 500, включая три штатные и дополнительные read-only попытки. Metadata
+size/MD5 совпадают с локальными 234 байтами, downloaded ciphertext и checksum
+совпадают; новый manifest не перезаписывался без отдельного разрешения.
+
+`.last-run` остаётся failed/offsite_verification, `.last-success` — прежний
+`2026-10-20_00-30-01_UTC`; watchdog `BACKUP_RUN_FAILED`. Fresh-checkpoint guard
+не позволит следующей очистке идти при таком состоянии. Shop configs/cron и
+PID/NRestarts пяти служб прежние, site/ready/notifications в 10:52 Красноярск —
+200. Root-only receipts/rollback — `/root/karcher-retention-20261020`.
+CI/push/commit, новый restore БД и clean-VPS recovery drill не выполнялись.
+Следующий шаг требует разрешения на восстановление только нового manifest,
+полной проверки его чтения и нового подтверждённого бэкапа.
+
+## Финальная приёмка retention — 20 октября 2026
+
+После отдельного разрешения владельца в **10:56:19 по Красноярску** повторно
+загружены только те же 234 байта `2026-10-20_03-49-01_UTC/MANIFEST.json`.
+До/после сверены локальные пары, metadata size/MD5 и скачанные компоненты;
+полный remote export снова читается, все SHA-256/manifest/recipient совпали.
+Ciphertext, checksum и локальные файлы не менялись. Причина HTTP 500 у провайдера
+не установлена; автоматического подавления ошибок или переписывания истории нет.
+
+Набор `2026-10-20_03-57-05_UTC` затем штатно verified/complete за 12,79 секунды,
+55 readiness probes — без ошибок. Дополнительная сверка recovery обнаружила
+только display padding `systemctl list-unit-files`: transient unit с длинным
+именем менял ширину всех строк. Collector/verify теперь нормализуют пробелы и
+порядок строк, совместимы с прежним padding, но всё ещё ловят добавление/удаление
+unit и изменения state/preset. Три новых regression tests, все **152 Linux backup
+tests** успешны; Node backup-config4, ops validation и diff checks также прошли.
+Точечный rollback helper сохранён, другие настройки сервера не менялись.
+
+Финальный **`2026-10-20_04-00-40_UTC`** (11:00 Красноярск) с установленным fix
+завершился verified/complete за **11,48 секунды**, 49 readiness probes без ошибок.
+`.last-run` совпадает с `.last-success`; исторический failure не переписывался
+вручную. Все **1287 записи tar** извлечены в private temp и сверены с live по
+содержимому, mode/UID/GID, timestamps, ACL/xattr, symlink/hardlink; temp удалён.
+Все **530 config records**, **797 package versions**, retention config/unit/timer/
+boot link и installed helper hashes совпали. Post-run recovery verification прошла
+уже после исчезновения transient unit, без зависимости от ширины таблицы.
+
+Перед этим read-only plan заново скачал и проверил 23 cloud exports/29 local
+пар, затем отдельно скачан финальный export и совпали его SHA-256; metadata
+предыдущих 23 наборов не менялись. Итого 24 современных облачных набора, все pins
+сохранены. Новых удалений после первой согласованной очистки не было. Legacy
+cloud23/69 файлов и старый partial не тронуты. Финальный ciphertext также проверен
+на Windows: SHA-256 соответствует подтверждённому cloud export, age decrypt/MAC
+успешен, plaintext направлен в null, identity не покидал ПК. На ПК сохранён только
+ciphertext в private `~/.config/karcher-backup/verification-20261020-retention-final`.
+Нового restore БД или clean-VPS recovery drill не было.
+
+В **11:02 по Красноярску** site/ready/notifications — 200, backup/storage watchdog
+здоров; health service отправил реальный healthy heartbeat (получение Telegram
+уведомления отдельно не проверялось). Известный failed transient test unit снят
+только после успешной проверки и с сохранением логов; failed units — 0.
+PID/NRestarts пяти рабочих служб и protected shop config hashes прежние. Timer
+active/enabled, следующий запуск **21 октября 08:15 Красноярск**. Root-only receipts,
+логи и прежние helpers — `/root/karcher-retention-20261020`.
+
+Retention-итерация принята. Commit/push/удалённый CI не выполнялись. Следующие
+отдельные задачи: согласованная миграция legacy plaintext, clean-VPS recovery
+drill и решение по AppArmor. Корзина Disk не очищается и может продолжать занимать
+квоту; никаких обещаний устойчивости инфраструктуры провайдера этот тест не даёт.
+
+## Зашифрованные копии legacy-истории — 20 октября 2026
+
+После согласования следующего этапа выполнено **копирование без удаления**:
+23 старых plaintext-набора за 27 сентября — 17 октября (69 файлов,
+345 563 784 байта) → `/var/backups/karcher-legacy-encrypted` и
+`yadisk:karcher-backups-encrypted/legacy-v1`. Все исходные имена сохранены,
+неуказанные timezone не угадываются; `createdAt` отражает время шифрования.
+Отдельный namespace не участвует в ежедневной retention-политике и пока
+сохраняется бессрочно. Age-формат совместим с прежним восстановлением;
+manifest дополнен исходным именем/remote, размерами и SHA-256 компонентов.
+
+Подготовлены `legacy_migration.py`, `verify_legacy_stream.py`, [runbook](../ops/backup/LEGACY.md)
+и 23 новых regression/integration tests; всего **175 Linux backup tests**, Node
+backup-config4 и ops checks успешны. Plan скачивает исходные payload и проверяет
+SHA-256, связывает их с неизменными local signatures/cloud listings. Один старый
+`2026-10-05_03-30-01/SHA256SUMS.txt` давал постоянный HTTP 500: оба payload
+скачаны и проверены по SHA-256, local checksum совпал с cloud size/MD5. Это
+source-read warning в plan, а не успешное чтение всех cloud-компонентов.
+Оригинал не перезаписывался. Остальные 22 набора прочитаны полностью.
+
+Установлены только три manual helper/runbook, root:root `600`; новых постоянных
+unit/timer/cron нет. Разовый worker выполнен с `ProtectSystem=strict`, read-only
+источниками, `NoNewPrivileges`, нулевыми capabilities, private tmp/devices и write
+доступом только к legacy output/state/rclone refresh. Первый sandbox-запуск выявил
+append-open общего lock на read-only mount; исправлено на read-only FD/exclusive
+Linux flock, busy exit75 сохраняет чужой статус. Добавлен regression test, права
+на источники или `/run/lock` не расширялись. Retention sandbox отдельно перепроверен.
+
+В **11:27:41 Красноярск** worker завершился: все 23 новых exports (345 903 919 байт)
+снова скачаны и сверены по SHA-256/provenance/recipient; исходные local signatures,
+cloud originals и существовавшая modern history не менялись. Upload только в
+legacy-v1 через `copy --immutable --checksum`; совпадающий/частичный повтор
+поддерживается, конфликт/нечитаемый новый export дают failure. Условное разрешение
+на точечную повторную загрузку новых служебных файлов получено, но не понадобилось.
+
+В **11:32:14 Красноярск** все 23 exports независимо проверены ключом на Windows:
+SHA-256 всех 69 файлов соответствуют cloud receipts, age authentication и все
+внутренние SHA-256/размеры/checksum подтверждают исходные 345 563 784 байта.
+Проверяется также последний age chunk после tar EOF. Plaintext в файлы не
+записывался, ключ не покидал ПК. NTFS ACL — владелец/SYSTEM/Administrators.
+Оставлены только exports/metadata в private `~/.config/karcher-backup/legacy-check-20261020`;
+собственные временные транспортные tar на VPS и ПК удалены после сверки.
+
+Штатный **`2026-10-20_04-30-59_UTC`** (11:30 Красноярск) с новыми tools/runbook
+прошёл verified/complete за **15,08 секунды**, 65 readiness probes без ошибок.
+Все три установленных файла совпали с tar, post-run recovery verification
+успешна: 1290 tar entries, 530 config records, 797 пакетов. Новый restore БД
+и clean-VPS drill не выполнялись. Старые failed staging units подтверждены и
+сняты только после успешного повтора; в 11:33 backup/storage health здоров,
+failed units — 0. Рабочие PID/NRestarts и protected shop config hashes прежние.
+
+Root-only evidence/логи — `/root/karcher-legacy-20261020`; plan/export verification —
+`/var/lib/karcher-legacy-migration`, отдельная PC-проверка — `pc-verified.json`.
+`last-run.decryptionVerified=false` относится к самому VPS-worker без ключа,
+PC-подтверждение записано отдельно. На этом этапе копирование/проверка приняты,
+а 23 локальных и 23 облачных plaintext-набора ещё оставались до отдельного
+согласования точного удаления. Его последующая приёмка — ниже.
+Commit/push/удалённый CI не выполнялись.
+
+## Отдельное удаление старых plaintext-оригиналов — 20 октября 2026
+
+После явного разрешения владельца в **11:51:17 Красноярск** завершено удаление
+ровно **23 старых наборов** за 27 сентября — 17 октября с VPS и Яндекс.Диска:
+по 69 файлов / **345 563 784 байта** в каждом месте. Перед удалением на ПК
+в **11:42** повторно проверены все exports реальным ключом, age authentication
+и исходные SHA-256 без записи plaintext. В **11:46:49** read-only preflight
+завершила новое скачивание всех 23 encrypted наборов и сверку SHA-256;
+source inventories, сохранённые backups и последний checkpoint зафиксированы.
+
+Разовая приватная операторская процедура привязана к точному списку и хэшам
+неизменных migration/PC receipts; **10 synthetic guard tests** успешны.
+Применение под общим flock, строгим sandbox и read-only encrypted roots:
+69 точечных cloud `deletefile --yandex-hard-delete=true`, после проверки пустоты
+23 `rmdir`; затем локальные три фиксированных файла через directory FD/NOFOLLOW
+и пустая директория каждого набора. Ни рекурсивного purge, ни общей очистки
+корзины, ни новых постоянных unit/timer/cron нет. Прерывание требует ручного
+разбора журнала, автоматический повтор удаления запрещён.
+
+Все 23 encrypted набора сохранены на VPS, в cloud `legacy-v1` и на ПК.
+Остальные 31 modern local pair / 25 modern cloud sets, закреплённые точки,
+старый partial и остальные backup entries не изменены; сравниваются полные
+локальные fingerprints и cloud metadata. Parent `yadisk:st24-backups` оставлен
+пустым. Это не физическое стирание носителя и не удаление всех plaintext-копий:
+современные локальные root-only копии продолжают храниться по retention.
+
+Итоговый receipt — `/var/lib/karcher-legacy-migration/originals-retired.json`;
+точное согласование, preflight, журнал и независимая приёмка —
+`/root/karcher-legacy-retire-20261020`. Исторические migration/PC proofs и
+worker `originalsDeleted=false` не переписываются: они описывают предыдущий
+этап копирования. Runbook — [LEGACY.md](../ops/backup/LEGACY.md).
+
+Независимая итоговая проверка в **11:54 Красноярск** подтвердила отсутствие всех
+23 originals, сохранность encrypted exports и полное совпадение fingerprints
+остальных backups. Site/ready/notifications — 200/ok, backup/storage health здоров,
+failed units — 0. Пять рабочих PID/NRestarts и девять protected config hashes
+прежние; оба health/retention timers active/enabled. Отправлен реальный healthy
+heartbeat без имитации тревог; доставку нового Telegram-уведомления в этом шаге
+отдельно не проверяли. Свободно около 41,8 GiB на VPS / 5,37 GiB в облаке.
+Нового restore БД/clean-VPS drill, деплоя приложения, commit/push/удалённого CI
+не было. Из оставшихся отдельных задач — clean-VPS recovery drill и AppArmor.

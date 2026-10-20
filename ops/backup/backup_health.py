@@ -28,7 +28,8 @@ PING_PATTERN = re.compile(
     r'https://(?:eu\.)?cronitor\.link/p/[A-Za-z0-9_-]{1,256}/'
     r'(?P<monitor>[A-Za-z0-9][A-Za-z0-9_.-]{0,127})'
 )
-STAGES = {'initialization', 'encryption_configuration', 'configuration', 'database_dump',
+STAGES = {'initialization', 'encryption_configuration', 'security_configuration',
+          'configuration', 'system_recovery', 'system_recovery_verification', 'database_dump',
           'files_archive', 'checksums', 'encryption', 'offsite_copy',
           'offsite_verification', 'complete'}
 
@@ -177,9 +178,43 @@ def collect(limits=Limits()):
     now = datetime.now(timezone.utc)
     checks = {'backup': backup_check(BACKUP_ROOT, ENCRYPTED_ROOT, now, limits),
               'storage': storage_check((BACKUP_ROOT, ENCRYPTED_ROOT), limits)}
+    retention = retention_check(now)
+    if retention is not None and retention['status'] != 'ok' and checks['backup']['status'] == 'ok':
+        checks['backup'] = retention
     return {'checkedAt': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
             'status': 'ok' if all(c['status'] == 'ok' for c in checks.values()) else 'failed',
             'checks': checks}
+
+
+def retention_check(now, configuration=None, state=None):
+    configuration = configuration or Path('/etc/karcher-backup/retention.json')
+    state = state or Path('/var/lib/karcher-retention/last-run.json')
+    if not configuration.exists() and not configuration.is_symlink():
+        return None
+    try:
+        settings = read_json(configuration)
+        if type(settings.get('enabled')) is not bool:
+            raise HealthError('RETENTION_CONFIG_INVALID')
+        if not settings['enabled']:
+            return None
+        protected(state.parent, directory=True)
+        value = read_json(state)
+        checked = timestamp(value.get('checkedAt'), now)
+        age = (now-checked).total_seconds()
+        if value.get('status') == 'failed':
+            raise HealthError('RETENTION_FAILED')
+        if value.get('status') == 'running':
+            if age > 25*60:
+                raise HealthError('RETENTION_STUCK')
+        elif value.get('status') != 'ok':
+            raise HealthError('RETENTION_STATE_INVALID')
+        elif age > 30*3600:
+            raise HealthError('RETENTION_STALE')
+        return {'status': 'ok', 'code': 'RETENTION_OK'}
+    except HealthError as error:
+        return {'status': 'failed', 'code': str(error)}
+    except OSError:
+        return {'status': 'failed', 'code': 'RETENTION_STATE_UNAVAILABLE'}
 
 
 def validate_config(value):

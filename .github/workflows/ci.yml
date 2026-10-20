@@ -150,6 +150,7 @@ jobs:
           systemd-analyze verify ops/systemd/*.service ops/systemd/*.timer
           sudo install -d -m 0700 /usr/local/lib/karcher-backup
           systemd-analyze verify ops/backup/karcher-backup-health.service ops/backup/karcher-backup-health.timer
+          systemd-analyze verify ops/backup/karcher-backup-retention.service ops/backup/karcher-backup-retention.timer
 
       - name: Validate isolated host firewall
         run: |

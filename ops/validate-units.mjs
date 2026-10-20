@@ -237,6 +237,30 @@ assert.equal(one(backupTimer, 'Timer.OnCalendar'), '*-*-* *:0/5:00');
 assert.equal(one(backupTimer, 'Timer.Persistent'), 'yes');
 assert.equal(one(backupTimer, 'Timer.Unit'), 'karcher-backup-health.service');
 
+const retentionService = parseUnit(
+  'karcher-backup-retention.service',
+  await readFile(join(opsDir, 'backup', 'karcher-backup-retention.service'), 'utf8')
+);
+assert.equal(one(retentionService, 'Service.User'), 'root');
+assert.equal(one(retentionService, 'Service.Type'), 'oneshot');
+assert.equal(one(retentionService, 'Service.WorkingDirectory'), '/usr/local/lib/karcher-backup');
+assert.equal(one(retentionService, 'Service.ExecStart'), '/usr/bin/python3 -B /usr/local/lib/karcher-backup/retention.py run');
+assert.equal(one(retentionService, 'Service.TimeoutStartSec'), '20min');
+assert.equal(one(retentionService, 'Service.StateDirectory'), 'karcher-retention');
+assert.equal(one(retentionService, 'Service.StateDirectoryMode'), '0700');
+assert.equal(one(retentionService, 'Service.UMask'), '0077');
+assert.equal(one(retentionService, 'Service.ReadWritePaths'), '/var/backups/st24 /var/backups/karcher-encrypted /root/.config/rclone');
+for (const [key, expected] of hardening) {
+  assert.equal(one(retentionService, `Service.${key}`), key === 'ProtectHome' ? 'read-only' : expected);
+}
+const retentionTimer = parseUnit(
+  'karcher-backup-retention.timer',
+  await readFile(join(opsDir, 'backup', 'karcher-backup-retention.timer'), 'utf8')
+);
+assert.equal(one(retentionTimer, 'Timer.OnCalendar'), '*-*-* 01:15:00 UTC');
+assert.equal(one(retentionTimer, 'Timer.Persistent'), 'yes');
+assert.equal(one(retentionTimer, 'Timer.Unit'), 'karcher-backup-retention.service');
+
 const apiTmpfiles = await readFile(join(opsDir, 'tmpfiles', 'karcher-api.conf'), 'utf8');
 const apiTmpfileRules = apiTmpfiles
   .split('\n')

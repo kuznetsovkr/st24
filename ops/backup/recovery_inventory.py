@@ -120,6 +120,27 @@ def select_paths(root):
             selected.append(name)
         else:
             optional.append(name)
+    retention_config = root/'etc/karcher-backup/retention.json'
+    if retention_config.exists() or retention_config.is_symlink():
+        if not stat.S_ISREG(retention_config.lstat().st_mode):
+            raise RecoveryError('RETENTION_CONFIGURATION_INVALID')
+        settings = json.loads(retention_config.read_text())
+        if not isinstance(settings, dict) or type(settings.get('enabled')) is not bool:
+            raise RecoveryError('RETENTION_CONFIGURATION_INVALID')
+        selected.append('etc/karcher-backup/retention.json')
+        for name in ['etc/systemd/system/karcher-backup-retention.service',
+                     'etc/systemd/system/karcher-backup-retention.timer',
+                     'etc/systemd/system/timers.target.wants/karcher-backup-retention.timer']:
+            path = root/name
+            if not path.exists() and not path.is_symlink() and not settings['enabled']:
+                continue
+            if 'timers.target.wants/' in name:
+                valid = path.is_symlink() and os.readlink(path) == '/etc/systemd/system/karcher-backup-retention.timer'
+            else:
+                valid = stat.S_ISREG(path.lstat().st_mode)
+            if not valid:
+                raise RecoveryError('RETENTION_CONFIGURATION_INVALID')
+            selected.append(name)
     # Preserve ONLY real service masks here, not the entire systemd config tree.
     # Boot state of all other units is recorded in unitFiles for manual review.
     directory = root / 'etc/systemd/system'
@@ -143,6 +164,14 @@ def account_metadata():
     return result
 
 
+def unit_file_states(text):
+    if not isinstance(text, str):
+        raise RecoveryError('RECOVERY_INVENTORY_INVALID')
+    # systemctl pads ALL rows to the longest unit name, including transient
+    # units filtered out below. Compare states/presets, not display alignment.
+    return '\n'.join(sorted(' '.join(line.split()) for line in text.splitlines() if line.strip()))
+
+
 def collect(root, backup_set, *, read=query, accounts=account_metadata):
     if not re.fullmatch(r'\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_UTC', backup_set):
         raise RecoveryError('BACKUP_SET_INVALID')
@@ -152,7 +181,7 @@ def collect(root, backup_set, *, read=query, accounts=account_metadata):
     commands = {name: read(command).strip() for name, command in COMMANDS.items()}
     # systemd-run creates temporary unit files for this very backup. They are
     # not boot configuration and must not cause a false drift after --collect.
-    commands['unitFiles'] = '\n'.join(sorted(
+    commands['unitFiles'] = unit_file_states('\n'.join(
         line for line in commands['unitFiles'].splitlines()
         if len(line.split()) >= 2 and line.split()[1] != 'transient'))
     if not re.fullmatch(r'[0-9a-f]{40}', commands['appCommit']):
@@ -222,8 +251,14 @@ def verify(document, current):
     # package set and config hashes again AFTER tar, not just during collection.
     if not isinstance(document, dict) or not isinstance(current, dict):
         raise RecoveryError('RECOVERY_INVENTORY_INVALID')
-    if ({key: value for key, value in document.items() if key != 'createdAt'}
-            != {key: value for key, value in current.items() if key != 'createdAt'}):
+    def stable(value):
+        result = {key: item for key, item in value.items() if key != 'createdAt'}
+        if 'unitFiles' in result:
+            # Accept earlier inventories with padded table output too. This
+            # does not ignore a real unit, state, or preset change.
+            result['unitFiles'] = unit_file_states(result['unitFiles'])
+        return result
+    if stable(document) != stable(current):
         raise RecoveryError('RECOVERY_INPUTS_CHANGED')
 
 

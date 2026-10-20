@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Karcher backup retention after the backup window
+
+[Timer]
+OnCalendar=*-*-* 01:15:00 UTC
+AccuracySec=1min
+Persistent=yes
+Unit=karcher-backup-retention.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "enabled": false,
+  "localDays": 7,
+  "allHours": 48,
+  "dailyDays": 30,
+  "weeklyWeeks": 12,
+  "monthlyMonths": 12,
+  "pinned": [
+    "2026-10-17_04-57-48_UTC",
+    "2026-10-17_14-06-57_UTC",
+    "2026-10-19_11-17-59_UTC"
+  ]
+}

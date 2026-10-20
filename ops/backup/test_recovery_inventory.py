@@ -108,6 +108,26 @@ class RecoveryInventoryTests(unittest.TestCase):
         self.assertIn(mask.relative_to(self.root).as_posix(), selected)
         self.assertNotIn(unrelated.relative_to(self.root).as_posix(), selected)
 
+    def test_enabled_retention_requires_service_timer_and_exact_boot_link(self):
+        path=self.root/'etc/karcher-backup/retention.json';path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'enabled':True}))
+        with self.assertRaises(OSError):self.collect()
+        for name in ['karcher-backup-retention.service','karcher-backup-retention.timer']:
+            (self.root/'etc/systemd/system'/name).write_text('[Service]\n')
+        link=self.root/'etc/systemd/system/timers.target.wants/karcher-backup-retention.timer'
+        link.symlink_to('/etc/systemd/system/karcher-backup-retention.timer')
+        document,selected=self.collect()
+        self.assertIn(link.relative_to(self.root).as_posix(),selected)
+        self.assertIn('etc/karcher-backup/retention.json',selected)
+        link.unlink();link.symlink_to('/wrong/timer')
+        with self.assertRaises(RecoveryError):self.collect()
+
+    def test_disabled_retention_can_be_documented_without_enabling_its_units(self):
+        path=self.root/'etc/karcher-backup/retention.json';path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'enabled':False}))
+        document,selected=self.collect()
+        self.assertIn('etc/karcher-backup/retention.json',selected)
+
     def test_packages_changed_or_half_installed_never_publish_a_valid_inventory(self):
         initial = self.read
         count = [0]
@@ -158,6 +178,40 @@ class RecoveryInventoryTests(unittest.TestCase):
             return initial(command)
         document,_ = collect(self.root,self.backup_set,read=read,accounts=lambda: {})
         self.assertEqual(document['unitFiles'],'nginx.service enabled enabled')
+
+    def test_transient_unit_column_width_does_not_change_the_inventory(self):
+        initial = self.read
+        def read(command):
+            if command == COMMANDS['unitFiles']:
+                return ('a-very-long-temporary-backup-name.service transient -\n'
+                        'nginx.service                            enabled   enabled\n'
+                        'ssh.service                              enabled   enabled\n')
+            return initial(command)
+        document, _ = collect(self.root, self.backup_set, read=read, accounts=lambda: {})
+        self.assertEqual(document['unitFiles'], 'nginx.service enabled enabled\nssh.service enabled enabled')
+
+    def test_verification_accepts_legacy_padding_without_ignoring_real_unit_changes(self):
+        document, _ = self.collect()
+        document['unitFiles'] = ('ssh.service       enabled    enabled\n'
+                                 'nginx.service     enabled    enabled')
+        current = copy.deepcopy(document)
+        current['unitFiles'] = 'nginx.service enabled enabled\nssh.service enabled enabled'
+        verify(document, current)
+        self.assertIn('       ', document['unitFiles'])  # Do not mutate history.
+        for rows in ['nginx.service disabled enabled\nssh.service enabled enabled',
+                     'nginx.service enabled disabled\nssh.service enabled enabled',
+                     'nginx.service enabled enabled',
+                     'nginx.service enabled enabled\nssh.service enabled enabled\nextra.service static -']:
+            current['unitFiles'] = rows
+            with self.subTest(rows=rows), self.assertRaisesRegex(RecoveryError, 'RECOVERY_INPUTS_CHANGED'):
+                verify(document, current)
+
+    def test_verification_rejects_nontext_unit_states(self):
+        document, _ = self.collect()
+        current = copy.deepcopy(document)
+        current['unitFiles'] = []
+        with self.assertRaisesRegex(RecoveryError, 'RECOVERY_INVENTORY_INVALID'):
+            verify(document, current)
 
     def test_shell_producer_failure_is_not_hidden_by_mapfile(self):
         source = Path(__file__).with_name('karcher-backup.sh').read_text()
