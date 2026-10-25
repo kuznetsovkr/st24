@@ -194,7 +194,7 @@ export const createIntegrationHealthChecker = (overrides: Partial<IntegrationDep
       if (!record(body) || body.status !== 'OK' || body.status_code !== 100) throw new ProbeError('provider_rejected');
       if (typeof body.balance !== 'number' || !Number.isFinite(body.balance)) throw new ProbeError('invalid_response');
       if (body.balance <= 0) throw new ProbeError('balance_empty');
-      const minimum = integer(env.INTEGRATION_HEALTH_SMS_MIN_BALANCE_RUB, 100, 0, 1_000_000);
+      const minimum = integer(env.INTEGRATION_HEALTH_SMS_MIN_BALANCE_RUB, 10, 0, 1_000_000);
       return body.balance < minimum ? 'balance_low' : 'balance_sufficient';
     });
 

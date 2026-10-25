@@ -91,12 +91,23 @@ test('HTTP 200 with a provider rejection, malformed body, or blank JSON does not
   assert.equal(report.checks.yookassa.code, 'invalid_response');
 });
 
-test('SMS empty balance is an error, low balance warns without leaking the amount', async () => {
-  for (const [balance, status, code] of [[0, 'error', 'balance_empty'], [-1, 'error', 'balance_empty'], [25.57, 'warning', 'balance_low']] as const) {
+test('SMS warns only below ten rubles, while zero or negative balance fails without leaking the amount', async () => {
+  for (const [balance, status, code] of [[0, 'error', 'balance_empty'], [-1, 'error', 'balance_empty'],
+    [5.57, 'warning', 'balance_low'], [9.99, 'warning', 'balance_low'], [10, 'ok', 'balance_sufficient'],
+    [25.57, 'ok', 'balance_sufficient'], [99.99, 'ok', 'balance_sufficient']] as const) {
     const report = await fixture({ fetch: async (url) => url.includes('sms.ru')
       ? json({ status: 'OK', status_code: 100, balance }) : responses(url) }).check();
     assert.equal(report.checks.sms_ru.status, status); assert.equal(report.checks.sms_ru.code, code);
-    assert.ok(!JSON.stringify(report).includes('25.57'));
+    assert.ok(!JSON.stringify(report).includes('5.57'));
+  }
+});
+
+test('SMS threshold remains configurable but zero balance always fails', async () => {
+  for (const [threshold, balance, status] of [['50', 25, 'warning'], ['0', 0.01, 'ok'],
+    ['0', 0, 'error'], ['100', 0, 'error'], ['invalid', 25, 'ok']] as const) {
+    const report = await fixture({ environment: () => ({ ...ENV, INTEGRATION_HEALTH_SMS_MIN_BALANCE_RUB: threshold }),
+      fetch: async (url) => url.includes('sms.ru') ? json({ status: 'OK', status_code: 100, balance }) : responses(url) }).check();
+    assert.equal(report.checks.sms_ru.status, status);
   }
 });
 
