@@ -314,4 +314,21 @@ for (const [name, expectedPath, expectedIdentity, expectedMode] of [
   );
 }
 
+const integrationsMonitor = JSON.parse(await readFile(join(opsDir, 'monitoring', 'cronitor-integrations-monitor.json'), 'utf8'));
+const telegramMonitor = JSON.parse(await readFile(join(opsDir, 'monitoring', 'cronitor-telegram-monitor.json'), 'utf8'));
+assert.equal(integrationsMonitor.monitors.length, 1);
+const integration = integrationsMonitor.monitors[0];
+assert.equal(integration.key, telegramMonitor.monitors[0].key); // Replacement, not a sixth paid slot.
+assert.equal(integration.request.url, 'https://xn---24-3edf.xn--p1ai/api/health/integrations');
+assert.equal(integration.schedule, 'every 5 minutes');
+assert.equal(integration.request.timeout_seconds, 10);
+assert.equal(integration.request.follow_redirects, false);
+assert.equal(integration.request.verify_ssl, true);
+assert.deepEqual(integration.notify, ['default']);
+for (const assertion of ['response.code = 200', 'response.header Cache-Control contains no-store',
+  'response.header Content-Type contains application/json', 'response.json availability = ok',
+  'response.json checks.postgres.status = ok', 'response.json checks.uploads.status = ok',
+  'response.json checks.telegram.status = ok']) assert.ok(integration.assertions.includes(assertion));
+assert.ok(!integration.assertions.includes('response.json status = ok'));
+
 process.stdout.write('ops unit validation passed\n');

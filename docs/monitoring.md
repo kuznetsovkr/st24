@@ -248,5 +248,11 @@ Fallback-пример cron для хоста без systemd:
 guest checkout gate и отказ/таймаут lazy chunks. Подготовлен отдельный job CI;
 это не browser-monitor живого production и не авторизованный checkout E2E.
 
-YooKassa provider availability, службы доставки, Telegram Gateway/SMS.ru, Redis и
-полный браузерный checkout остаются следующими слоями мониторинга.
+Безопасная авторизованная диагностика ЮKassa, SMS.ru, служб доставки и Redis
+добавлена в `/api/health/integrations` вместе с readiness и Telegram health.
+Контракт, ограничения, настройка существующего Cronitor monitor и фактическая
+приёмка — [INTEGRATIONS.md](../ops/monitoring/INTEGRATIONS.md). Доступность этих API
+не доказывает успешную оплату, доставку SMS или оформление заказа.
+Telegram Gateway в `sms_only` не используется; Turnstile и карты явно остаются
+`unverified` до production browser-этапа. Полный браузерный checkout и внешняя
+приёмка новых тревог/восстановлений не считаются закрытыми этим endpoint.

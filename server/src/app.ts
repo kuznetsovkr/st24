@@ -5,6 +5,8 @@ import fs from 'fs';
 import { randomInt, randomUUID } from 'crypto';
 import { isIP } from 'net';
 import path from 'path';
+import { getIntegrationHealthReport } from './integrationHealthRuntime';
+import type { IntegrationHealthReport } from './integrationHealth';
 import {
   clearAuthCookies,
   createCsrfToken,
@@ -1556,6 +1558,7 @@ const mapCartItem = (row: CartItemRow) => {
 export type CreateAppOptions = {
   readinessCheck?: () => Promise<ReadinessReport>;
   notificationHealthCheck?: () => Promise<NotificationHealthReport>;
+  integrationHealthCheck?: () => Promise<IntegrationHealthReport>;
 };
 
 export const createApp = (options: CreateAppOptions = {}) => {
@@ -1637,6 +1640,16 @@ export const createApp = (options: CreateAppOptions = {}) => {
         status: 'error',
         checkedAt: new Date().toISOString()
       });
+    }
+  });
+
+  app.get('/api/health/integrations', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const report = await (options.integrationHealthCheck ?? getIntegrationHealthReport)();
+      res.status(report.availability === 'error' ? 503 : 200).json(report);
+    } catch {
+      res.status(503).json({ status: 'error', availability: 'error', checkedAt: new Date().toISOString() });
     }
   });
 
