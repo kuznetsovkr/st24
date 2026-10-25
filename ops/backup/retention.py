@@ -5,6 +5,7 @@ Default command is read-only planning. Applying requires an enabled root-private
 policy, a fresh verified backup, the shared backup lock, and full validation of
 all cloud exports. Legacy/plaintext-only, partial and unknown entries are never
 deleted. Cloud removals explicitly go to Yandex trash, never account-wide cleanup.
+Expired backlogs are drained in bounded batches, separately per storage location.
 """
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,7 @@ DEFAULT = {'version': 1, 'enabled': False, 'localDays': 7, 'allHours': 48,
            'pinned': ['2026-10-17_04-57-48_UTC', '2026-10-17_14-06-57_UTC',
                       '2026-10-19_11-17-59_UTC']}
 ZONE = ZoneInfo('Asia/Krasnoyarsk')
+MAX_DELETE_BATCH = 10
 
 
 class RetentionError(Exception):
@@ -95,11 +97,17 @@ def choose(names, settings, now, latest):
             if active and bucket not in seen[label]:
                 cloud.add(name)
                 seen[label].add(bucket)
-    delete_cloud = set(names)-cloud
-    # An unexpectedly drastic policy change needs operator review, not guessing.
-    if len(delete_cloud) > 100 or len(delete_cloud)*2 > len(names):
-        raise RetentionError('DELETE_SAFETY_LIMIT')
     return local, cloud
+
+
+def delete_batch(candidates, present):
+    """Count only real objects at this location; defer excess without deleting it."""
+    candidates, present = set(candidates), set(present)
+    if not candidates <= present:
+        raise RetentionError('DELETE_CANDIDATE_MISSING')
+    limit = min(MAX_DELETE_BATCH, len(present)//2)
+    ordered = sorted(candidates)
+    return ordered[:limit], ordered[limit:]
 
 
 def protected(path, directory=False):
@@ -276,12 +284,13 @@ def plan(settings, now, cloud, work):
             verified[name] = cloud.verify(name, Path(directory), recipient_id(RECIPIENTS))
         if name in local and verified[name]['digests'] != local[name]['encrypted']['digests']:
             raise RetentionError('LOCAL_CLOUD_EXPORT_MISMATCH')
-    delete_local = sorted(set(local)-keep_local)
-    if len(delete_local)>100 or len(delete_local)*2>len(local):
-        raise RetentionError('DELETE_SAFETY_LIMIT')
+    delete_local, deferred_local = delete_batch(set(local)-keep_local, set(local))
+    delete_cloud, deferred_cloud = delete_batch(remote-keep_cloud, remote)
     return {'createdAt': now.strftime('%Y-%m-%dT%H:%M:%SZ'), 'checkpoint': checkpoint,
-            'settings': settings, 'cloudKeep': sorted(keep_cloud), 'localKeep': sorted(set(local)&keep_local),
-            'cloudDelete': sorted(remote-keep_cloud), 'localDelete': delete_local,
+            'settings': settings, 'cloudKeep': sorted(remote-set(delete_cloud)),
+            'localKeep': sorted(set(local)-set(delete_local)),
+            'cloudDelete': delete_cloud, 'localDelete': delete_local,
+            'cloudDeferred': deferred_cloud, 'localDeferred': deferred_local,
             'local': local, 'cloud': verified, 'ignoredLocal': ignored_local,
             'ignoredCloud': ignored_remote}
 
@@ -319,6 +328,19 @@ def apply(value, cloud, checkpoint, journal):
             or (set(value['localDelete']) & set(value['localKeep']))
             or hard_protected & (set(value['cloudDelete']) | set(value['localDelete']))):
         raise RetentionError('PROTECTED_DELETE_ATTEMPT')
+    # Recompute the bounded batch from the validated inventories and original
+    # planning time. A modified plan cannot bypass batch/calendar protections.
+    planned_at = datetime.strptime(value['createdAt'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+    keep_local, keep_cloud = choose(set(value['local']) | set(value['cloud']),
+                                   policy(value['settings']), planned_at, value['checkpoint']['backupSet'])
+    for label, required in [('local', keep_local), ('cloud', keep_cloud)]:
+        present = set(value[label])
+        if len(value[label+'Delete']) > MAX_DELETE_BATCH or len(value[label+'Delete'])*2 > len(present):
+            raise RetentionError('DELETE_SAFETY_LIMIT')
+        selected, deferred = delete_batch(present-required, present)
+        if (value[label+'Delete'] != selected or value[label+'Deferred'] != deferred
+                or value[label+'Keep'] != sorted(present-set(selected))):
+            raise RetentionError('DELETE_BATCH_INVALID')
     if checkpoint() != value['checkpoint']:
         raise RetentionError('BACKUP_CHECKPOINT_CHANGED')
     for name, pair in value['local'].items():
@@ -365,7 +387,8 @@ def main():
         if not STATE.exists() and not STATE.is_symlink():
             STATE.mkdir(mode=0o700)
         protected(STATE, directory=True)
-        with open('/var/lock/st24-backup.lock', 'a') as lock:
+        # flock needs a real existing lock FD, not write access to its mount.
+        with open('/var/lock/st24-backup.lock', 'r') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -381,11 +404,14 @@ def main():
                 completed = apply(value, cloud, lambda: fresh_checkpoint(datetime.now(timezone.utc)),
                                   lambda event: atomic_json(STATE/'action.json', event))
                 atomic_json(STATE/'last-run.json', {'status': 'ok', 'checkedAt': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                            'backupSet': value['checkpoint']['backupSet'], 'deletedCloud': len(completed['cloud']), 'deletedLocalPairs': len(completed['local'])})
+                            'backupSet': value['checkpoint']['backupSet'], 'deletedCloud': len(completed['cloud']),
+                            'deletedLocalPairs': len(completed['local']), 'deferredCloud': len(value['cloudDeferred']),
+                            'deferredLocalPairs': len(value['localDeferred'])})
             print(json.dumps({'mode': args.command, 'backupSet': value['checkpoint']['backupSet'],
                   'localPairs': len(value['local']), 'cloudSets': len(value['cloud']),
                   'localKeep': value['localKeep'], 'cloudKeep': value['cloudKeep'],
                   'localDelete': value['localDelete'], 'cloudDelete': value['cloudDelete'],
+                  'localDeferred': value['localDeferred'], 'cloudDeferred': value['cloudDeferred'],
                   'deleted': completed, 'cloudDeletion': 'trash-only'}))
             return 0
     except (RetentionError, CryptoError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:

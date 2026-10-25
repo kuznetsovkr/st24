@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 if sys.platform == 'linux':
+    import fcntl
     import retention as r
 
 
@@ -201,10 +202,148 @@ class RetentionTests(unittest.TestCase):
         self.assertNotIn(names[1],cloud);self.assertNotIn(names[2],cloud)
         self.assertEqual(set(names[-3:])|{names[0]},local)
 
-    def test_future_clock_and_large_delete_batches_are_rejected(self):
+    def test_future_clock_is_rejected_but_expired_backlog_can_be_selected(self):
         with self.assertRaises(r.RetentionError):r.choose(NAMES,self.settings,NOW-timedelta(days=3),NAMES[-1])
         names=[f'2020-01-01_00-00-{i:02d}_UTC' for i in range(20)]+NAMES
-        with self.assertRaisesRegex(r.RetentionError,'DELETE_SAFETY_LIMIT'):r.choose(names,self.settings,NOW,NAMES[-1])
+        local,cloud=r.choose(names,self.settings,NOW,NAMES[-1])
+        self.assertTrue(set(NAMES[1:])<=local)
+        self.assertTrue(set(NAMES[1:])<=cloud)
+        self.assertTrue(set(names[:20]).isdisjoint(local|cloud))
+
+    def add_backlog(self,count=20):
+        names=[f'2020-01-01_00-00-{i:02d}_UTC' for i in range(count)]
+        for name in names:self.make_set(name)
+        return names
+
+    def test_batch_limits_use_actual_location_inventory_and_round_down(self):
+        for count in [0,1,2,3,9,20,25,250]:
+            present={f'item-{i:03d}' for i in range(count)}
+            selected,deferred=r.delete_batch(present,present)
+            with self.subTest(count=count):
+                self.assertEqual(len(selected),min(r.MAX_DELETE_BATCH,count//2))
+                self.assertEqual(selected+deferred,sorted(present))
+                self.assertLessEqual(len(selected)*2,count)
+                self.assertLessEqual(len(selected),10)
+        with self.assertRaisesRegex(r.RetentionError,'DELETE_CANDIDATE_MISSING'):
+            r.delete_batch({'absent'},{'present'})
+
+    def test_large_backlog_defers_survivors_and_full_validation_still_precedes_deletion(self):
+        old=self.add_backlog()
+        value=self.plan()
+        self.assertEqual(value['cloudDelete'],old[:10])
+        self.assertEqual(value['localDelete'],old[:10])
+        self.assertEqual(value['cloudDeferred'],old[10:]+[NAMES[0]])
+        self.assertEqual(value['localDeferred'],old[10:]+[NAMES[0]])
+        self.assertTrue(set(value['cloudDeferred'])<=set(value['cloudKeep']))
+        self.assertTrue(set(value['localDeferred'])<=set(value['localKeep']))
+        self.assertEqual(len(value['cloud']),25)
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
+        self.write(self.remote/old[-1]/'backup.tar.age',b'corrupt deferred survivor')
+        with self.assertRaises(r.CryptoError):self.plan()
+        with self.assertRaisesRegex(r.RetentionError,'SURVIVOR_CHANGED'):self.apply(value)
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
+
+    def test_absent_cloud_candidates_are_not_counted_or_selected(self):
+        old=self.add_backlog()
+        for name in old:(self.remote/name).rename(self.trash/name)
+        value=self.plan()
+        self.assertEqual(value['cloudDelete'],[NAMES[0]])
+        self.assertEqual(value['cloudDeferred'],[])
+        self.assertEqual(len(value['cloudKeep']),4)
+        self.assertEqual(len(value['localDelete']),10)
+        self.assertEqual(len(value['localDeferred']),11)
+        self.assertEqual(self.apply(value)['cloud'],[NAMES[0]])
+
+    def test_batches_converge_without_deleting_pins_or_calendar_survivors(self):
+        self.add_backlog()
+        protected=set(NAMES[1:]); steps=0
+        while True:
+            value=self.plan()
+            if not value['cloudDelete'] and not value['localDelete']:break
+            self.assertLessEqual(len(value['cloudDelete'])*2,len(value['cloud']))
+            self.assertLessEqual(len(value['localDelete'])*2,len(value['local']))
+            result=self.apply(value);steps+=1
+            for label in ['cloud','local']:
+                self.assertLessEqual(len(result[label]),10)
+                self.assertTrue(protected.isdisjoint(result[label]))
+            self.assertLess(steps,10)
+        self.assertEqual({p.name for p in self.remote.iterdir()},protected)
+        self.assertEqual({p.name for p in self.enc.iterdir()},protected)
+        self.assertEqual(steps,3)
+
+    def test_tampered_batches_cannot_exceed_half_or_absolute_limit(self):
+        self.add_backlog()
+        value=self.plan()
+        for label in ['cloud','local']:
+            changed=copy.deepcopy(value)
+            changed[label+'Delete']+=changed[label+'Deferred'][:1]
+            changed[label+'Keep'].remove(changed[label+'Deferred'][0])
+            with self.subTest(label=label),self.assertRaisesRegex(r.RetentionError,'DELETE_SAFETY_LIMIT'):
+                self.apply(changed)
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
+
+    def test_tampered_deferred_or_keep_lists_abort_before_any_mutation(self):
+        self.add_backlog()
+        value=self.plan()
+        for label in ['cloud','local']:
+            for key in [label+'Deferred',label+'Keep']:
+                changed=copy.deepcopy(value);changed[key]=[]
+                with self.subTest(key=key),self.assertRaisesRegex(r.RetentionError,'DELETE_BATCH_INVALID'):
+                    self.apply(changed)
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
+
+    def test_apply_rechecks_half_limit_even_below_absolute_batch_limit(self):
+        self.add_backlog(10)
+        value=self.plan()
+        self.assertEqual(len(value['cloudDelete']),7)
+        for label in ['cloud','local']:
+            changed=copy.deepcopy(value)
+            changed[label+'Delete'].append(changed[label+'Deferred'].pop(0))
+            changed[label+'Keep'].remove(changed[label+'Delete'][-1])
+            with self.subTest(label=label),self.assertRaisesRegex(r.RetentionError,'DELETE_SAFETY_LIMIT'):
+                self.apply(changed)
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
+
+    def test_expired_cloud_only_and_local_only_histories_are_bounded_independently(self):
+        old=self.add_backlog()
+        for name in old[:10]:
+            (self.plain/name).rename(self.base/('plain-'+name))
+            (self.enc/name).rename(self.base/('cipher-'+name))
+        for name in old[10:]:(self.remote/name).rename(self.trash/name)
+        value=self.plan()
+        self.assertEqual(len(value['cloud']),15)
+        self.assertEqual(len(value['local']),15)
+        self.assertEqual(value['cloudDelete'],old[:7])
+        self.assertEqual(value['localDelete'],old[10:17])
+        self.assertTrue(set(value['cloudDelete']).isdisjoint(value['localDelete']))
+        self.apply(value)
+
+    def test_missing_calendar_survivor_is_not_hidden_by_batching(self):
+        self.add_backlog()
+        (self.remote/NAMES[2]).rename(self.trash/NAMES[2])
+        with self.assertRaisesRegex(r.RetentionError,'UNMIRRORED_RECOVERY_POINT'):self.plan()
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
+
+    def test_busy_lock_opens_read_only_and_preserves_state_in_both_modes(self):
+        lock=self.base/'backup.lock';self.write(lock,b'')
+        config=self.base/'policy.json';self.write(config,json.dumps(self.settings).encode())
+        status=self.state/'last-run.json';self.write(status,b'{"status":"running"}\n')
+        before=status.read_bytes();real_open=open
+        previous=os.umask(0o077);self.addCleanup(os.umask,previous)
+        def open_lock(path,mode):
+            self.assertEqual(path,'/var/lock/st24-backup.lock')
+            self.assertEqual(mode,'r')
+            return real_open(lock,'r')
+        with real_open(lock,'r') as held:
+            fcntl.flock(held,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            for mode in ['plan','run']:
+                with patch.object(r,'STATE',self.state),patch.object(r,'CONFIG',config), \
+                     patch.object(r,'protected'),patch.object(r.os,'geteuid',return_value=0), \
+                     patch.object(r,'open',side_effect=open_lock,create=True), \
+                     patch.object(sys,'argv',['retention.py',mode]):
+                    self.assertEqual(r.main(),0)
+                self.assertEqual(status.read_bytes(),before)
+        self.assertFalse(any(c[0]=='purge' for c in self.calls))
 
     def test_real_command_diagnostics_remain_private_and_symlink_logs_are_rejected(self):
         log=self.state/'private-rclone.log'

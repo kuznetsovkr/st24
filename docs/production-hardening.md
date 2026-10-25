@@ -760,3 +760,68 @@ heartbeat без имитации тревог; доставку нового Te
 отдельно не проверяли. Свободно около 41,8 GiB на VPS / 5,37 GiB в облаке.
 Нового restore БД/clean-VPS drill, деплоя приложения, commit/push/удалённого CI
 не было. Из оставшихся отдельных задач — clean-VPS recovery drill и AppArmor.
+
+## Остановка автоочистки и ограниченные партии — 25 октября 2026
+
+По тревоге `RETENTION_FAILED` выполнена диагностика без удаления: с **22 октября
+08:15 Красноярск** retention останавливалась с `DELETE_SAFETY_LIMIT`. Backup cron
+21–25 октября проходил; `2026-10-25_00-30-01_UTC` verified/complete в 07:30:13.
+Все три файла этого cloud export заново скачаны и совпали с локальными SHA-256.
+На VPS свободно 41,6 GiB, в облаке около 5,3 GiB; это не отказ создания копий.
+
+Причина: лимит половины применялся к полной очереди старых наборов, а для cloud
+ещё и к объединению local/cloud, включая уже отсутствующие remote объекты.
+После выхода множества настроечных копий из окна 48 часов этот guard постоянно
+запрещал весь запуск. В диагностике — 36 local pairs / 25 cloud sets, 25 кандидатов
+по union, но только 14 реально существующих cloud-кандидатов; local-кандидатов 12.
+
+После согласования исправления разделены календарный выбор recovery-точек
+и размер партии: отдельно для local/cloud `min(10, actualCount // 2)`, oldest
+first, остальные явно deferred и остаются проверяемыми survivors. При apply
+повторно вычисляются календарные точки и точная партия; изменённые списки,
+превышение половины/10, отсутствие pins/точек, повреждения или изменения данных
+по-прежнему блокируют удаление. Цикла нескольких партий за один запуск нет.
+Сроки хранения, pins, cron/timer и удаление cloud только в корзину не менялись.
+
+Добавлены десять regression tests; все **185 Linux backup tests**, четыре Node
+backup-config tests и ops validation прошли. Предварительный строгий sandbox
+выявил append-open lock на read-only mount. Исправлено на read-only FD/exclusive
+flock, занятый lock в plan/run не перезаписывает чужой state; writable-доступ
+к `/run/lock` не добавлялся. Исходные worker/runbook/state/logs сохранены в
+`/root/karcher-retention-fix-20261025`; failed preflight/diagnostic logs также
+сохраняются, не выдаются за успешную рабочую очистку.
+
+### Приёмка исправления на VPS
+
+Read-only sandbox preflight скачала и сверила все 25 cloud exports и проверила
+36 local pairs. Перед применением сохранены точный план и fingerprints всех
+остающихся local/legacy backups, recursive cloud metadata, checkpoint и protected
+shop configs. В **12:50:00 Красноярск** штатный сервис завершил одну партию:
+10 cloud sets (**186 050 574 байта**) в корзину, 10 просроченных local pairs
+(**362 987 776 байт**) удалены. Оставшаяся очередь — 4 cloud / 2 local.
+Вторую партию в этой итерации не запускали. Все 3 pins, 23 legacy encrypted sets
+на VPS/в облаке, старый partial и остальные backups неизменны по fingerprints /
+metadata. Общая корзина не очищалась, архивы в облаке не перезаписывались.
+
+В **12:50:21** новый штатный `2026-10-25_05-50-09_UTC` — verified/complete;
+22 readiness probes без ошибок. В tar 1290 entries, новый `retention.py` и
+`RETENTION.md` совпали с установленными SHA-256. На ПК в **12:51:52** проверены
+внешние checksum и реальная age decrypt/authentication до EOF; plaintext
+направлен в null, identity на VPS не передавался. Сохранён только ciphertext
+в private `~/.config/karcher-backup/verification-retention-fix-20261025`, NTFS ACL —
+владелец/SYSTEM/Administrators. Нового восстановления БД/clean-VPS drill не было.
+
+Финальный **read-only** план после проверочного backup снова скачал все 16
+оставшихся cloud sets, проверил 27 local pairs и выбрал следующую партию 4 cloud /
+2 local без `DELETE_SAFETY_LIMIT`; отложенных сверх неё — 0. В **12:54:08**
+site/ready/notifications — 200/ok, backup/storage health здоров, failed units — 0;
+PID/NRestarts пяти рабочих служб и девять protected config hashes прежние.
+Только после реальной успешной очистки сняты два диагностированных failed
+preflight units с сохранёнными логами. Реальный healthy heartbeat отправлен,
+доставка Telegram отдельно не подтверждалась.
+
+Оба timers active/enabled; следующая очистка **26 октября 08:15 Красноярск**.
+Worker/runbook root:root `600`; сроки, pins, сервисный sandbox, расписания и
+конфигурация приложения не менялись. Свободно 41,94 GiB на VPS. Полные receipts,
+прежние helpers и логи — `/root/karcher-retention-fix-20261025`, итог —
+`accepted.json`. Деплоя приложения, commit/push/удалённого CI не было.
