@@ -230,6 +230,59 @@ test('oversized response is stopped and cannot become healthy', async () => {
   assert.equal(report.checks.yookassa.code, 'response_too_large');
 });
 
+test('Turnstile retries a single transient read but never retries authentication failures or malformed responses', async () => {
+  let calls = 0;
+  const f = fixture({ fetch: async (url) => {
+    if (url.includes('cloudflare') && ++calls === 1) throw new Error('PRIVATE_NETWORK_ERROR');
+    return responses(url);
+  } });
+  assert.equal((await f.check()).checks.turnstile.status, 'unverified'); assert.equal(calls, 2);
+  for (const status of [401, 403, 429]) {
+    calls = 0;
+    const report = await fixture({ fetch: async (url) => {
+      if (url.includes('cloudflare')) { calls++; return json({}, status); } return responses(url);
+    } }).check();
+    assert.equal(report.checks.turnstile.status, 'error'); assert.equal(calls, 1);
+  }
+});
+
+test('Turnstile recovery requires two fresh samples, not cached or concurrent HTTP requests', async () => {
+  let fail = true;
+  const f = fixture({ fetch: async (url) => url.includes('cloudflare') && fail ? json({}, 503) : responses(url) });
+  const failed = await f.check(); assert.equal(failed.checks.turnstile.code, 'http_503');
+  fail = false; f.advance(241_000);
+  const [a, b] = await Promise.all([f.check(), f.check()]);
+  assert.strictEqual(a, b); assert.equal(a.availability, 'error'); assert.equal(a.checks.turnstile.code, 'recovery_pending');
+  assert.equal(a.checks.turnstile.stability?.observedStatus, 'unverified');
+  assert.ok(a.coverage.unverified.includes('turnstile'));
+  assert.strictEqual(await f.check(), a);
+  f.advance(241_000);
+  const recovered = await f.check(); assert.equal(recovered.availability, 'ok');
+  assert.equal(recovered.checks.turnstile.status, 'unverified');
+});
+
+test('another failure resets the recovery streak and credential changes invalidate recovery state', async () => {
+  let fail = true;
+  const f = fixture({ fetch: async (url) => url.includes('cloudflare') && fail ? json({}, 500) : responses(url) });
+  await f.check(); fail = false; f.advance(241_000);
+  assert.equal((await f.check()).checks.turnstile.code, 'recovery_pending');
+  fail = true; f.advance(241_000); assert.equal((await f.check()).checks.turnstile.code, 'http_500');
+  fail = false; f.advance(241_000); assert.equal((await f.check()).checks.turnstile.code, 'recovery_pending');
+  f.env({ ...ENV, TURNSTILE_SECRET_KEY: 'different-fake-key' });
+  assert.equal((await f.check()).checks.turnstile.status, 'unverified');
+});
+
+test('Turnstile per-attempt timeout retries within the outer deadline and aborts the underlying read', async () => {
+  let calls = 0; let aborted = false;
+  const f = fixture({ timeoutMs: 100, fetch: async (url, init) => {
+    if (url.includes('cloudflare') && ++calls === 1) return new Promise<Response>((_resolve, reject) => {
+      init.signal!.addEventListener('abort', () => { aborted = true; reject(new Error('PRIVATE_TIMEOUT')); }, { once: true });
+    });
+    return responses(url);
+  } });
+  assert.equal((await f.check()).checks.turnstile.status, 'unverified'); assert.equal(calls, 2); assert.equal(aborted, true);
+});
+
 test('active Gateway without a safe positive probe remains explicitly unverified', async () => {
   const report = await fixture({ environment: () => ({ ...ENV, PHONE_VERIFICATION_MODE: 'telegram_then_sms' }) }).check();
   assert.equal(report.checks.telegram_gateway.status, 'unverified');

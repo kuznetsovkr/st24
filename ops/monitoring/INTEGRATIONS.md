@@ -1,5 +1,8 @@
 # Диагностика интеграций — этап 1
 
+Исправление TLS-связности Turnstile, ограниченный повтор, подтверждение
+восстановления двумя свежими пробами и безопасный журнал — [TURNSTILE.md](TURNSTILE.md).
+
 `GET /api/health/integrations` объединяет безопасные активные проверки внешних
 API с существующими readiness и Telegram/outbox/invariants. Новая диагностика
 не влияет на запуск API и не заменяет `/api/health/ready` в deploy-check.

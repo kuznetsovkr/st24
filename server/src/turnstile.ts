@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { resilientFetch } from './httpClient';
+import { TURNSTILE_SITEVERIFY_URL, turnstileTransport } from './turnstileTransport';
+import type { Dispatcher } from 'undici';
 
 type TurnstileVerifyResult = {
   success?: boolean;
@@ -27,12 +29,17 @@ export const assertTurnstileConfiguration = (
   }
 };
 
-export const verifyTurnstileToken = async (
+export const createTurnstileVerifier = (options: {
+  environment?: () => Record<string, string | undefined>;
+  request?: typeof resilientFetch;
+  dispatcher?: () => Dispatcher;
+  log?: (code: 'request_failed' | 'verification_rejected' | 'action_mismatch', status?: number) => void;
+} = {}) => async (
   token: string,
   remoteIp?: string,
   expectedAction?: string
 ) => {
-  const secret = getTurnstileSecretKey();
+  const secret = getTurnstileSecretKey((options.environment ?? (() => process.env))());
   if (!secret) {
     return;
   }
@@ -50,33 +57,45 @@ export const verifyTurnstileToken = async (
   }
   payload.set('idempotency_key', crypto.randomUUID());
 
-  const response = await resilientFetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: payload.toString()
-  }, {
-    circuitKey: 'turnstile:siteverify',
-    timeoutMs: 8_000,
-    maxRetries: 2
-  });
-
-  const result = (await response.json()) as TurnstileVerifyResult;
-  if (!response.ok || !result.success) {
-    console.warn('[Turnstile] verification failed', {
-      status: response.status,
-      result
+  const log = options.log ?? ((code, httpStatus) => console.warn('[turnstile]', JSON.stringify({
+    event: 'turnstile_verification', code, ...(httpStatus === undefined ? {} : { httpStatus })
+  })));
+  let response: Response;
+  try {
+    response = await (options.request ?? resilientFetch)(TURNSTILE_SITEVERIFY_URL, {
+      method: 'POST',
+      redirect: 'error',
+      dispatcher: (options.dispatcher ?? (() => turnstileTransport.dispatcher('business')))(),
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: payload.toString()
+    }, {
+      circuitKey: 'turnstile:siteverify',
+      timeoutMs: 8_000,
+      maxRetries: 2
     });
+  } catch {
+    log('request_failed');
+    throw new Error('Не удалось подтвердить проверку. Попробуйте еще раз.');
+  }
+
+  let result: TurnstileVerifyResult;
+  try { result = (await response.json()) as TurnstileVerifyResult; }
+  catch {
+    log('verification_rejected', response.status);
+    throw new Error('Не удалось подтвердить проверку. Попробуйте еще раз.');
+  }
+  if (!response.ok || result?.success !== true) {
+    log('verification_rejected', response.status);
     throw new Error('Не удалось подтвердить проверку. Попробуйте еще раз.');
   }
 
   if (expectedAction && result.action && result.action !== expectedAction) {
-    console.warn('[Turnstile] action mismatch', {
-      expectedAction,
-      action: result.action
-    });
+    log('action_mismatch', response.status);
     throw new Error('Не удалось подтвердить проверку. Попробуйте еще раз.');
   }
 };
+
+export const verifyTurnstileToken = createTurnstileVerifier();

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { turnstileTransport } from './turnstileTransport';
 import type { Server } from 'node:http';
 import { createApp } from './app';
 import { closeDatabasePools } from './db';
@@ -110,6 +111,7 @@ const shutdownCoordinator = createShutdownCoordinator({
     { name: 'telegram-polling', run: stopTelegramPolling }
   ],
   releaseTasks: [
+    { name: 'turnstile-dispatchers', run: () => turnstileTransport.close() },
     { name: 'telegram-dispatcher', run: closeTelegramOutboundDispatcher },
     { name: 'rate-limit-redis', run: closeRateLimiterRedis },
     { name: 'database', run: closeDatabasePools }

@@ -1,4 +1,5 @@
 import { queryWithTimeout } from './db';
+import { createIntegrationHealthLogger } from './integrationHealthLog';
 import { getReadinessReport, type ReadinessReport } from './health';
 import { getNotificationHealthReport, type NotificationHealthReport } from './notificationHealth';
 import {
@@ -24,12 +25,14 @@ export const createFullIntegrationHealthChecker = (options: {
   now?: () => number;
   coreTimeoutMs?: number;
   cacheTtlMs?: number;
+  log?: (report: IntegrationHealthReport) => void;
 } = {}) => {
   const providers = options.providers ?? createIntegrationHealthChecker({ shippingModes: loadShippingModes });
   const readiness = options.readiness ?? getReadinessReport;
   const notifications = options.notifications ?? getNotificationHealthReport;
   const now = options.now ?? Date.now;
   const timeoutMs = options.coreTimeoutMs ?? 3_500;
+  const log = options.log ?? createIntegrationHealthLogger({ now });
   let cached: { report: IntegrationHealthReport; expires: number } | undefined;
   let inFlight: Promise<IntegrationHealthReport> | undefined;
 
@@ -59,7 +62,9 @@ export const createFullIntegrationHealthChecker = (options: {
       ready?.checks.uploads.status === 'ok' ? 'write_read_delete_succeeded' : 'uploads_check_failed', ready?.checkedAt);
     checks.telegram = core(telegram?.status === 'ok',
       telegram?.status === 'ok' ? 'runtime_and_delivery_queue_healthy' : 'notification_pipeline_failed', telegram?.checkedAt);
-    return summarizeIntegrations(checks, checkedAt, Math.max(0, now() - start));
+    const report = summarizeIntegrations(checks, checkedAt, Math.max(0, now() - start));
+    try { log(report); } catch { /* Diagnostics must stay independent of logging failures. */ }
+    return report;
   };
   return async () => {
     if (cached && cached.expires > now()) return cached.report;

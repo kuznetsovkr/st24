@@ -1,5 +1,7 @@
 # Внешние HTTP-проверки магазина
 
+Разбор частых FAIL/RECOVERY и адресное исправление Turnstile — [TURNSTILE.md](TURNSTILE.md).
+
 Новый слой безопасной диагностики API интеграций и замена Telegram HTTP-monitor
 без дополнительного слота описаны в [INTEGRATIONS.md](INTEGRATIONS.md).
 Выкладка endpoint не включает автоматически новый монитор в Cronitor.

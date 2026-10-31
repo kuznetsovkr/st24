@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { turnstileTransport } from './turnstileTransport';
 import { createIntegrationHealthChecker, type ShippingModes } from './integrationHealth';
 
 // Explicit operator command; importing the checker never loads dotenv or starts a worker.
@@ -33,4 +34,4 @@ const main = async () => {
 void main().catch(() => {
   console.error('integration-health: configuration_or_probe_failed');
   process.exitCode = 2;
-});
+}).finally(() => turnstileTransport.close()).catch(() => { process.exitCode = 2; });

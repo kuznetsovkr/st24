@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { createClient } from 'redis';
+import { TURNSTILE_SITEVERIFY_URL, turnstileTransport } from './turnstileTransport';
 
 export type IntegrationStatus = 'ok' | 'error' | 'warning' | 'disabled' | 'unverified';
 export type ShippingProvider = 'cdek' | 'dellin' | 'russian_post';
@@ -10,6 +11,10 @@ export type IntegrationCheck = {
   coverage: 'authenticated_read' | 'balance' | 'ping' | 'connectivity' | 'browser' | 'runtime';
   checkedAt: string;
   latencyMs: number;
+  stability?: {
+    phase: 'recovering'; consecutiveSuccesses: number; requiredSuccesses: number;
+    observedStatus: 'unverified'; observedCode: string; lastFailureAt: string; lastFailureCode: string;
+  };
 };
 export type IntegrationHealthReport = {
   status: 'ok' | 'partial' | 'warning' | 'error';
@@ -101,7 +106,8 @@ export const summarizeIntegrations = (
   checks: Record<string, IntegrationCheck>, checkedAt: string, durationMs: number
 ): IntegrationHealthReport => {
   const entries = Object.entries(checks);
-  const unverified = entries.filter(([, check]) => check.status === 'unverified').map(([id]) => id);
+  const unverified = entries.filter(([, check]) => check.status === 'unverified'
+    || check.stability?.observedStatus === 'unverified').map(([id]) => id);
   const disabled = entries.filter(([, check]) => check.status === 'disabled').map(([id]) => id);
   const availability = entries.some(([, check]) => check.status === 'error') ? 'error'
     : entries.some(([, check]) => check.status === 'warning') ? 'warning' : 'ok';
@@ -117,7 +123,7 @@ export const createIntegrationHealthChecker = (overrides: Partial<IntegrationDep
   const dependencies: IntegrationDependencies = {
     environment: () => process.env,
     shippingModes: async () => { throw new ProbeError('shipping_state_unavailable'); },
-    fetch: (url, init) => fetch(url, init),
+    fetch: (url, init) => url === TURNSTILE_SITEVERIFY_URL ? turnstileTransport.probe(init) : fetch(url, init),
     redisPing: pingIntegrationRedis,
     now: Date.now, monotonicNow: () => performance.now(),
     timeoutMs: integer(settings.INTEGRATION_HEALTH_TIMEOUT_MS, 6_000, 250, 8_000),
@@ -126,6 +132,8 @@ export const createIntegrationHealthChecker = (overrides: Partial<IntegrationDep
   let cached: { report: IntegrationHealthReport; expires: number; scope: string } | undefined;
   let inFlight: { promise: Promise<IntegrationHealthReport>; scope: string } | undefined;
   let cdekToken: { value: string; expires: number; scope: string } | undefined;
+  let turnstileFailure: { code: string; at: string; successes: number } | undefined;
+  let stabilityScope: string | undefined;
 
   const request = async (url: string, signal: AbortSignal, init: RequestInit = {}, expectedStatuses: number[] = []) => {
     const response = await dependencies.fetch(url, {
@@ -159,6 +167,34 @@ export const createIntegrationHealthChecker = (overrides: Partial<IntegrationDep
         : error instanceof ProbeError ? error.code : 'check_failed',
         coverage, checkedAt, latencyMs: Math.max(0, Math.round(dependencies.monotonicNow() - start)) };
     } finally { if (timer) clearTimeout(timer); }
+  };
+
+  const turnstileConnectivity = async (signal: AbortSignal): Promise<string> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      signal.throwIfAborted();
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal.addEventListener('abort', abort, { once: true });
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; controller.abort(); }, Math.max(1, Math.min(2_500, Math.floor(dependencies.timeoutMs / 2))));
+      try {
+        const body = await request(TURNSTILE_SITEVERIFY_URL, controller.signal, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+        }, [400]);
+        if (!record(body) || body.success !== false || !Array.isArray(body['error-codes'])
+            || !body['error-codes'].includes('missing-input-secret')) throw new ProbeError('invalid_response');
+        return 'api_reachable_browser_verification_required';
+      } catch (error) {
+        signal.throwIfAborted();
+        const code = timedOut ? 'timeout' : error instanceof ProbeError ? error.code : 'check_failed';
+        const transient = ['timeout', 'check_failed', 'http_408', 'http_500', 'http_502', 'http_503', 'http_504'].includes(code);
+        if (!transient || attempt === 1) throw new ProbeError(code);
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', abort);
+      }
+    }
+    throw new ProbeError('check_failed');
   };
 
   const collect = async (env: IntegrationEnvironment): Promise<IntegrationHealthReport> => {
@@ -287,15 +323,8 @@ export const createIntegrationHealthChecker = (overrides: Partial<IntegrationDep
     if (!trim(env.TURNSTILE_SECRET_KEY)) {
       checks.turnstile = fixed(env.NODE_ENV === 'production' ? 'error' : 'disabled', 'not_configured', 'connectivity');
     } else {
-      run('turnstile', 'connectivity', async (signal) => {
-        // No user token, no production secret: this proves API reachability, NOT CAPTCHA success/authentication.
-        const body = await request('https://challenges.cloudflare.com/turnstile/v0/siteverify', signal, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-        }, [400]);
-        if (!record(body) || body.success !== false || !Array.isArray(body['error-codes'])
-            || !body['error-codes'].includes('missing-input-secret')) throw new ProbeError('invalid_response');
-        return 'api_reachable_browser_verification_required';
-      });
+      // Deliberately no production secret or user response token in synthetic traffic.
+      run('turnstile', 'connectivity', turnstileConnectivity);
     }
     checks.yandex_maps = fixed('unverified', 'browser_verification_required', 'browser');
     await Promise.all(tasks);
@@ -314,13 +343,29 @@ export const createIntegrationHealthChecker = (overrides: Partial<IntegrationDep
       const report = await running.promise;
       return running.scope === scope ? report : check();
     }
-    const promise = collect(env);
-    inFlight = { promise, scope };
-    try {
-      const report = await promise;
+    const promise = (async () => {
+      let report = await collect(env);
+      if (stabilityScope !== scope) { turnstileFailure = undefined; stabilityScope = scope; }
+      const observed = report.checks.turnstile;
+      if (observed?.status === 'error') {
+        turnstileFailure = { code: observed.code, at: observed.checkedAt, successes: 0 };
+      } else if (observed?.status === 'unverified' && turnstileFailure) {
+        turnstileFailure.successes++;
+        if (turnstileFailure.successes < 2) {
+          const held: IntegrationCheck = { ...observed, status: 'error', code: 'recovery_pending', stability: {
+            phase: 'recovering', consecutiveSuccesses: turnstileFailure.successes, requiredSuccesses: 2,
+            observedStatus: 'unverified', observedCode: observed.code,
+            lastFailureAt: turnstileFailure.at, lastFailureCode: turnstileFailure.code
+          } };
+          report = summarizeIntegrations({ ...report.checks, turnstile: held }, report.checkedAt, report.durationMs);
+        } else turnstileFailure = undefined;
+      } else if (observed?.status === 'disabled') turnstileFailure = undefined;
       cached = { report, scope, expires: dependencies.monotonicNow() + dependencies.cacheTtlMs };
       return report;
-    } finally { inFlight = undefined; }
+    })();
+    inFlight = { promise, scope };
+    try { return await promise; }
+    finally { inFlight = undefined; }
   };
   return check;
 };
